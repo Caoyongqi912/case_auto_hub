@@ -20,7 +20,8 @@ __all__ = [
     "AssociationConditionAPISchema",
     "RemoveAssociationConditionAPISchema",
     "UpdateCaseContentStepSchema",
-    "AddCaseContentStepSchema"
+    "AddCaseContentStepSchema",
+    "UpdateCaseContentAssert"
 ]
 
 from enums import ModuleEnum
@@ -62,6 +63,13 @@ class PageInterfaceCaseSchema(InterfaceCaseSchema, PageSchema):
 class AssociationApisSchema(BaseModel):
     interface_case_id: int
     interface_id_list: List[int]
+
+
+class UpdateCaseContentAssert(BaseModel):
+    id: int
+    assert_key: str | None
+    assert_value: str | None
+    assert_type: int | None = None
 
 
 class AddInterfaceCaseCommonGROUPSchema(BaseModel):
