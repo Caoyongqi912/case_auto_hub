@@ -1,1 +1,0 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2025/3/17# @Author : cyq# @File : celeryClient# @Software: PyCharm# @Desc:from celery import Celeryfrom config import Configcelery_app = Celery(    "worker",    broker=Config.REDIS_Broker,    backend=Config.REDIS_Backend)

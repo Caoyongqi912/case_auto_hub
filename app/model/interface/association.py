@@ -2,28 +2,14 @@ from app.model.basic import BaseModel, base
 from sqlalchemy import Column, INTEGER, ForeignKey
 
 
-class InterCaseAssociation(base):
-    """
-    接口 业务用例 中间表
-    """
-    __tablename__ = "interface_case_association"
-    interface_id = Column(INTEGER, ForeignKey('interface.id', ), nullable=True, primary_key=True, comment="api接口")
-    inter_case_id = Column(INTEGER, ForeignKey('interface_case.id'), primary_key=True)
-    step_order = Column(INTEGER)
-
-    def __repr__(self):
-        return (f"<InterCaseAssociation(interface_id={self.interface_id},"
-                f" inter_case_id={self.inter_case_id},"
-                f" step_order={self.step_order}) />")
-
-
 class InterfaceCaseStepContentAssociation(base):
     """
     接口 业务用例 步骤 中间表
     """
     __tablename__ = "interface_case_content_association"
     interface_case_id = Column(INTEGER, ForeignKey('interface_case.id', ondelete="CASCADE"), primary_key=True)
-    interface_case_content_id = Column(INTEGER, ForeignKey('interface_case_step_content.id', ondelete="CASCADE"), primary_key=True)
+    interface_case_content_id = Column(INTEGER, ForeignKey('interface_case_step_content.id', ondelete="CASCADE"),
+                                       primary_key=True)
     step_order = Column(INTEGER)
 
     def __repr__(self):
@@ -95,7 +81,8 @@ class ContentAssertAssociation(base):
     """
     __tablename__ = "interface_content_assert_association"
     condition_id = Column(INTEGER, ForeignKey('interface_condition.id', ondelete="CASCADE"), primary_key=True)
-    interface_assert_id = Column(INTEGER, ForeignKey('interface_content_assert.id', ondelete="CASCADE"), primary_key=True)
+    interface_assert_id = Column(INTEGER, ForeignKey('interface_content_assert.id', ondelete="CASCADE"),
+                                 primary_key=True)
     step_order = Column(INTEGER)
 
     def __repr__(self):
