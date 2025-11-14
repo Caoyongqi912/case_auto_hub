@@ -24,8 +24,8 @@ class CaseTaskAssociation(base):
     """
     __tablename__ = "interface_task_association"
 
-    inter_case_id = Column(INTEGER, ForeignKey('interface_case.id'), primary_key=True)
-    task_id = Column(INTEGER, ForeignKey('interface_task.id'), primary_key=True)
+    inter_case_id = Column(INTEGER, ForeignKey('interface_case.id',ondelete="CASCADE"), primary_key=True)
+    task_id = Column(INTEGER, ForeignKey('interface_task.id',ondelete="CASCADE"), primary_key=True)
     step_order = Column(INTEGER)
 
     def __repr__(self):
@@ -39,8 +39,8 @@ class ApiTaskAssociation(base):
     """
     __tablename__ = "interface_api_task_association"
 
-    api_id = Column(INTEGER, ForeignKey('interface.id'), primary_key=True)
-    task_id = Column(INTEGER, ForeignKey('interface_task.id'), primary_key=True)
+    api_id = Column(INTEGER, ForeignKey('interface.id',ondelete="CASCADE"), primary_key=True)
+    task_id = Column(INTEGER, ForeignKey('interface_task.id',ondelete="CASCADE"), primary_key=True)
     step_order = Column(INTEGER)
 
     def __repr__(self):
