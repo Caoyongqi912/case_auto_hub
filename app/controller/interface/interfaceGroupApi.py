@@ -27,7 +27,7 @@ async def get_group(groupId: int, cr: User = Depends(Authentication())):
 @router.post("/update", description="更新组")
 async def update_group(group: UpdateInterfaceGroupSchema, cr: User = Depends(Authentication())):
     await InterfaceGroupMapper.update_by_id(updateUser=cr, **group.model_dump(exclude_unset=True,
-                                                                        exclude_none=True, ))
+                                                                              exclude_none=True, ))
     return Response.success()
 
 
@@ -35,7 +35,7 @@ async def update_group(group: UpdateInterfaceGroupSchema, cr: User = Depends(Aut
 async def page_group(group: PageInterfaceGroupSchema, _: User = Depends(Authentication())):
     log.debug(group)
     data = await InterfaceGroupMapper.page_by_module(**group.model_dump(exclude_unset=True,
-                                                                  exclude_none=True, ))
+                                                                        exclude_none=True, ))
     return Response.success(data)
 
 
@@ -82,9 +82,9 @@ async def association_apis(info: AssociationAPIS2GroupSchema, cr: User = Depends
 
 
 @router.get("/try", description="关联api")
-async def try_group(groupId: int, user: User = Depends(Authentication())):
+async def try_group(groupId: int, envId: int, user: User = Depends(Authentication())):
     _starter = APIStarter(user)
     resp = await InterFaceRunner(
         starter=_starter
-    ).try_group(groupId)
+    ).try_group(groupId=groupId,env_id=envId)
     return Response.success(resp)

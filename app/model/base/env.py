@@ -22,5 +22,10 @@ class EnvModel(BaseModel):
             domain += f":{self.port}"
         return domain
 
+
     def __repr__(self):
         return f"<{EnvModel.__name__} {self.name} host={self.host} port={self.port}>"
+
+
+    def __str__(self):
+        return f"ENV {self.name} {self.url}"

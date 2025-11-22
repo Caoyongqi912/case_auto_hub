@@ -37,7 +37,6 @@ class InterfaceCaseSchema(BaseModel):
     status: str | None = None
     module_id: int | None = None
     project_id: int | None = None
-    error_stop: int | None = None
 
 
 class InsertInterfaceCaseBaseInfoSchema(InterfaceCaseSchema):
@@ -53,8 +52,10 @@ class OptionInterfaceCaseSchema(InterfaceCaseSchema):
     id: int
 
 
-class ExecuteInterfaceCaseSchema(InterfaceCaseSchema):
-    caseId: int
+class ExecuteInterfaceCaseSchema(BaseModel):
+    case_id: int
+    env_id: int
+    error_stop: bool
 
 
 class PageInterfaceCaseSchema(InterfaceCaseSchema, PageSchema):

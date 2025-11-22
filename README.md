@@ -56,7 +56,7 @@
 
 展示所有接口的概览：
 
-![API列表](resource/api.jpg)
+![API列表](resource/apiList.png)
 
 ---
 
@@ -64,7 +64,7 @@
 
 查看单个接口的详细信息
 
-![API详情](resource/api_detail.png)
+![API详情](resource/apiDetail.png)
 
 ---
 
@@ -264,6 +264,8 @@
   - 添加步骤变量判断能力
 - 2025-10-30
   - 步骤 等待、脚本录入能力
+- 2025-11-20
+  - 增加指定（api、case、task）环境运行能力
 
 
      
