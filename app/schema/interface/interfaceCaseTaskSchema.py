@@ -46,6 +46,12 @@ class SetTaskAuto(GetByTaskId):
     is_auto: bool
 
 
+class ExecuteTask(BaseModel):
+    task_id: int
+    env_id: int
+    options: List[str]
+
+
 class AssocCasesSchema(BaseModel):
     taskId: int
     caseIds: List[int]

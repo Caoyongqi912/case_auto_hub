@@ -3,7 +3,9 @@ import time
 from typing import TypeVar, List
 
 from app.mapper.interface import InterfaceTaskMapper
+from app.mapper.project.env import EnvMapper
 from app.mapper.project.pushMapper import PushMapper
+from app.model.base import EnvModel
 from app.model.interface import InterfaceModel, InterFaceCaseModel, InterfaceTask, InterfaceTaskResultModel
 from enums import InterfaceAPIResultEnum
 from utils import MyLoguru
@@ -18,6 +20,10 @@ InterfaceCase = TypeVar('InterfaceCase', bound=InterFaceCaseModel)
 Interfaces = List[Interface]
 InterfaceCases = List[InterfaceCase]
 InterfaceTaskResult = TypeVar('InterfaceTaskResult', bound=InterfaceTaskResultModel)
+InterfaceEnv = TypeVar("InterfaceEnv", bound=EnvModel)
+
+CASE = "CASE"
+API = "API"
 
 
 class TaskRunner:
@@ -41,8 +47,6 @@ class TaskRunner:
             await InterfaceAPIWriter.write_task_process(task_result=task_result)
             self._last_progress_update = current_time
 
-
-
     async def write_process_result(self, flag: bool, task_result: InterfaceTaskResult):
         await self.set_process(task_result)
         if flag:
@@ -50,26 +54,35 @@ class TaskRunner:
         else:
             task_result.failNumber += 1
 
-    async def runTask(self, taskId: int):
+    async def runTask(self, taskId: int, env_id: int = None, options: List[str] = None):
         """
         执行任务
         :param taskId: 任务Id
+        :param env_id: 环境
+        :param options [API,CASE]
         :return:
         """
+        env: InterfaceEnv = None
         self.task = await InterfaceTaskMapper.get_by_id(taskId)
         log.debug(f"running task {self.task} start by {self.starter.username}")
+        if env_id:
+            env: InterfaceEnv = await EnvMapper.get_by_id(env_id)
 
         task_result: InterfaceTaskResult = await InterfaceAPIWriter.init_interface_task(self.task,
                                                                                         starter=self.starter)
 
         try:
-            apis: Interfaces = await InterfaceTaskMapper.query_apis(self.task.id)
-            cases: InterfaceCases = await InterfaceTaskMapper.query_case(self.task.id)
-            task_result.totalNumber = len(apis + cases)
-            if apis:
-                await self.__run_Apis(apis=apis, task_result=task_result)
-            if cases:
-                await self.__run_Cases(cases=cases, task_result=task_result)
+            task_result.totalNumber = 0
+            if API in options:
+                apis: Interfaces = await InterfaceTaskMapper.query_apis(self.task.id)
+                if apis:
+                    task_result.totalNumber += len(apis)
+                    await self.__run_Apis(apis=apis, task_result=task_result, env=env)
+            if CASE in options:
+                cases: InterfaceCases = await InterfaceTaskMapper.query_case(self.task.id)
+                if cases:
+                    task_result.totalNumber += len(cases)
+                    await self.__run_Cases(cases=cases, task_result=task_result, env=env)
         except Exception as e:
             log.exception(e)
             raise e
@@ -85,12 +98,12 @@ class TaskRunner:
                 rp = ReportPush(push_type=push.push_type, push_value=push.push_value)
                 await rp.push(self.task, task_result)
 
-    async def __run_Apis(self, apis: Interfaces, task_result: InterfaceTaskResult):
+    async def __run_Apis(self, apis: Interfaces, task_result: InterfaceTaskResult, env: InterfaceEnv = None):
         """执行关联api"""
         parallel = self.task.parallel
         # 顺序执行
         if parallel == 0:
-            return await self.__run_api_by_sequential_execution(apis, task_result)
+            return await self.__run_api_by_sequential_execution(apis, task_result, env)
 
         semaphore = asyncio.Semaphore(parallel)  # 限制并行数量为 parallel
         await self.starter.send(f"并行数量 {parallel}")
@@ -98,28 +111,49 @@ class TaskRunner:
         tasks = []
         for api in apis:
             task = asyncio.create_task(
-                self.__run_single_api_with_semaphore_and_lock(api, task_result, semaphore, lock)
+                self.__run_single_api_with_semaphore_and_lock(api, task_result, semaphore, lock, env)
             )
             tasks.append(task)
         await asyncio.gather(*tasks)
 
-    async def __run_api_by_sequential_execution(self, apis: Interfaces, task_result: InterfaceTaskResult, ):
-        """顺序执行"""
+    async def __run_api_by_sequential_execution(self,
+                                                apis: Interfaces,
+                                                task_result: InterfaceTaskResult,
+                                                env: InterfaceEnv = None):
+        """
+        顺序执行
+        :param apis
+        :param task_result
+        :param env
+        """
         for api in apis:
             flag: bool = await InterFaceRunner(self.starter).run_interface_by_task(
                 interface=api,
-                taskResult=task_result
+                taskResult=task_result,
+                env=env
             )
             await self.write_process_result(flag, task_result)
             await self.starter.clear_logs()
 
-    async def __run_single_api_with_semaphore_and_lock(self, api: Interface, task_result: InterfaceTaskResult,
-                                                       semaphore: asyncio.Semaphore, lock: asyncio.Lock):
-        """执行单个 API，限制并行数量，并保护共享资源"""
+    async def __run_single_api_with_semaphore_and_lock(self,
+                                                       api: Interface,
+                                                       task_result: InterfaceTaskResult,
+                                                       semaphore: asyncio.Semaphore,
+                                                       lock: asyncio.Lock,
+                                                       env: InterfaceEnv = None):
+        """
+        执行单个 API，限制并行数量，并保护共享资源
+        :param api 待执行API
+        :param task_result 任务结果
+        :param semaphore 信号
+        :param lock 锁
+        :param env 执行环境
+        """
         async with semaphore:  # 限制并行数量
             flag: bool = await InterFaceRunner(self.starter).run_interface_by_task(
                 interface=api,
-                taskResult=task_result
+                taskResult=task_result,
+                env=env
             )
 
             # 使用锁保护共享资源的修改
@@ -127,12 +161,14 @@ class TaskRunner:
                 await self.write_process_result(flag, task_result)
             await self.starter.clear_logs()
 
-    async def __run_Cases(self, cases: InterfaceCases, task_result: InterfaceTaskResult):
+    async def __run_Cases(self, cases: InterfaceCases, task_result: InterfaceTaskResult, env: InterfaceEnv = None):
         """执行关联case"""
         for case in cases:
             flag: bool = await InterFaceRunner(self.starter).run_interCase(
                 interfaceCaseId=case.id,
-                task=task_result
+                task=task_result,
+                env_id=env,
+                error_stop=True #任务执行默认True
             )
             await self.set_process(task_result)
             if flag:
