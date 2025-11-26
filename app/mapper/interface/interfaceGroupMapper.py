@@ -54,7 +54,7 @@ async def insert_group_api(session: AsyncSession, groupId: int, apiId: int, step
         raise e
 
 
-class InterfaceGroupMapper(Mapper):
+class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
     __model__ = InterfaceGroupModel
 
     @classmethod

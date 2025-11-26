@@ -1,1 +1,1 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2025/8/4# @Author : cyq# @File : __init__.py# @Software: PyCharm# @Desc:from app.mapper import Mapperfrom app.model.caseHub import CaseHUbclass CaseHubMapper(Mapper):    __model__ = CaseHUb
+#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2025/8/4# @Author : cyq# @File : __init__.py# @Software: PyCharm# @Desc:from app.mapper import Mapperfrom app.model.caseHub import CaseHUbclass CaseHubMapper(Mapper[CaseHUb]):    __model__ = CaseHUb

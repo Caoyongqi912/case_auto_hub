@@ -164,7 +164,7 @@ class TaskRunner:
     async def __run_Cases(self, cases: InterfaceCases, task_result: InterfaceTaskResult, env: InterfaceEnv = None):
         """执行关联case"""
         for case in cases:
-            flag: bool = await InterFaceRunner(self.starter).run_interCase(
+            flag: bool = await InterFaceRunner(self.starter).run_interface_case(
                 interfaceCaseId=case.id,
                 task=task_result,
                 env_id=env,

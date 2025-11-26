@@ -63,7 +63,7 @@ async def get_subtree_ids(session: AsyncSession, moduleId: int,module_type:int):
         raise e
 
 
-class ModuleMapper(Mapper):
+class ModuleMapper(Mapper[Module]):
     __model__ = Module
 
     @classmethod

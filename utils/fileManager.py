@@ -67,7 +67,7 @@ class FileManager:
         async with aiofiles.open(filePath, "wb") as buffer:
             await buffer.write(await file.read())
 
-        file_model = await FileMapper.insert(**dict(
+        file_model = await FileMapper.save(**dict(
             fileType=fileType,
             filePath=filePath,
             fileName=fileName

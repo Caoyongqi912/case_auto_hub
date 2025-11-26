@@ -2,8 +2,6 @@ from json import JSONDecodeError
 
 from playwright.async_api import Page
 
-from app.model.ui import UICaseStepsModel
-from play.extract import ExtractManager
 from play.starter import UIStarter
 from utils import JsonExtract, log
 

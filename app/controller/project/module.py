@@ -12,7 +12,7 @@ router = APIRouter(prefix="/module", tags=["模块"])
 @router.post("/insert", description='添加模块')
 async def insert_module(partInfo: InsertModuleSchema, creator: User = Depends(Authentication(isAdmin=True))):
     await ModuleMapper.save(
-        creatorUser=creator,
+        creator_user=creator,
         **partInfo.model_dump()
     )
     return Response.success()

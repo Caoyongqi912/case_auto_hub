@@ -1,8 +1,8 @@
-from typing import List, Union
+from typing import Union
 
 from app.model.base import User
 from enums import StarterEnum
-from utils import GenerateTools, MyLoguru
+from utils import MyLoguru
 from app.ws import async_io
 
 log = MyLoguru().get_logger()
@@ -16,6 +16,7 @@ class SocketSender:
     _perf_ns = "/api_perf_ns"
 
     def __init__(self, ns: str, event: str, user: Union[User, StarterEnum]):
+        self.user = user
         self._event = event
         self._ns = ns
         self.logs = []

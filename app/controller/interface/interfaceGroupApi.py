@@ -13,8 +13,8 @@ router = APIRouter(prefix="/interface/group", tags=['自动化接口步骤'])
 
 
 @router.post("/insert", description="添加组")
-async def insert_group(group: InsertInterfaceGroupSchema, cr: User = Depends(Authentication())):
-    group = await InterfaceGroupMapper.save(creatorUser=cr, **group.model_dump())
+async def insert_group(group: InsertInterfaceGroupSchema, creator_user: User = Depends(Authentication())):
+    group = await InterfaceGroupMapper.save(creator_user=creator_user, **group.model_dump())
     return Response.success(group)
 
 

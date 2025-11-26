@@ -13,7 +13,7 @@ from utils import log
 T = TypeVar('T', bound=BaseModel)
 
 
-class InterfaceVarsMapper(Mapper):
+class InterfaceVarsMapper(Mapper[InterfaceVariables]):
     __model__ = InterfaceVariables
 
     @classmethod

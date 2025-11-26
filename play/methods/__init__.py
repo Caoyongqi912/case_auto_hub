@@ -204,7 +204,7 @@ class PlayAssertToHaveText(_MethodHandler):
                      starter: UIStarter,
                      vt: VariableTrans,
                      case_result: PlayCaseResult):
-        assert_info = set_assertInfo(play_step=play_step, opt="=", expect_value=play_step.fill_value)
+        assert_info = set_assert_info(play_step=play_step, opt="=", expect_value=play_step.fill_value)
         try:
             locator = await get_locator(page, play_step)
             await expect(locator).to_have_text(play_step.fill_value,
@@ -228,7 +228,7 @@ class PlayAssertToBeAttachedAndVisible(_MethodHandler):
                      starter: UIStarter,
                      vt: VariableTrans,
                      case_result: PlayCaseResult):
-        assert_info = set_assertInfo(play_step=play_step, opt="=", expect_value=True)
+        assert_info = set_assert_info(play_step=play_step, opt="=", expect_value=True)
         try:
             locator = await get_locator(page, play_step)
             await expect(locator).to_be_attached(attached=True)
@@ -252,7 +252,7 @@ class PlayAssertNotToBeAttachedAndVisible(_MethodHandler):
                      starter: UIStarter,
                      vt: VariableTrans,
                      case_result: PlayCaseResult):
-        assert_info = set_assertInfo(play_step=play_step, opt="!=", expect_value=False)
+        assert_info = set_assert_info(play_step=play_step, opt="!=", expect_value=False)
         try:
             locator = await get_locator(page, play_step)
             await expect(locator).not_to_be_attached(attached=False)
@@ -276,7 +276,7 @@ class PlayAssertToHaveAttribute(_MethodHandler):
                      vt: VariableTrans,
                      case_result: PlayCaseResult):
         key, attr = play_step.fill_value.split(":")
-        assert_info = set_assertInfo(play_step=play_step, opt="=", expect_value=attr)
+        assert_info = set_assert_info(play_step=play_step, opt="=", expect_value=attr)
         try:
             locator = await get_locator(page, play_step)
             await expect(locator).to_have_attribute(key, attr)
@@ -300,7 +300,7 @@ class PlayAssertNotToHaveAttribute(_MethodHandler):
                      vt: VariableTrans,
                      case_result: PlayCaseResult):
         key, attr = play_step.fill_value.split(":")
-        assert_info = set_assertInfo(play_step=play_step, opt="!=", expect_value=attr)
+        assert_info = set_assert_info(play_step=play_step, opt="!=", expect_value=attr)
         try:
             locator = await get_locator(page, play_step)
             await expect(locator).not_to_have_attribute(key, attr)
@@ -324,7 +324,7 @@ class PlayAssertToHaveTitle(_MethodHandler):
                      vt: VariableTrans,
                      case_result: PlayCaseResult):
 
-        assert_info = set_assertInfo(play_step=play_step, opt="=", expect_value=play_step.fill_value)
+        assert_info = set_assert_info(play_step=play_step, opt="=", expect_value=play_step.fill_value)
         try:
             await expect(page).to_have_title(play_step.fill_value)
             assert_info["assert_actual"] = await page.title()
@@ -347,7 +347,7 @@ class PlayAssertToHaveURL(_MethodHandler):
                      vt: VariableTrans,
                      case_result: PlayCaseResult):
 
-        assert_info = set_assertInfo(play_step=play_step, opt="=", expect_value=play_step.fill_value)
+        assert_info = set_assert_info(play_step=play_step, opt="=", expect_value=play_step.fill_value)
         try:
             await expect(page).to_have_url(play_step.fill_value)
             assert_info["assert_actual"] = page.url
@@ -449,7 +449,7 @@ async def get_error_value(e: AssertionError):
     return ""
 
 
-def set_assertInfo(play_step: PlayStep, opt: str, expect_value: Any) -> Dict[str, Any]:
+def set_assert_info(play_step: PlayStep, opt: str, expect_value: Any) -> Dict[str, Any]:
     return {
         "id": GenerateTools.getTime(3),
         "desc": play_step.description,

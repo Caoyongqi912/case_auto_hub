@@ -5,11 +5,11 @@ from app.model.interface.interfaceGlobal import  InterfaceGlobalHeader, Interfac
 
 
 
-class InterfaceGlobalHeaderMapper(Mapper):
+class InterfaceGlobalHeaderMapper(Mapper[InterfaceGlobalHeader]):
     __model__ = InterfaceGlobalHeader
 
 
-class InterfaceGlobalFuncMapper(Mapper):
+class InterfaceGlobalFuncMapper(Mapper[InterfaceGlobalFunc]):
     __model__ = InterfaceGlobalFunc
 
 
