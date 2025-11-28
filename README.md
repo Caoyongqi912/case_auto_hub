@@ -260,5 +260,8 @@
 - 2025-11-20
   - 增加指定（api、case、task）环境运行能力
 
-
-     
+- 2025-11-28:
+  - 业务步骤详情结果
+    - ![caseContentResult.png](resource/caseContentResult.png)
+  - 日志不变 （优化了些细节）
+    - ![caseContentLog.png](resource/caseContentLog.png)
