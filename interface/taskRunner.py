@@ -17,8 +17,7 @@ from .writer import InterfaceAPIWriter
 log = MyLoguru().get_logger()
 Interface = TypeVar('Interface', bound=InterfaceModel)
 InterfaceCase = TypeVar('InterfaceCase', bound=InterFaceCaseModel)
-Interfaces = List[Interface]
-InterfaceCases = List[InterfaceCase]
+
 InterfaceTaskResult = TypeVar('InterfaceTaskResult', bound=InterfaceTaskResultModel)
 InterfaceEnv = TypeVar("InterfaceEnv", bound=EnvModel)
 
@@ -54,7 +53,7 @@ class TaskRunner:
         else:
             task_result.failNumber += 1
 
-    async def runTask(self, taskId: int, env_id: int = None, options: List[str] = None):
+    async def execute_task(self, taskId: int, env_id: int = None, options: List[str] = None):
         """
         执行任务
         :param taskId: 任务Id
@@ -62,27 +61,27 @@ class TaskRunner:
         :param options [API,CASE]
         :return:
         """
-        env: InterfaceEnv = None
+        env = None
         self.task = await InterfaceTaskMapper.get_by_id(taskId)
         log.debug(f"running task {self.task} start by {self.starter.username}")
         if env_id:
-            env: InterfaceEnv = await EnvMapper.get_by_id(env_id)
+            env = await EnvMapper.get_by_id(env_id)
 
-        task_result: InterfaceTaskResult = await InterfaceAPIWriter.init_interface_task(self.task,
-                                                                                        starter=self.starter)
+        task_result = await InterfaceAPIWriter.init_interface_task(self.task,
+                                                                   starter=self.starter)
 
         try:
             task_result.totalNumber = 0
             if API in options:
-                apis: Interfaces = await InterfaceTaskMapper.query_apis(self.task.id)
+                apis = await InterfaceTaskMapper.query_apis(self.task.id)
                 if apis:
                     task_result.totalNumber += len(apis)
-                    await self.__run_Apis(apis=apis, task_result=task_result, env=env)
+                    await self.__run_apis(apis=apis, task_result=task_result, env=env)
             if CASE in options:
-                cases: InterfaceCases = await InterfaceTaskMapper.query_case(self.task.id)
+                cases = await InterfaceTaskMapper.query_case(self.task.id)
                 if cases:
                     task_result.totalNumber += len(cases)
-                    await self.__run_Cases(cases=cases, task_result=task_result, env=env)
+                    await self.__run_cases(cases=cases, task_result=task_result, env=env)
         except Exception as e:
             log.exception(e)
             raise e
@@ -98,7 +97,7 @@ class TaskRunner:
                 rp = ReportPush(push_type=push.push_type, push_value=push.push_value)
                 await rp.push(self.task, task_result)
 
-    async def __run_Apis(self, apis: Interfaces, task_result: InterfaceTaskResult, env: InterfaceEnv = None):
+    async def __run_apis(self, apis: List[Interface], task_result: InterfaceTaskResult, env: InterfaceEnv = None):
         """执行关联api"""
         parallel = self.task.parallel
         # 顺序执行
@@ -114,10 +113,10 @@ class TaskRunner:
                 self.__run_single_api_with_semaphore_and_lock(api, task_result, semaphore, lock, env)
             )
             tasks.append(task)
-        await asyncio.gather(*tasks)
+        return await asyncio.gather(*tasks)
 
     async def __run_api_by_sequential_execution(self,
-                                                apis: Interfaces,
+                                                apis: List[Interface],
                                                 task_result: InterfaceTaskResult,
                                                 env: InterfaceEnv = None):
         """
@@ -161,14 +160,14 @@ class TaskRunner:
                 await self.write_process_result(flag, task_result)
             await self.starter.clear_logs()
 
-    async def __run_Cases(self, cases: InterfaceCases, task_result: InterfaceTaskResult, env: InterfaceEnv = None):
+    async def __run_cases(self, cases: List[InterfaceCase], task_result: InterfaceTaskResult, env: InterfaceEnv = None):
         """执行关联case"""
         for case in cases:
             flag: bool = await InterFaceRunner(self.starter).run_interface_case(
                 interfaceCaseId=case.id,
                 task=task_result,
                 env_id=env,
-                error_stop=True #任务执行默认True
+                error_stop=True  # 任务执行默认True
             )
             await self.set_process(task_result)
             if flag:
