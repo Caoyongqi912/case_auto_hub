@@ -9,6 +9,7 @@ from app.model.base import User
 from app.model.interface import InterfaceModel
 from app.model.interface.InterfaceCaseStepContent import InterfaceGroupModel
 from app.model.interface.association import GroupApiAssociation
+from enums.CaseEnum import CaseStepContentType
 from utils import log
 
 
@@ -56,6 +57,25 @@ async def insert_group_api(session: AsyncSession, groupId: int, apiId: int, step
 
 class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
     __model__ = InterfaceGroupModel
+
+    @classmethod
+    async def update_group(cls, user: User, **kwargs):
+        """更新组"""
+        async with async_session() as session:
+            group = await cls.update_by_id(session=session, updateUser=user, **kwargs)
+            log.info(f'update_group {group}')
+            from .interfaceCaseMapper import InterfaceCaseStepContentMapper
+            content = await InterfaceCaseStepContentMapper.get_by(
+                session=session,
+                target_id=group.id,
+                content_type=CaseStepContentType.STEP_API_GROUP)
+            log.info(f'update_interface {content}')
+            if content:
+                content.content_name = group.name
+                content.content_desc = group.description
+                await InterfaceCaseStepContentMapper.add_flush_expunge(session, content)
+                await session.commit()
+            return group
 
     @classmethod
     async def association_api(cls, groupId: int, apiId: int):
