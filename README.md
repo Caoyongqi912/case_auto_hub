@@ -107,31 +107,24 @@
 
 ---
 
-### ➕ **Case 添加 API**
+### ➕ **API 业务流**
 
 支持：
-
-- 添加公共 API
-- 添加API 组
+- 引用公共 API
+- 添加私有 API
+- 引用API 组
 - 添加 逻辑判断
 - 添加 脚本执行
-
+- 添加 等待
 
 ![img.png](resource/caseContents.png)
 
-![Case添加API](resource/caseAdd.gif)
-
 ---
 
-### ⚡ **RunCase 执行用例**
+#### ⚡ **RunCase 调试业务流用例**
 
 - **同步执行**：实时展示测试日志，确保每个步骤都可监控。
-
-  ![RunCase](resource/runBySync.gif)
-
 - **后台执行 & 轮询结果**：适用于长期任务或需要在后台执行的测试。
-
-  ![RunCase](resource/runByAsync.gif)
 
 ---
 
