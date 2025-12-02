@@ -28,6 +28,15 @@ API = "API"
 class TaskRunner:
     task: InterfaceTask
 
+    """
+    任务执行
+    
+    - execute_task 
+    
+    
+    
+    """
+
     def __init__(self, starter: APIStarter):
         self.starter = starter
         self.progress = 0
@@ -53,9 +62,9 @@ class TaskRunner:
         else:
             task_result.failNumber += 1
 
-    async def execute_task(self, taskId: int, env_id: int = None, options: List[str] = None):
+    async def handler_execute_task(self, taskId: int, env_id: int = None, options: List[str] = None):
         """
-        执行任务
+        手动执行任务
         :param taskId: 任务Id
         :param env_id: 环境
         :param options [API,CASE]
@@ -68,7 +77,8 @@ class TaskRunner:
             env = await EnvMapper.get_by_id(env_id)
 
         task_result = await InterfaceAPIWriter.init_interface_task(self.task,
-                                                                   starter=self.starter)
+                                                                   starter=self.starter,
+                                                                   env=env)
 
         try:
             task_result.totalNumber = 0

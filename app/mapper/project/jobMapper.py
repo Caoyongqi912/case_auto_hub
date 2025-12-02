@@ -1,0 +1,1 @@
+#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2025/12/1# @Author : cyq# @File : jobMapper# @Software: PyCharm# @Desc:from app.mapper import Mapperfrom app.model.base.job import AutoJobclass JobMapper(Mapper[AutoJob]):    __model__ = AutoJob
