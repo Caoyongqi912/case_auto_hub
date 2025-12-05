@@ -6,21 +6,22 @@ from app.mapper.interface import InterfaceTaskMapper
 from app.mapper.project.env import EnvMapper
 from app.mapper.project.pushMapper import PushMapper
 from app.model.base import EnvModel
+from app.model.base.job import AutoJob
 from app.model.interface import InterfaceModel, InterFaceCaseModel, InterfaceTask, InterfaceTaskResultModel
-from enums import InterfaceAPIResultEnum
+from common.workerPool import WorkerPool
+from enums import InterfaceAPIResultEnum, StarterEnum
 from utils import MyLoguru
 from utils.report import ReportPush
 from .starter import APIStarter
 from .runner import InterFaceRunner
 from .writer import InterfaceAPIWriter
-
+from common.workerPool import pool
 log = MyLoguru().get_logger()
 Interface = TypeVar('Interface', bound=InterfaceModel)
 InterfaceCase = TypeVar('InterfaceCase', bound=InterFaceCaseModel)
 
 InterfaceTaskResult = TypeVar('InterfaceTaskResult', bound=InterfaceTaskResultModel)
 InterfaceEnv = TypeVar("InterfaceEnv", bound=EnvModel)
-
 CASE = "CASE"
 API = "API"
 
@@ -32,9 +33,6 @@ class TaskRunner:
     任务执行
     
     - execute_task 
-    
-    
-    
     """
 
     def __init__(self, starter: APIStarter):
@@ -62,7 +60,7 @@ class TaskRunner:
         else:
             task_result.failNumber += 1
 
-    async def handler_execute_task(self, taskId: int, env_id: int = None, options: List[str] = None):
+    async def handler_execute_task(self, taskId: int | str, env_id: int = None, options: List[str] = None):
         """
         手动执行任务
         :param taskId: 任务Id
@@ -71,7 +69,10 @@ class TaskRunner:
         :return:
         """
         env = None
-        self.task = await InterfaceTaskMapper.get_by_id(taskId)
+        if isinstance(taskId, int):
+            self.task = await InterfaceTaskMapper.get_by_id(taskId)
+        else:
+            self.task = await InterfaceTaskMapper.get_by_uid(taskId)
         log.debug(f"running task {self.task} start by {self.starter.username}")
         if env_id:
             env = await EnvMapper.get_by_id(env_id)
@@ -102,10 +103,10 @@ class TaskRunner:
                 task_result.result = InterfaceAPIResultEnum.SUCCESS
             log.debug(task_result.result)
             await InterfaceAPIWriter.write_interface_task_result(task_result)
-            if self.task.push_id:
-                push = await PushMapper.get_by_id(self.task.push_id)
-                rp = ReportPush(push_type=push.push_type, push_value=push.push_value)
-                await rp.push(self.task, task_result)
+            # if self.task.push_id:
+            #     push = await PushMapper.get_by_id(self.task.push_id)
+            #     rp = ReportPush(push_type=push.push_type, push_value=push.push_value)
+            #     await rp.push(self.task, task_result)
 
     async def __run_apis(self, apis: List[Interface], task_result: InterfaceTaskResult, env: InterfaceEnv = None):
         """执行关联api"""
@@ -185,3 +186,31 @@ class TaskRunner:
             else:
                 task_result.failNumber += 1
             await self.starter.clear_logs()
+
+
+async def aps_run_task(job: AutoJob):
+    """
+    调度任务执行
+    :param job: 任务
+    """
+    runner = TaskRunner(APIStarter(StarterEnum.RoBot))
+    if not pool.is_running:
+        raise RuntimeError("任务池未启动")
+
+
+    for task_id in job.job_task_ids:
+        await pool.submit(
+            func=runner.handler_execute_task,
+            name=job.job_name,
+            kwargs={
+                "taskId": task_id,
+                "env_id": job.job_kwargs.get("env_id"),
+                "options": ["API", "CASE"]
+            }
+        )
+
+
+__call__ = (
+    "run_task",
+    "TaskRunner"
+)

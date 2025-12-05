@@ -4,9 +4,7 @@ from app.model.base import User
 from enums import StarterEnum
 from utils import MyLoguru
 from app.ws import async_io
-
 log = MyLoguru().get_logger()
-
 
 class SocketSender:
     _event: str
