@@ -19,5 +19,6 @@ class Man1(Master):
 
 
 
+
 if __name__ == '__main__':
     m1 = Man1(name="cyq", age=18)
