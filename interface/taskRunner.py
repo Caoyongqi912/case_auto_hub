@@ -72,11 +72,13 @@ class TaskRunner:
         :return:
         """
         env = None
+        if options is None:
+            options = [API, CASE]
         if isinstance(task_id, int):
             self.task = await InterfaceTaskMapper.get_by_id(task_id)
         else:
             self.task = await InterfaceTaskMapper.get_by_uid(task_id)
-        log.debug(f"running task {self.task} start by {self.starter.username}")
+        log.info(f"running task {self.task} start by {self.starter.username}")
         if env_id:
             env = await EnvMapper.get_by_id(env_id)
 
@@ -204,7 +206,6 @@ class TaskRunner:
         """执行关联case"""
         for case in cases:
             for r in range(retry + 1):
-
                 flag, case_result = await InterFaceRunner(self.starter).run_interface_case(
                     interfaceCaseId=case.id,
                     task=task_result,
@@ -212,6 +213,9 @@ class TaskRunner:
                     error_stop=True  # 任务执行默认True
                 )
                 if flag:
+                    await self.set_process(task_result)
+                    task_result.successNumber += 1
+                    await self.starter.clear_logs()
                     break
                 if r < retry:
                     if retry_interval > 0:
@@ -220,12 +224,9 @@ class TaskRunner:
                     # 删除记录
                     await  InterfaceCaseResultMapper.delete_by_case_id(case.id)
                     continue
-
+            # 还是失败
             await self.set_process(task_result)
-            if flag:
-                task_result.successNumber += 1
-            else:
-                task_result.failNumber += 1
+            task_result.failNumber += 1
             await self.starter.clear_logs()
 
 

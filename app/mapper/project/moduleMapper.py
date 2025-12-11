@@ -48,7 +48,6 @@ async def get_subtree_ids(session: AsyncSession, moduleId: int,module_type:int):
             Module.id == moduleId,
             Module.module_type == module_type
         ))
-
         # 递归 CTE：查询所有子节点
         cte = base_query.cte(name='ChildRecords', recursive=True)
         cte = cte.union_all(

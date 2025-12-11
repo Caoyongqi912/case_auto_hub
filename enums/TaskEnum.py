@@ -1,7 +1,4 @@
 import enum
-from enum import StrEnum
-from app.model.base import User
-
 
 class TaskStatus:
     RUNNING = "RUNNING"
@@ -21,14 +18,16 @@ class StarterEnum(enum.Enum):
 
 
 
-class TriggerType(StrEnum):
-    Once = "once"  # 单次执行
-    Cron = "cron"  # 定时执行
-    FixedRate = "fixedRate"  # 固定频率
 
 
-class ExecuteStrategy(StrEnum):
-    Parallel = "parallel"  # 并行
-    Skip = "skip"  # 跳过
-    Wait = "wait"  # 等待
 
+class TriggerTypeEnum(enum.IntEnum):
+    ONCE = 1
+    CRON = 2
+    FIXED_RATE = 3
+
+
+class ExecuteStrategyEnum(enum.IntEnum):
+    Skip = 1
+    Parallel = 2
+    Wait = 3
