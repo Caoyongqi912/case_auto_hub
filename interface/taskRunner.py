@@ -56,7 +56,8 @@ class TaskRunner:
         else:
             task_result.failNumber += 1
 
-    async def handler_execute_task(self, task_id: int | str,
+    async def handler_execute_task(self,
+                                   task_id: int | str,
                                    env_id: int = None,
                                    retry: int = 0,
                                    retry_interval: int = 0,
@@ -206,17 +207,19 @@ class TaskRunner:
         """执行关联case"""
         for case in cases:
             for r in range(retry + 1):
+                await self.set_process(task_result)
+
                 flag, case_result = await InterFaceRunner(self.starter).run_interface_case(
                     interfaceCaseId=case.id,
                     task=task_result,
                     env_id=env,
                     error_stop=True  # 任务执行默认True
                 )
+                # 成功了 直接跳过
                 if flag:
-                    await self.set_process(task_result)
                     task_result.successNumber += 1
-                    await self.starter.clear_logs()
                     break
+                # 重试判断
                 if r < retry:
                     if retry_interval > 0:
                         await asyncio.sleep(retry_interval)
@@ -224,10 +227,9 @@ class TaskRunner:
                     # 删除记录
                     await  InterfaceCaseResultMapper.delete_by_case_id(case.id)
                     continue
-            # 还是失败
-            await self.set_process(task_result)
-            task_result.failNumber += 1
-            await self.starter.clear_logs()
+                else:
+                    task_result.failNumber += 1
+                await self.starter.clear_logs()
 
 
 __call__ = (
