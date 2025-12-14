@@ -36,8 +36,10 @@ class AutoJob(BaseModel):
     job_notify_type = Column(INTEGER, nullable=True, comment="是否推送")
     job_notify_on = Column(JSON, nullable=True, comment="通知时机")
     job_notify_id = Column(INTEGER, ForeignKey("push_config.id", ondelete="SET NULL"), nullable=True)
+    job_notify_name = Column(String(29),nullable=True,comment="推送名" )
 
     module_id = Column(INTEGER, ForeignKey("module.id", ondelete="CASCADE"))
+
     project_id = Column(INTEGER, ForeignKey("project.id", ondelete="CASCADE"))
     job_running_status = Column(INTEGER, nullable=False, default=0, comment="运行状态")
 

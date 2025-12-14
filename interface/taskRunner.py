@@ -72,6 +72,7 @@ class TaskRunner:
         :param retry_interval
         :return:
         """
+
         env = None
         if options is None:
             options = [API, CASE]
@@ -83,7 +84,7 @@ class TaskRunner:
         if env_id:
             env = await EnvMapper.get_by_id(env_id)
 
-        task_result = await InterfaceAPIWriter.init_interface_task(self.task,
+        task_result = await InterfaceAPIWriter.init_interface_task_result(self.task,
                                                                    starter=self.starter,
                                                                    env=env)
 

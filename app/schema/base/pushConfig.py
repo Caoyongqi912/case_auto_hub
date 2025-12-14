@@ -25,3 +25,9 @@ class OptPushSchema(PushConfigSchema):
 
 class PagePushSchema(PushConfigSchema, PageSchema):
     ...
+
+
+class QueryPushScheme(BaseModel):
+    project_id:int
+    push_name: str | None = None
+    push_type: int | None = None
