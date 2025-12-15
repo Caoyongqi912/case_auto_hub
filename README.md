@@ -265,3 +265,10 @@
     - ![caseContentResult.png](resource/caseContentResult.png)
   - 日志不变 （优化了些细节）
     - ![caseContentLog.png](resource/caseContentLog.png)
+
+- 2025-12-15:
+  - task 与 定时任务分离 (API 大致完成) 
+  - 新增 JOB 模型
+  - 新增 任务 池
+  - 重写 apsheduler
+  - ![job.png](./resource/job.png)
