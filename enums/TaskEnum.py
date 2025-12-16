@@ -28,3 +28,10 @@ class ExecuteStrategyEnum(enum.IntEnum):
     Skip = 1
     Parallel = 2
     Wait = 3
+
+
+
+class PushEnum(enum.IntEnum):
+    Email = 1
+    DingTalk = 2
+    WeWork = 3

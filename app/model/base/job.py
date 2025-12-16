@@ -50,6 +50,21 @@ class AutoJob(BaseModel):
         if self.job_trigger_type == TriggerTypeEnum.FIXED_RATE:
             return {self.job_execute_interval_unit: self.job_execute_interval}
         elif self.job_trigger_type == TriggerTypeEnum.CRON:
-            return {"cron":self.job_execute_cron}
+            return {"cron": self.job_execute_cron}
         elif self.job_trigger_type == TriggerTypeEnum.ONCE:
-            return {"run_date":self.job_execute_time}
+            return {"run_date": self.job_execute_time}
+
+    @property
+    def notify_id(self):
+        """
+        推送信息
+        """
+        if self.job_notify_type == 0:
+            # return {
+            #     "type": self.job_notify_type,
+            #     "on": self.job_notify_on,
+            #     "id": self.job_notify_id,
+            #     "name": self.job_notify_name,
+            # }
+            return self.job_notify_id
+        return None

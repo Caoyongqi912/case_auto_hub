@@ -1,1 +1,0 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2025/3/10# @Author : cyq# @File : PushEnum# @Software: PyCharm# @Desc:class PushEnum:    Email = 1    DingTalk = 2    WeWork = 3

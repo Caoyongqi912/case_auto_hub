@@ -6,6 +6,7 @@ from app.mapper.interface import InterfaceTaskMapper, InterfaceCaseResultMapper
 from app.mapper.project.env import EnvMapper
 from app.model.base import EnvModel
 from app.model.interface import InterfaceModel, InterFaceCaseModel, InterfaceTask, InterfaceTaskResultModel
+from common.notifyManager import NotifyManager
 from enums import InterfaceAPIResultEnum
 from utils import MyLoguru
 from .starter import APIStarter
@@ -62,6 +63,7 @@ class TaskRunner:
                                    retry: int = 0,
                                    retry_interval: int = 0,
                                    options: List[str] = None,
+                                   notify_id: int | None = None
                                    ):
         """
         手动执行任务
@@ -70,9 +72,9 @@ class TaskRunner:
         :param options [API,CASE]
         :param retry
         :param retry_interval
+        :param notify_id
         :return:
         """
-
         env = None
         if options is None:
             options = [API, CASE]
@@ -85,8 +87,8 @@ class TaskRunner:
             env = await EnvMapper.get_by_id(env_id)
 
         task_result = await InterfaceAPIWriter.init_interface_task_result(self.task,
-                                                                   starter=self.starter,
-                                                                   env=env)
+                                                                          starter=self.starter,
+                                                                          env=env)
 
         try:
             task_result.totalNumber = 0
@@ -114,6 +116,16 @@ class TaskRunner:
             else:
                 task_result.result = InterfaceAPIResultEnum.SUCCESS
             await InterfaceAPIWriter.write_interface_task_result(task_result)
+            if notify_id:
+                await self.nodify_report(notify_id, task_result)
+
+    @staticmethod
+    async def nodify_report(notify_id: int, task_result: InterfaceTaskResult):
+        """
+        推送报告
+        """
+        n = NotifyManager(notify_id)
+        await n.push(flag="API", task_result=task_result)
 
     async def __run_apis(self, apis: List[Interface], task_result: InterfaceTaskResult, retry: int = 0,
                          retry_interval: int = 0, env: InterfaceEnv = None):
