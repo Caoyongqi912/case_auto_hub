@@ -30,6 +30,7 @@ class AutoJob(BaseModel):
     job_retry_interval = Column(INTEGER, nullable=True, default=0, comment="重试间隔")
 
     job_executor = Column(String(29), nullable=True, comment="executor")
+    # [{key:x,value:x}]
     job_kwargs = Column(JSON, nullable=True, comment="kwargs")
 
     job_notify_type = Column(INTEGER, nullable=True, comment="是否推送")

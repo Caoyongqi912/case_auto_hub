@@ -1,6 +1,7 @@
 import asyncio
 import time
-from typing import TypeVar, List
+from dataclasses import dataclass
+from typing import TypeVar, List, Dict, Any, Union, Optional
 
 from app.mapper.interface import InterfaceTaskMapper, InterfaceCaseResultMapper
 from app.mapper.project.env import EnvMapper
@@ -16,11 +17,28 @@ from .writer import InterfaceAPIWriter
 log = MyLoguru().get_logger()
 Interface = TypeVar('Interface', bound=InterfaceModel)
 InterfaceCase = TypeVar('InterfaceCase', bound=InterFaceCaseModel)
-
+VARS = TypeVar("VARS", bound=List[Dict[str, Any]] | None)
 InterfaceTaskResult = TypeVar('InterfaceTaskResult', bound=InterfaceTaskResultModel)
 InterfaceEnv = TypeVar("InterfaceEnv", bound=EnvModel)
 CASE = "CASE"
 API = "API"
+
+
+@dataclass
+class TaskParams:
+    """任务执行参数封装"""
+    task_id: Union[int, str]  # 任务Id
+    env_id: Optional[int] = None  # 环境
+    retry: int = 0  # 重试次数
+    retry_interval: int = 0  # 重试间隔
+    options: Optional[List[str]] = None  # 执行选项
+    notify_id: Optional[int] = None  # 推送
+    variables: Optional[VARS] = None  # 变量
+    env: Optional[InterfaceEnv] = None
+
+    def __post_init__(self):
+        if self.options is None:
+            self.options = [API, CASE]
 
 
 class TaskRunner:
@@ -57,56 +75,42 @@ class TaskRunner:
         else:
             task_result.failNumber += 1
 
-    async def handler_execute_task(self,
-                                   task_id: int | str,
-                                   env_id: int = None,
-                                   retry: int = 0,
-                                   retry_interval: int = 0,
-                                   options: List[str] = None,
-                                   notify_id: int | None = None
-                                   ):
+    async def handler_execute_task(self, params: TaskParams):
         """
         手动执行任务
-        :param task_id: 任务Id
-        :param env_id: 环境
-        :param options [API,CASE]
-        :param retry
-        :param retry_interval
-        :param notify_id
+        :params: params
         :return:
         """
-        env = None
-        if options is None:
-            options = [API, CASE]
-        if isinstance(task_id, int):
-            self.task = await InterfaceTaskMapper.get_by_id(task_id)
-        else:
-            self.task = await InterfaceTaskMapper.get_by_uid(task_id)
-        log.info(f"running task {self.task} start by {self.starter.username}")
-        if env_id:
-            env = await EnvMapper.get_by_id(env_id)
 
+        if isinstance(params.task_id, int):
+            self.task = await InterfaceTaskMapper.get_by_id(params.task_id)
+        else:
+            self.task = await InterfaceTaskMapper.get_by_uid(params.task_id)
+        log.info(f"running task {self.task} start by {self.starter.username}")
+        if params.env_id:
+            params.env = await EnvMapper.get_by_id(params.env_id)
         task_result = await InterfaceAPIWriter.init_interface_task_result(self.task,
                                                                           starter=self.starter,
-                                                                          env=env)
+                                                                          env=params.env)
 
         try:
             task_result.totalNumber = 0
-            if API in options:
+            if API in params.options:
                 apis = await InterfaceTaskMapper.query_apis(self.task.id)
                 if apis:
                     task_result.totalNumber += len(apis)
                     await self.__run_apis(apis=apis,
                                           task_result=task_result,
-                                          env=env,
-                                          retry=retry,
-                                          retry_interval=retry_interval)
-            if CASE in options:
+                                          params=params,
+                                          )
+            if CASE in params.options:
                 cases = await InterfaceTaskMapper.query_case(self.task.id)
                 if cases:
                     task_result.totalNumber += len(cases)
-                    await self.__run_cases(cases=cases, task_result=task_result, env=env, retry=retry,
-                                           retry_interval=retry_interval)
+                    await self.__run_cases(cases=cases,
+                                           task_result=task_result,
+                                           params=params,
+                                           )
         except Exception as e:
             log.exception(e)
             raise e
@@ -116,8 +120,8 @@ class TaskRunner:
             else:
                 task_result.result = InterfaceAPIResultEnum.SUCCESS
             await InterfaceAPIWriter.write_interface_task_result(task_result)
-            if notify_id:
-                await self.nodify_report(notify_id, task_result)
+            if params.notify_id:
+                await self.nodify_report(params.notify_id, task_result)
 
     @staticmethod
     async def nodify_report(notify_id: int, task_result: InterfaceTaskResult):
@@ -127,17 +131,15 @@ class TaskRunner:
         n = NotifyManager(notify_id)
         await n.push(flag="API", task_result=task_result)
 
-    async def __run_apis(self, apis: List[Interface], task_result: InterfaceTaskResult, retry: int = 0,
-                         retry_interval: int = 0, env: InterfaceEnv = None):
+    async def __run_apis(self, apis: List[Interface], task_result: InterfaceTaskResult, params: TaskParams):
         """执行关联api"""
         parallel = self.task.parallel
         # 顺序执行
         if parallel == 0:
             return await self.__run_api_by_sequential_execution(apis=apis,
                                                                 task_result=task_result,
-                                                                retry_interval=retry_interval,
-                                                                retry=retry,
-                                                                env=env)
+                                                                params=params
+                                                                )
 
         semaphore = asyncio.Semaphore(parallel)  # 限制并行数量为 parallel
         await self.starter.send(f"并行数量 {parallel}")
@@ -149,9 +151,7 @@ class TaskRunner:
                                                               task_result=task_result,
                                                               semaphore=semaphore,
                                                               lock=lock,
-                                                              env=env,
-                                                              retry_interval=retry_interval,
-                                                              retry=retry
+                                                              params=params
                                                               )
             )
             tasks.append(task)
@@ -160,24 +160,25 @@ class TaskRunner:
     async def __run_api_by_sequential_execution(self,
                                                 apis: List[Interface],
                                                 task_result: InterfaceTaskResult,
-                                                retry: int = 0,
-                                                retry_interval: int = 0,
-                                                env: InterfaceEnv = None):
+                                                params: TaskParams
+                                                ):
         """
         顺序执行
         :param apis
         :param task_result
-        :param env
-        :param retry 重试
-        :param retry_interval 重试间隔
+
         """
         for api in apis:
-            flag: bool = await InterFaceRunner(self.starter).run_interface_by_task(
+            runner = InterFaceRunner(self.starter)
+            if params.variables:
+                await self.starter.send(f"添加变量 {params.variables}")
+                await runner.vars.add_vars(params.variables)
+            flag: bool = await runner.run_interface_by_task(
                 interface=api,
                 taskResult=task_result,
-                retry_interval=retry_interval,
-                retry=retry,
-                env=env
+                retry_interval=params.retry_interval,
+                retry=params.retry,
+                env=params.env
             )
             await self.write_process_result(flag, task_result)
             await self.starter.clear_logs()
@@ -187,26 +188,27 @@ class TaskRunner:
                                                        task_result: InterfaceTaskResult,
                                                        semaphore: asyncio.Semaphore,
                                                        lock: asyncio.Lock,
-                                                       retry: int = 0,
-                                                       retry_interval: int = 0,
-                                                       env: InterfaceEnv = None):
+                                                       params: TaskParams
+                                                       ):
         """
         执行单个 API，限制并行数量，并保护共享资源
         :param api 待执行API
         :param task_result 任务结果
         :param semaphore 信号
         :param lock 锁
-        :param retry 重试
-        :param retry_interval 重试间隔
-        :param env 执行环境
         """
         async with semaphore:  # 限制并行数量
-            flag: bool = await InterFaceRunner(self.starter).run_interface_by_task(
+            runner = InterFaceRunner(self.starter)
+            if params.variables:
+                await self.starter.send(f"添加变量 {params.variables}")
+                await runner.vars.add_vars(params.variables)
+
+            flag: bool = await runner.run_interface_by_task(
                 interface=api,
                 taskResult=task_result,
-                retry=retry,
-                retry_interval=retry_interval,
-                env=env
+                retry=params.retry,
+                retry_interval=params.retry_interval,
+                env=params.env
             )
             # 使用锁保护共享资源的修改
             async with lock:
@@ -214,18 +216,19 @@ class TaskRunner:
             await self.starter.clear_logs()
 
     async def __run_cases(self, cases: List[InterfaceCase], task_result: InterfaceTaskResult,
-                          retry: int = 0,
-                          retry_interval: int = 0,
-                          env: InterfaceEnv = None):
+                          params: TaskParams):
         """执行关联case"""
         for case in cases:
-            for r in range(retry + 1):
+            for r in range(params.retry + 1):
                 await self.set_process(task_result)
-
-                flag, case_result = await InterFaceRunner(self.starter).run_interface_case(
+                case_runner = InterFaceRunner(self.starter)
+                if params.variables:
+                    await self.starter.send(f"添加变量 {params.variables}")
+                    await case_runner.vars.add_vars(params.variables)
+                flag, case_result = await case_runner.run_interface_case(
                     interfaceCaseId=case.id,
                     task=task_result,
-                    env_id=env,
+                    env_id=params.env,
                     error_stop=True  # 任务执行默认True
                 )
                 # 成功了 直接跳过
@@ -233,9 +236,9 @@ class TaskRunner:
                     task_result.successNumber += 1
                     break
                 # 重试判断
-                if r < retry:
-                    if retry_interval > 0:
-                        await asyncio.sleep(retry_interval)
+                if r < params.retry:
+                    if params.retry_interval > 0:
+                        await asyncio.sleep(params.retry_interval)
                     await self.starter.send(f"业务用例 {case} 失败  第 {r + 1} 次重试")
                     # 删除记录
                     await  InterfaceCaseResultMapper.delete_by_case_id(case.id)
@@ -246,5 +249,6 @@ class TaskRunner:
 
 
 __call__ = (
-    "TaskRunner"
+    "TaskRunner",
+    "TaskParams"
 )
