@@ -15,8 +15,8 @@ class AutoJob(BaseModel):
     job_enabled = Column(BOOLEAN, nullable=False, default=True, comment="是否启用")
     job_trigger_type = Column(INTEGER, nullable=True, comment="trigger_type")
 
-    job_env_id = Column(INTEGER, nullable=False, comment="环境id")
-    job_env_name = Column(String(250), nullable=False, comment="环境名")
+    job_env_id = Column(INTEGER, nullable=True, comment="环境id")
+    job_env_name = Column(String(250), nullable=True, comment="环境名")
 
     job_execute_strategy = Column(INTEGER, nullable=True, comment="执行策略")
     # 执行时间。仅当trigger_type为once 有效
