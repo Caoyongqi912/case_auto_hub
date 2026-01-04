@@ -143,15 +143,16 @@ class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
             raise e
 
     @classmethod
-    async def query_apis(cls, groupId: int) -> List[InterfaceModel]:
+    async def query_apis(cls, groupId: int, session: AsyncSession = None) -> Sequence[InterfaceModel]:
         """
         查询关联api
         :param groupId:
+        :param session:
         :return:
         """
         try:
-            async with async_session() as session:
-                result = await session.execute(
+            async def exec_(ss: AsyncSession):
+                result = await ss.execute(
                     select(InterfaceModel).join(
                         GroupApiAssociation,
                         GroupApiAssociation.api_id == InterfaceModel.id
@@ -161,6 +162,13 @@ class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
                 )
                 apis = result.scalars().all()
                 return apis
+
+            if session:
+                return await exec_(session)
+            else:
+
+                async with async_session() as session:
+                    return await exec_(session)
         except Exception as e:
             raise e
 
