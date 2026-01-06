@@ -48,7 +48,7 @@ class StatisticsMapper:
                             func.count().label("total_num"),  # 总数量
                             func.sum(case((InterfaceTaskResultModel.result == "SUCCESS", 1), else_=0)).label(
                                 "success_num"),  # 成功数量
-                            func.sum(case((InterfaceTaskResultModel.result == "FAIL", 1), else_=0)).label("fail_num")
+                            func.sum(case((InterfaceTaskResultModel.result == "ERROR", 1), else_=0)).label("fail_num")
                             # 失败数量
                         ).where(
                             InterfaceTaskResultModel.runDay >= GenerateTools.get_date_days_ago(n)
@@ -98,9 +98,9 @@ class StatisticsMapper:
                         select(
                             InterfaceTaskResultModel.runDay.label("date"),
                             func.count().label("total_num"),  # 总数量
-                            func.sum(case((InterfaceTaskResultModel.status == "SUCCESS", 1), else_=0)).label(
+                            func.sum(case((InterfaceTaskResultModel.result == "SUCCESS", 1), else_=0)).label(
                                 "success_num"),  # 成功数量
-                            func.sum(case((InterfaceTaskResultModel.status == "FAIL", 1), else_=0)).label("fail_num")
+                            func.sum(case((InterfaceTaskResultModel.result == "FAIL", 1), else_=0)).label("fail_num")
                         ).where(
                             InterfaceTaskResultModel.runDay == date
                         )
@@ -109,9 +109,9 @@ class StatisticsMapper:
                         select(
                             PlayTaskResult.run_day.label("date"),
                             func.count().label("total_num"),  # 总数量
-                            func.sum(case((PlayTaskResult.status == "SUCCESS", 1), else_=0)).label(
+                            func.sum(case((PlayTaskResult.result == "SUCCESS", 1), else_=0)).label(
                                 "success_num"),  # 成功数量
-                            func.sum(case((PlayTaskResult.status == "FAIL", 1), else_=0)).label("fail_num")
+                            func.sum(case((PlayTaskResult.result == "FAIL", 1), else_=0)).label("fail_num")
                         ).where(
                             PlayTaskResult.run_day == date
                         )
