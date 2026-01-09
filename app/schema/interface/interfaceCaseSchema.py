@@ -74,10 +74,9 @@ class AssociationApiSchema(BaseModel):
 
 
 class UpdateCaseContentAssert(BaseModel):
-    id: int
-    assert_key: str | None
-    assert_value: str | None
-    assert_type: int | None = None
+    assert_key: str
+    assert_value: str
+    assert_type: int
 
 
 class AddInterfaceCaseCommonGROUPSchema(BaseModel):
@@ -142,6 +141,7 @@ class UpdateCaseContentStepSchema(BaseModel):
     enable: bool = None
     api_wait_time: int = None
     api_script_text: str = None
+    api_assert_list: List[UpdateCaseContentAssert] = None
 
 
 class AddCaseContentStepSchema(BaseModel):
