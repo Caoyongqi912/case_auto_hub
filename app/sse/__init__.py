@@ -68,6 +68,7 @@ class SimpleSSE:
     def __init__(self):
         self.user_queues = {}
 
+
     async def connect_user(self, user_id: str):
         """用户连接"""
         if user_id not in self.user_queues:
