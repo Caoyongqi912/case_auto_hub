@@ -25,6 +25,7 @@ __all__ = [
     "AssociationApiSchema"
 ]
 
+from app.schema.interface.interfaceApiSchema import IBeforeSqlExtracts
 from enums import ModuleEnum
 
 
@@ -135,6 +136,13 @@ class UpdateConditionSchema(BaseModel):
     condition_operator: int
 
 
+class UpdateDBSchema(BaseModel):
+    id: int
+    sql_text: str | None = None
+    sql_extracts: List[IBeforeSqlExtracts] | None = None
+    db_id: int | None = None
+
+
 class UpdateCaseContentStepSchema(BaseModel):
     id: int
     content_name: str | None = None
@@ -150,3 +158,4 @@ class AddCaseContentStepSchema(BaseModel):
     enable: bool = None
     api_wait_time: int = None
     api_script_text: str = None
+    api_assert_list: List[UpdateCaseContentAssert] = None
