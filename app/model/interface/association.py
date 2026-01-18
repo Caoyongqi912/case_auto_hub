@@ -75,15 +75,18 @@ class ConditionAPIAssociation(base):
         return f"<ConditionAPIAssociation(condition_id={self.condition_id}, api_id={self.api_id}, step_order={self.step_order}) />"
 
 
-class ContentAssertAssociation(base):
+
+
+class LoopAPIAssociation(base):
     """
-    接口 断言 中间表
+    接口 Loop 关系
     """
-    __tablename__ = "interface_content_assert_association"
-    condition_id = Column(INTEGER, ForeignKey('interface_condition.id', ondelete="CASCADE"), primary_key=True)
-    interface_assert_id = Column(INTEGER, ForeignKey('interface_content_assert.id', ondelete="CASCADE"),
-                                 primary_key=True)
+    __tablename__ = "interface_loop_association"
+
+    loop_id = Column(INTEGER, ForeignKey('interface_loop.id', ondelete="CASCADE"), primary_key=True)
+    api_id = Column(INTEGER, ForeignKey('interface.id', ondelete="CASCADE"), primary_key=True)
     step_order = Column(INTEGER)
 
     def __repr__(self):
-        return f"<ContentAssertAssociation(condition_id={self.condition_id}, interface_assert_id={self.interface_assert_id}, step_order={self.step_order}) />"
+        return f"<LoopAPIAssociation(loop_id={self.loop_id}, api_id={self.api_id}, step_order={self.step_order}) />"
+

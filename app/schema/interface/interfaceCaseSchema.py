@@ -1,4 +1,7 @@
-from typing import List
+import json
+from typing import List, Union
+
+from pydantic.v1 import root_validator
 
 from app.schema import PageSchema
 from pydantic import BaseModel
@@ -27,6 +30,7 @@ __all__ = [
 
 from app.schema.interface.interfaceApiSchema import IBeforeSqlExtracts
 from enums import ModuleEnum
+from enums.CaseEnum import LoopTypeEnum
 
 
 class InterfaceCaseSchema(BaseModel):
@@ -141,6 +145,71 @@ class UpdateDBSchema(BaseModel):
     sql_text: str | None = None
     sql_extracts: List[IBeforeSqlExtracts] | None = None
     db_id: int | None = None
+
+
+class LoopCondition(BaseModel):
+    key: str
+    value: str
+    operator: int
+
+
+class AssociationLoopSchema(BaseModel):
+    case_id: int
+    loop_type: Union[int] = None
+    loop_interval: Union[int] = None
+    loop_times: Union[int] = None
+    loop_items: Union[str] = None
+    loop_item_key: Union[str] = None
+
+    loop_condition: Union[LoopCondition] = None
+    max_loop: Union[int] = None
+
+    @root_validator(pre=True)
+    def validate_loop_type(cls, values):
+        lt = values.get("loop_type")
+
+        match lt:
+            case LoopTypeEnum.LoopItems:
+                loop_items = values.get("loop_items")
+                loop_item_key = values.get("loop_item_key")
+                if loop_items is None or (isinstance(loop_items, str) and not loop_items.strip()):
+                    raise ValueError("loop_items 不能为空")
+                if loop_item_key is None:
+                    raise ValueError("loop_item_key 不能为空")
+                # 尝试解析为JSON或逗号分隔的列表
+                try:
+                    # 先尝试解析为JSON
+                    items = json.loads(loop_items)
+                    if not items:  # 空列表或空对象
+                        raise ValueError("loop_items 不能为空列表")
+                except json.JSONDecodeError:
+                    # 如果不是JSON，检查是否是逗号分隔的列表
+                    items = [item.strip() for item in loop_items.split(',') if item.strip()]
+                    if not items:
+                        raise ValueError("loop_items 必须包含至少一个有效的项")
+            case LoopTypeEnum.LoopTimes:
+                loop_times = values.get("loop_times")
+                if loop_times is None or isinstance(loop_times, int):
+                    raise ValueError("loop_times 不能为空")
+            case LoopTypeEnum.LoopCondition:
+                # 当 loop_type 为 WhileCondition 时，验证 loop_condition
+                loop_condition = values.get("loop_condition")
+                max_loop = values.get("max_loop")
+
+                if loop_condition is None:
+                    raise ValueError("loop_condition 不能为空")
+
+                if max_loop is None:
+                    raise ValueError("max_loop 不能为空")
+                # 如果提供的是字典，验证它
+                if isinstance(loop_condition, dict):
+                    try:
+                        # 尝试创建 LoopCondition 实例来验证
+                        LoopCondition(**loop_condition)
+                    except Exception as e:
+                        raise ValueError(f"无效的 loop_condition: {e}")
+
+        return values
 
 
 class UpdateCaseContentStepSchema(BaseModel):
