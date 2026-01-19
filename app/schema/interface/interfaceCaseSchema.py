@@ -140,7 +140,7 @@ class UpdateDBSchema(BaseModel):
 class LoopCondition(BaseModel):
     key: str
     value: str
-    operator: int
+    operate: int
 
 
 class AssociationLoopSchema(BaseModel):
