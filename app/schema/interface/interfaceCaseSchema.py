@@ -1,33 +1,8 @@
 import json
 from typing import List, Union
-
 from pydantic.v1 import root_validator
-
 from app.schema import PageSchema
 from pydantic import BaseModel
-
-__all__ = [
-    "InterfaceCaseSchema",
-    "InsertInterfaceCaseBaseInfoSchema",
-    "OptionInterfaceCaseSchema",
-    "ExecuteInterfaceCaseSchema",
-    "PageInterfaceCaseSchema",
-    "AssociationApisSchema",
-    "AddInterfaceCaseCommonGROUPSchema",
-    "AddInterfaceApi2Case",
-    "RemoveCaseContentSchema",
-    "CopyContentStepSchema",
-    "ReorderContentStepSchema",
-    "AssociationConditionSchema",
-    "UpdateConditionSchema",
-    "AssociationConditionAPISchema",
-    "RemoveAssociationConditionAPISchema",
-    "UpdateCaseContentStepSchema",
-    "AddCaseContentStepSchema",
-    "UpdateCaseContentAssert",
-    "AssociationApiSchema"
-]
-
 from app.schema.interface.interfaceApiSchema import IBeforeSqlExtracts
 from enums import ModuleEnum
 from enums.CaseEnum import LoopTypeEnum
@@ -113,8 +88,23 @@ class AssociationConditionAPISchema(BaseModel):
     interface_id_list: List[int]
 
 
+class AssociationLoopAPISchema(BaseModel):
+    loop_id: int
+    interface_id_list: List[int]
+
+
+class AssociationLoopAPISchema(BaseModel):
+    loop_id: int
+    interface_id_list: List[int]
+
+
 class RemoveAssociationConditionAPISchema(BaseModel):
     condition_id: int
+    interface_id: int
+
+
+class RemoveAssociationLoopAPISchema(BaseModel):
+    loop_id: int
     interface_id: int
 
 
@@ -155,7 +145,7 @@ class LoopCondition(BaseModel):
 
 class AssociationLoopSchema(BaseModel):
     case_id: int
-    loop_type: Union[int] = None
+    loop_type: int
     loop_interval: Union[int] = None
     loop_times: Union[int] = None
     loop_items: Union[str] = None
@@ -210,6 +200,16 @@ class AssociationLoopSchema(BaseModel):
                         raise ValueError(f"无效的 loop_condition: {e}")
 
         return values
+
+
+class UpdateLoopSchema(AssociationLoopSchema):
+    case_id: Union[ int] = None
+    id: int
+    loop_type: int
+    loop_interval: Union[int] = None
+    loop_times: Union[int] = None
+    loop_items: Union[str] = None
+    loop_item_key: Union[str] = None
 
 
 class UpdateCaseContentStepSchema(BaseModel):

@@ -53,6 +53,7 @@ class ExecResponseExtract:
                 case ExtraEnum.JSONPATH:
                     return await jp.value()
         except Exception as e:
+            log.exception(e)
             log.error(f"Failed to extract JSON value: {e}")
             return None
 
