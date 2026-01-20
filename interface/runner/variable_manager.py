@@ -1,0 +1,43 @@
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2026/1/20
+# @Author : cyq
+# @File : variable_manager
+# @Software: PyCharm
+# @Desc: 变量管理器
+
+from typing import Any, Dict, List
+
+from utils.variableTrans import VariableTrans
+from utils import log
+
+
+class VariableManager:
+    """变量管理器"""
+    
+    def __init__(self):
+        self.vars = VariableTrans()
+    
+    async def clear(self):
+        """清空变量"""
+        await self.vars.clear()
+    
+    async def get_vars(self) -> Dict[str, Any]:
+        """获取所有变量"""
+        return self.vars()
+    
+    async def add_vars(self, data: List[Dict[str, Any]] | Dict[str, Any]):
+        """添加变量"""
+        await self.vars.add_vars(data)
+    
+    async def add_var(self, key: str, value: Any):
+        """添加单个变量"""
+        await self.vars.add_var(key, value)
+    
+    async def trans(self, target: Any) -> Any:
+        """变量转换"""
+        return await self.vars.trans(target)
+    
+    async def get_var(self, key: str):
+        """获取变量值"""
+        return await self.vars.get_var(key)
