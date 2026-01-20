@@ -1,18 +1,15 @@
 import asyncio
 import copy
 import json
-from typing import List, Dict, Any, Mapping, TypeVar, Tuple
+from typing import List, Dict, Any, Mapping, Tuple, Union
 from httpx import Response
 from app.mapper.interface.interfaceGroupMapper import InterfaceGroupMapper
 from app.mapper.interface.interfaceVarsMapper import InterfaceVarsMapper
 from app.mapper.project.dbConfigMapper import DbConfigMapper
 from app.mapper.project.env import EnvMapper
-from app.model.base import EnvModel
-from app.model.interface import InterfaceModel, InterfaceCaseResultModel, InterFaceCaseModel, InterfaceTaskResultModel, \
-    InterfaceVariables, InterfaceResultModel
-from app.model.interface.InterfaceCaseStepContent import InterfaceCaseStepContent, InterfaceCondition, \
-    InterfaceLoopModal
-from app.model.interface.interfaceResultModel import InterfaceGroupResult, InterfaceCaseStepContentResult
+from app.model.interface import InterfaceVariables, InterfaceResultModel, InterFaceCaseModel
+from app.model.interface.InterfaceCaseStepContent import InterfaceCaseStepContent, InterfaceCondition
+from app.model.interface.interfaceResultModel import InterfaceGroupResult
 from enums import InterfaceExtractTargetVariablesEnum, InterfaceResponseStatusCodeEnum, InterfaceAPIResultEnum, \
     InterfaceCaseErrorStep
 from enums.CaseEnum import CaseStepContentType, LoopTypeEnum
@@ -37,7 +34,7 @@ class InterFaceRunner:
     DEFAULT_CUSTOM_ENV_ID = 99999
     __slots__ = ("starter", "vars", "sender")
 
-    def __init__(self, starter: APIStarter | UIStarter):
+    def __init__(self, starter: Union[APIStarter, UIStarter]):
         self.starter = starter
         self.vars = VariableTrans()
         self.sender = HttpxMiddleware(self.vars, self.starter)
@@ -802,15 +799,11 @@ class InterFaceRunner:
             _extracted_vars = exe.execute(script)
             await self.vars.add_vars(_extracted_vars)
             await self.starter.send(f"🫳🫳  脚本 = {json.dumps(_extracted_vars, ensure_ascii=False)}")
-            _vars = [
-                {
-                    InterfaceExtractTargetVariablesEnum.KEY: k,
-                    InterfaceExtractTargetVariablesEnum.VALUE: v,
-                    InterfaceExtractTargetVariablesEnum.Target: target
-                }
-                for k, v in _extracted_vars.items()
-            ]
-            return _vars
+            return [{
+                InterfaceExtractTargetVariablesEnum.KEY: k,
+                InterfaceExtractTargetVariablesEnum.VALUE: v,
+                InterfaceExtractTargetVariablesEnum.Target: target
+            } for k, v in _extracted_vars.items()]
         return []
 
     async def __exec_before_params(self, before_params: List[Dict[str, Any]] = None):
@@ -862,7 +855,7 @@ class InterFaceRunner:
         await self.starter.send(f"🫳🫳    数据库读取 = {json.dumps(res, ensure_ascii=False)}")
 
         if res:
-            _vars = [
+            return  [
                 {
                     InterfaceExtractTargetVariablesEnum.KEY: k,
                     InterfaceExtractTargetVariablesEnum.VALUE: v,
@@ -870,7 +863,6 @@ class InterFaceRunner:
                 }
                 for k, v in res.items()
             ]
-            return _vars
         return []
 
     async def __exec_content_assert(self,
@@ -937,10 +929,10 @@ class InterFaceRunner:
         try:
             interfaceCaseVars: List[InterfaceVariables] = await InterfaceVarsMapper.query_by(case_id=interfaceCase.id)
             if interfaceCaseVars:
-                for iar in interfaceCaseVars:
-                    _v = await self.vars.trans(iar.value)
-                    await self.vars.add_vars({iar.key: _v})
-            if self.vars():
+                var_dict = {}
+                for _var in interfaceCaseVars:
+                    var_dict[_var.key] = await self.vars.trans(_var.value)
+                await self.vars.add_vars(var_dict)
                 await self.starter.send(f"🫳🫳 初始化用例变量 = {json.dumps(self.vars(), ensure_ascii=False)}")
         except Exception as e:
             log.error(e)
@@ -951,13 +943,13 @@ class InterFaceRunner:
         """
         try:
             if interface.env_id == self.DEFAULT_CUSTOM_ENV_ID:
-                log.info(f"请求环境 {interface.url}")  # 优先级最高。不进行替换
+                log.info(f"使用自定义环境URL: {interface.url}")
                 return interface.url
             if env is None:  # 兼容UI 等
                 env = await EnvMapper.get_by_id(interface.env_id)
 
             url = f"{env.url}{interface.url}"
-            log.info(f"请求环境 {url}")
+            log.info(f"构建请求URL: {url}")
             return url
         except Exception as e:
             log.error(f"设置请求url失败 = {e}")
