@@ -23,7 +23,7 @@ from utils.execDBScript import ExecDBScript
 from interface.exec import *
 from utils.variableTrans import VariableTrans
 from .middleware import HttpxMiddleware
-from .starter import APIStarter
+from croe.interface.starter import APIStarter
 from .writer import InterfaceAPIWriter, InitInterfaceCaseResult
 from .types import *
 log = MyLoguru().get_logger()
@@ -806,7 +806,7 @@ class InterFaceRunner:
             } for k, v in _extracted_vars.items()]
         return []
 
-    async def __exec_before_params(self, before_params: List[Dict[str, Any]] = None):
+    async def __exec_before_params(self, before_params: List[Dict[str, Any]] = None) -> VARS:
         """处理前置参数
 
         添加到全局变量

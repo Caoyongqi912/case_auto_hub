@@ -4,7 +4,7 @@ from app.mapper.interface.interfaceGroupMapper import InterfaceGroupMapper
 from app.model.base import User
 from app.response import Response
 from app.schema.interface.interfaceGroupSchema import *
-from interface.starter import APIStarter
+from croe.interface.starter import APIStarter
 from interface.runner import InterFaceRunner
 from utils import MyLoguru, log
 

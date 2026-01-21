@@ -10,7 +10,7 @@ from app.model.interface import InterfaceModel, InterFaceCaseModel, InterfaceTas
 from common.notifyManager import NotifyManager
 from enums import InterfaceAPIResultEnum
 from utils import MyLoguru
-from .starter import APIStarter
+from croe.interface.starter import APIStarter
 from .runner import InterFaceRunner
 from .writer import InterfaceAPIWriter
 
