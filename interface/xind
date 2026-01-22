@@ -1,1 +1,0 @@
-interface_case   - content_step1    - api    - => interface   - content_step2    - group_api    => group        - api        - api        - api   - content_step3    - condition    => Condition        - api        - api        - api        - api   - content_step4    - api

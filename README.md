@@ -272,3 +272,6 @@
   - 新增 任务 池
   - 重写 apsheduler
   - ![job.png](./resource/job.png)
+- 20260122:
+  - 接口运行拆分重构
+  - 接口添加执行器 LOOP

@@ -4,8 +4,8 @@ from app.mapper.interface.interfaceGroupMapper import InterfaceGroupMapper
 from app.model.base import User
 from app.response import Response
 from app.schema.interface.interfaceGroupSchema import *
+from croe.interface.runner import InterfaceRunner
 from croe.interface.starter import APIStarter
-from interface.runner import InterFaceRunner
 from utils import MyLoguru, log
 
 LOG = MyLoguru().get_logger()
@@ -84,7 +84,7 @@ async def association_apis(info: AssociationAPIS2GroupSchema, _: User = Depends(
 @router.get("/try", description="关联api")
 async def try_group(groupId: int, envId: int, user: User = Depends(Authentication())):
     _starter = APIStarter(user)
-    resp = await InterFaceRunner(
+    resp = await InterfaceRunner(
         starter=_starter
-    ).try_group(groupId=groupId, env_id=envId)
+    ).try_group(group_id=groupId, env_id=envId)
     return Response.success(resp)

@@ -6,7 +6,7 @@ Logs/
 # C extensions
 *.so
 play_error_shot/
-play/play_error_shot/
+croe/play/play_error_shot/
 # celery
 celerybeat-schedule.*
 # Distribution / packaging

@@ -5,18 +5,20 @@ This file contains guidelines for agentic coding assistants working in the case_
 ## Build / Lint / Test Commands
 
 ### Running the Application
-- **Development mode**: `python run.py` (runs uvicorn with reload)
+- **Development mode**: `python3 run.py` (runs uvicorn with reload on 127.0.0.1:5050)
 - **Production mode**: `gunicorn -c gunicorn_conf.py main:hub`
-- **Docker**: `docker-compose up --build`
+- **Docker**: `docker-compose up --build` (includes MySQL, Redis, and app services)
 
 ### Testing
-- **Run all tests**: `pytest`
-- **Run single test**: `pytest tests/test_file.py::test_function_name`
+- **Run all tests**: `pytest` (pytest 8.4.1 available)
+- **Run single test**: `pytest path/to/test_file.py::test_function_name`
 - **Run with coverage**: `pytest --cov=.`
+- **Note**: No dedicated test directory found - tests appear to be integrated within controller files
 
 ### Dependencies
-- **Install**: `pip install -r requirment.txt` (note the typo in filename)
-- **Python version**: 3.12+
+- **Install**: `pip3 install -r requirment.txt` (note the typo in filename - preserved)
+- **Python version**: 3.11.6 (verified)
+- **Key dependencies**: FastAPI, SQLAlchemy, aiomysql, Redis, APScheduler, Playwright, Loguru
 
 ## Code Style Guidelines
 
@@ -105,7 +107,7 @@ class CustomError(BaseError):
 - Use `to_dict(exclude=...)` method for serialization
 
 ```python
-from app.model.base import BaseModel
+from app.model.basic import BaseModel
 from sqlalchemy import Column, INTEGER, String
 
 class MyModel(BaseModel):
@@ -165,6 +167,7 @@ async def action(data: CreateSchema, user: User = Depends(Authentication())):
 - Use `from utils import log` (MyLoguru instance)
 - Levels: `log.debug()`, `log.info()`, `log.warning()`, `log.error()`
 - Log important operations and errors
+- Logs are written to `logs/` directory with rotation
 
 ### Enums
 - Inherit from `BaseEnum` (extends `IntEnum`) for integer enums
@@ -224,6 +227,9 @@ case_auto_hub/
 - Redis for caching and job storage
 - APScheduler for scheduled tasks
 - Playwright for UI automation
-- Loguru for logging
+- Loguru for logging with custom MyLoguru wrapper
 - No formal linting/formatting configured - maintain consistency with existing code
 - The dependency file is named `requirment.txt` (typo preserved)
+- Python 3.11.6 is the verified version
+- Docker setup includes MySQL 8.0 and Redis 6.0 services
+- Application runs on port 5050 by default
