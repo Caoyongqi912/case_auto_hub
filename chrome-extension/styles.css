@@ -1,0 +1,123 @@
+/* 仅对插件弹窗生效的样式 */
+:root {
+  --primary-color: #4CAF50;
+  --secondary-color: #f1f1f1;
+  --text-color: #333;
+  --error-color: #f44336;
+}
+
+/* 限制样式仅在插件弹窗内生效 */
+.container {
+  font-family: Arial, sans-serif;
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  width: 350px;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.container h1 {
+  font-size: 18px;
+  color: var(--text-color);
+  margin-bottom: 20px;
+  margin-top: 0;
+  text-align: center;
+}
+
+.container h2 {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 10px;
+  margin-top: 20px;
+}
+
+.container .section {
+  margin-bottom: 20px;
+}
+
+.container input[type="text"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+
+.container button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-right: 10px;
+  margin-bottom: 10px;
+}
+
+.container .primary-btn {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.container .secondary-btn {
+  background-color: var(--secondary-color);
+  color: var(--text-color);
+  border: 1px solid #ddd;
+}
+
+.container button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.container .status-section {
+  margin-top: 20px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+.container #statusText {
+  font-size: 12px;
+  color: #666;
+  margin: 0;
+}
+
+/* 悬浮窗样式 */
+.floating-window {
+  position: fixed;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background-color: #4CAF50;
+  color: white;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 999999;
+  cursor: pointer;
+  text-align: center;
+  min-width: 80px;
+}
+
+.floating-window:hover {
+  background-color: #45a049;
+}
+
+.floating-window.recording {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+  }
+}
