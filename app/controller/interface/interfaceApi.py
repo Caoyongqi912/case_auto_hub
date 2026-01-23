@@ -1,8 +1,43 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2024/11/20
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2024/11/20
 # @Author : cyq
 # @File : interfaceApi
 # @Software: PyCharm
-# @Desc: 接口自动化管理API - 提供接口的增删改查、调试、性能测试等功能from fastapi import APIRouter, Depends, BackgroundTasks, Response as FastResponse, Form, UploadFile, Filefrom app.controller import Authenticationfrom app.mapper.interface import InterfaceScriptMapper, InterfaceMapperfrom app.model.base import Userfrom app.response import Responsefrom app.schema.interface import *from app.schema.interface.interfaceApiSchema import TryScriptSchemafrom croe.interface.executor.interface_executor import InterfaceExecutorfrom croe.interface.manager.script_manager import ScriptManagerfrom croe.interface.manager.variable_manager import VariableManagerfrom croe.interface.runner import InterfaceRunnerfrom croe.interface.starter import APIStarterfrom utils import MyLoguru, logfrom utils.curlTrans import CurlConverterfrom common.locust_client import locust_clientfrom utils.fileManager import FileManagerfrom utils import GenerateToolsLOG = MyLoguru().get_logger()router = APIRouter(prefix="/interface", tags=['自动化接口步骤'])API_Exclude_Field = {    "params", "headers", "extracts", "after_script", "asserts", "before_db_id", "before_params", "url"                                                                                                 "before_script",    "before_sql", "before_sql_extracts", "body", "body_type", "connect_timeout",    "follow_redirects"}@router.post("/setInterfaceModule", description="设置接口模块")
+# @Desc: 接口自动化管理API - 提供接口的增删改查、调试、性能测试等功能
+
+from fastapi import APIRouter, Depends, BackgroundTasks, Response as FastResponse, Form, UploadFile, File
+from app.controller import Authentication
+from app.mapper.interface import InterfaceScriptMapper, InterfaceMapper
+from app.model.base import User
+from app.response import Response
+from app.schema.interface import *
+from app.schema.interface.interfaceApiSchema import TryScriptSchema
+from croe.interface.executor.interface_executor import InterfaceExecutor
+from croe.interface.manager.script_manager import ScriptManager
+from croe.interface.manager.variable_manager import VariableManager
+from croe.interface.runner import InterfaceRunner
+from croe.interface.starter import APIStarter
+
+# 项目内部导入 - 工具类
+from utils import MyLoguru
+from utils.curlTrans import CurlConverter
+from common.locust_client import locust_client
+from utils.fileManager import FileManager
+from utils import GenerateTools
+
+log = MyLoguru().get_logger()
+router = APIRouter(prefix="/interface", tags=['自动化接口步骤'])
+
+API_EXCLUDE_FIELDS = {
+    "params", "headers", "extracts", "after_script", "asserts", 
+    "before_db_id", "before_params", "url", "before_script",
+    "before_sql", "before_sql_extracts", "body", "body_type", 
+    "connect_timeout", "follow_redirects"
+}
+
+
+@router.post("/setInterfaceModule", description="设置接口模块")
 async def set_interface_module(info: SetInterfacesModuleSchema, _=Depends(Authentication())):
     """批量设置接口所属模块"""
     await InterfaceMapper.set_interfaces_modules(**info.model_dump())
@@ -41,7 +76,10 @@ async def debug_script(script_info: TryScriptSchema, _=Depends(Authentication())
         result = script_manager.execute(script_info.script)
         return Response.success(result)
     except Exception as e:
-        return Response.error(f"脚本执行失败: {str(e)}")@router.get("/queryBy", description="条件查询接口")
+        return Response.error(f"脚本执行失败: {str(e)}")
+
+
+@router.get("/queryBy", description="条件查询接口")
 async def query_interfaces_by_conditions(query_params: InterfaceApiFieldSchema, _=Depends(Authentication())):
     """根据指定条件查询接口列表"""
     interfaces = await InterfaceMapper.get_by(**query_params.model_dump(
@@ -59,7 +97,7 @@ async def get_interfaces_by_page(page_params: PageInterfaceApiSchema, _=Depends(
             exclude_none=True
         )
     )
-    return Response.success(data=interfaces, exclude=API_Exclude_Field)
+    return Response.success(data=interfaces, exclude=API_EXCLUDE_FIELDS)
 
 @router.post("/pageNoModule", description="全局分页查询")
 async def get_interfaces_page_all(page_params: PageInterfaceApiSchema, _=Depends(Authentication())):
@@ -71,7 +109,7 @@ async def get_interfaces_page_all(page_params: PageInterfaceApiSchema, _=Depends
             exclude_none=True
         )
     )
-    return Response.success(interfaces, exclude=API_Exclude_Field)
+    return Response.success(interfaces, exclude=API_EXCLUDE_FIELDS)
 
 @router.post("/update", description="更新接口")
 async def update_interface(update_info: UpdateInterfaceApiSchema, auth=Depends(Authentication())):
@@ -96,8 +134,11 @@ async def debug_interface(debug_params: TryAddInterfaceApiSchema, user=Depends(A
     response = await InterfaceRunner(
         starter=APIStarter(user),
     ).try_interface(**debug_params.model_dump())
-    LOG.info(f"接口调试结果: {response}")
-    return Response.success([response])@router.get("/query/script_doc", description="获取脚本文档")
+    log.info(f"接口调试结果: {response}")
+    return Response.success([response])
+
+
+@router.get("/query/script_doc", description="获取脚本文档")
 async def get_script_documentation(_: User = Depends(Authentication())):
     """获取所有可用的接口脚本文档"""
     docs = await InterfaceScriptMapper.query_all()
@@ -110,7 +151,10 @@ async def convert_curl_to_api(curl_params: CurlSchema, _: User = Depends(Authent
         interface_info = CurlConverter(curl_params.script).parse_curl()
         return Response.success(interface_info)
     except Exception:
-        return Response.error("CURL解析失败，请检查命令格式")@router.post("/debugPerf", description="性能测试")
+        return Response.error("CURL解析失败，请检查命令格式")
+
+
+@router.post("/debugPerf", description="性能测试")
 async def start_performance_test(background_tasks: BackgroundTasks,
                                interface_id: int = Form(..., description="接口ID"),
                                perf_user: int = Form(..., description="并发用户数"),
@@ -119,7 +163,16 @@ async def start_performance_test(background_tasks: BackgroundTasks,
                                wait_range: str = Form(..., description="等待时间范围"),
                                use_var: bool = Form(..., description="是否替换变量"),
                                api_file: UploadFile | None = File(None, description="性能测试API文件"),
-                               user: User = Depends(Authentication())):    # 1. 创建性能测试配置    perf_setting = PerfSchema(        interfaceId=interface_id,        perf_user=perf_user,        perf_duration=perf_duration,        perf_spawn_rate=perf_spawn_rate,        wait_range=wait_range    )    log.info(f"性能测试配置: {perf_setting}")
+                               user: User = Depends(Authentication())):
+    # 1. 创建性能测试配置
+    perf_setting = PerfSchema(
+        interfaceId=interface_id,
+        perf_user=perf_user,
+        perf_duration=perf_duration,
+        perf_spawn_rate=perf_spawn_rate,
+        wait_range=wait_range
+    )
+    log.info(f"性能测试配置: {perf_setting}")
     # 2. 获取接口信息
     starter = APIStarter(user)
     interface_executor = InterfaceExecutor(starter=starter, variable_manager=VariableManager())
@@ -130,14 +183,33 @@ async def start_performance_test(background_tasks: BackgroundTasks,
     interface_info['body'] = interface_info.pop('json', None)
     interface_info['data'] = interface_info.pop('content', None)
     api = InterfaceApiSchema(**interface_info)
-    task_id = f"interface_{GenerateTools.uid()}"    # 5. 处理上传文件
+    task_id = f"interface_{GenerateTools.uid()}"
+
+    # 5. 处理上传文件
     if api_file:
         file_name = await FileManager.save_perf_file(
             file=api_file,
             interfaceId=task_id
         )
         perf_setting.file_name = file_name
-        log.info(f"文件已保存: {file_name}")    try:        background_tasks.add_task(            locust_client.start_locust,            api=api,            setting=perf_setting,            perf_api_name=task_id,            io=starter        )        log.info(f"性能测试任务已启动, task_id: {task_id}")    except Exception as e:        raise e    return Response.success(task_id)@router.get("/stopPerf", description="停止性能测试")
+        log.info(f"文件已保存: {file_name}")
+
+    try:
+        background_tasks.add_task(
+            locust_client.start_locust,
+            api=api,
+            setting=perf_setting,
+            perf_api_name=task_id,
+            io=starter
+        )
+        log.info(f"性能测试任务已启动, task_id: {task_id}")
+    except Exception as e:
+        raise e
+
+    return Response.success(task_id)
+
+
+@router.get("/stopPerf", description="停止性能测试")
 async def stop_performance_test(task_id: str, background_tasks: BackgroundTasks, user: User = Depends(Authentication())):
     """停止正在运行的性能测试任务"""
     io = APIStarter(user)
@@ -177,4 +249,4 @@ async def export_interfaces_yaml(module_id: int, _: User = Depends(Authenticatio
             headers={"Content-Disposition": f"attachment; filename=interfaces_{module_id}.yaml"}
         )
     except Exception as e:
-        raise e
+        raise e
