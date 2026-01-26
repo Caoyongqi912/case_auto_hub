@@ -31,7 +31,7 @@ router = APIRouter(prefix="/interface", tags=['自动化接口步骤'])
 
 API_EXCLUDE_FIELDS = {
     "params", "headers", "extracts", "after_script", "asserts", 
-    "before_db_id", "before_params", "url", "before_script",
+    "before_db_id", "before_params", "before_script",
     "before_sql", "before_sql_extracts", "body", "body_type", 
     "connect_timeout", "follow_redirects"
 }
@@ -118,8 +118,7 @@ async def update_interface(update_info: UpdateInterfaceApiSchema, auth=Depends(A
     interface = await InterfaceMapper.update_interface(**update_info.model_dump(
         exclude_unset=True,
     ), user=auth)
-    # 更新关联的数据文件
-    await InterfaceMapper.update_data_file(interface)
+
     return Response.success()
 
 @router.post("/remove", description="删除接口")
