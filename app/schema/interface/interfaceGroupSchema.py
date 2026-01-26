@@ -1,52 +1,64 @@
-from typing import List
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2026/1/26
+# @Author : cyq
+# @File : interfaceGroupSchema
+# @Software: PyCharm
+# @Desc: 接口组相关的Schema定义
+from typing import List, Optional
 
-from pydantic import Field, BaseModel
+from pydantic import BaseModel, Field
 
 from app.schema import PageSchema
 from enums import ModuleEnum
 
 
 class InterfaceApiGroupFieldSchema(BaseModel):
-    """
-    接口步骤字段
-    """
-    id: int | None = None
-    uid: str | None = None
-    name: str | None = None
-    description: str | None = None
-    api_num: int = 0
-    project_id: int | None = None
-    module_id: int | None = None
+    """接口组基础字段模型"""
+    id: Optional[int] = Field(None, description="ID")
+    uid: Optional[str] = Field(None, description="唯一标识")
+    name: Optional[str] = Field(None, description="名称")
+    description: Optional[str] = Field(None, description="描述")
+    api_num: int = Field(0, description="API数量")
+    project_id: Optional[int] = Field(None, description="项目ID")
+    module_id: Optional[int] = Field(None, description="模块ID")
 
 
 class InsertInterfaceGroupSchema(InterfaceApiGroupFieldSchema):
-    name: str
-    description: str
-    project_id: int
-    module_id: int
+    """插入接口组模型"""
+    name: str = Field(..., description="名称")
+    description: str = Field(..., description="描述")
+    project_id: int = Field(..., description="项目ID")
+    module_id: int = Field(..., description="模块ID")
 
 
 class UpdateInterfaceGroupSchema(InterfaceApiGroupFieldSchema):
-    id: int
+    """更新接口组模型"""
+    id: int = Field(..., description="ID")
 
 
 class RemoveInterfaceGroupSchema(InterfaceApiGroupFieldSchema):
-    id: int
+    """删除接口组模型"""
+    id: int = Field(..., description="ID")
 
 
 class PageInterfaceGroupSchema(InterfaceApiGroupFieldSchema, PageSchema):
-    module_type: int = ModuleEnum.API
+    """接口组分页查询模型"""
+    module_type: int = Field(ModuleEnum.API, description="模块类型")
 
 
 class AssociationAPIS2GroupSchema(BaseModel):
-    apiIds: List[int]
-    groupId: int
+    """关联多个API到组模型"""
+    apiIds: List[int] = Field(..., description="API ID列表")
+    groupId: int = Field(..., description="组ID")
 
 
 class AssociationAPI2GroupSchema(BaseModel):
-    apiId: int
-    groupId: int
+    """关联单个API到组模型"""
+    apiId: int = Field(..., description="API ID")
+    groupId: int = Field(..., description="组ID")
 
 
 class InterfaceGroupDetailSchema(BaseModel):
-    groupId: int
+    """接口组详情模型"""
+    groupId: int = Field(..., description="组ID")

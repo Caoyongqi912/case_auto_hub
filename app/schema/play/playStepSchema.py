@@ -1,1 +1,114 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2025/7/3# @Author : cyq# @File : platStepSchema# @Software: PyCharm# @Desc:from typing import Listfrom pydantic import BaseModel, Fieldfrom app.schema import PageSchemafrom enums import ModuleEnumclass PlayStepConditionSchema(BaseModel):    key: str    value: str    operator: intclass PlayStepBasicField(BaseModel):    id: int | None = Field(None)    uid: str | None = Field(None)    name: str | None = Field(None)    description: str | None = Field(None)    method: str | None = Field(None)    locator: str | None = Field(None)    fill_value: str | None = Field(None)    iframe_name: str | None = Field(None)    creator: int | None = Field(None)    creatorName: str | None = Field(None)    new_page: bool = Field(False)    is_ignore: bool = Field(False)    is_common_step: bool | None = Field(False)    db_id: int | None = Field(None)    sql_script: str | None = Field(None)    db_a_or_b: int | None = Field(None)    module_id: int | None = Field(None)    project_id: int | None = Field(None)    condition: PlayStepConditionSchema | None = Field(None)    step_condition_id: int | None = Field(None)    step_condition_order: int | None = Field(None)class InsertPlayStepSchema(PlayStepBasicField):    name: str    description: str    caseId: int | None = Field(None)    module_id: int    project_id: intclass InsertPlayConditionStepSchema(PlayStepBasicField):    stepId: int    name: str    description: strclass ReorderPlayConditionStepsSchema(BaseModel):    stepIds: List[int]class UpdatePlayStepSchema(PlayStepBasicField):    id: intclass RemovePlayStepSchema(BaseModel):    stepId: int    caseId: int | None = Field(None)class CopyPlayCaseStepSchema(BaseModel):    stepId: int    caseId: intclass PagePlayStepSchema(PageSchema):    uid: str | None = Field(None)    name: str | None = Field(None)    method: str | None = Field(None)    creatorName: str | None = Field(None)    is_common_step: bool | int | None = Field(True)    module_type: int = ModuleEnum.UI_STEP    module_id: int | None = Field(None)    project_id: int | None = Field(None)class CopyPlayStepSchema(BaseModel):    stepId: int    is_common_step: bool | None = Field(True)class AssociationStepApiSchema(BaseModel):    stepId: int    apiId: int    interface_a_or_b: int    interface_fail_stop: int
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2025/7/3
+# @Author : cyq
+# @File : playStepSchema
+# @Software: PyCharm
+# @Desc: play步骤相关的Schema定义
+from typing import List, Optional, Union
+
+from pydantic import BaseModel, Field
+
+from app.schema import PageSchema
+from enums import ModuleEnum
+
+
+class PlayStepConditionSchema(BaseModel):
+    """play步骤条件模型"""
+    key: str = Field(..., description="键")
+    value: str = Field(..., description="值")
+    operator: int = Field(..., description="操作符")
+
+
+class PlayStepBasicField(BaseModel):
+    """play步骤基础字段模型"""
+    id: Optional[int] = Field(None, description="ID")
+    uid: Optional[str] = Field(None, description="唯一标识")
+    name: Optional[str] = Field(None, description="名称")
+    description: Optional[str] = Field(None, description="描述")
+    method: Optional[str] = Field(None, description="方法")
+    locator: Optional[str] = Field(None, description="定位器")
+    fill_value: Optional[str] = Field(None, description="填充值")
+    iframe_name: Optional[str] = Field(None, description="iframe名称")
+
+    creator: Optional[int] = Field(None, description="创建者")
+    creatorName: Optional[str] = Field(None, description="创建者名称")
+
+    new_page: bool = Field(False, description="是否新页面")
+    is_ignore: bool = Field(False, description="是否忽略")
+    is_common_step: Optional[bool] = Field(False, description="是否公共步骤")
+
+    db_id: Optional[int] = Field(None, description="数据库ID")
+    sql_script: Optional[str] = Field(None, description="SQL脚本")
+    db_a_or_b: Optional[int] = Field(None, description="数据库A或B")
+
+    module_id: Optional[int] = Field(None, description="模块ID")
+    project_id: Optional[int] = Field(None, description="项目ID")
+
+    condition: Optional[PlayStepConditionSchema] = Field(None, description="条件")
+    step_condition_id: Optional[int] = Field(None, description="步骤条件ID")
+    step_condition_order: Optional[int] = Field(None, description="步骤条件顺序")
+
+
+class InsertPlayStepSchema(PlayStepBasicField):
+    """插入play步骤模型"""
+    name: str = Field(..., description="名称")
+    description: str = Field(..., description="描述")
+    caseId: Optional[int] = Field(None, description="用例ID")
+    module_id: int = Field(..., description="模块ID")
+    project_id: int = Field(..., description="项目ID")
+
+
+class InsertPlayConditionStepSchema(PlayStepBasicField):
+    """插入play条件步骤模型"""
+    stepId: int = Field(..., description="步骤ID")
+    name: str = Field(..., description="名称")
+    description: str = Field(..., description="描述")
+
+
+class ReorderPlayConditionStepsSchema(BaseModel):
+    """重排序play条件步骤模型"""
+    stepIds: List[int] = Field(..., description="步骤ID列表")
+
+
+class UpdatePlayStepSchema(PlayStepBasicField):
+    """更新play步骤模型"""
+    id: int = Field(..., description="步骤ID")
+
+
+class RemovePlayStepSchema(BaseModel):
+    """删除play步骤模型"""
+    stepId: int = Field(..., description="步骤ID")
+    caseId: Optional[int] = Field(None, description="用例ID")
+
+
+class CopyPlayCaseStepSchema(BaseModel):
+    """复制play用例步骤模型"""
+    stepId: int = Field(..., description="步骤ID")
+    caseId: int = Field(..., description="用例ID")
+
+
+class PagePlayStepSchema(PageSchema):
+    """play步骤分页查询模型"""
+    uid: Optional[str] = Field(None, description="唯一标识")
+    name: Optional[str] = Field(None, description="名称")
+    method: Optional[str] = Field(None, description="方法")
+    creatorName: Optional[str] = Field(None, description="创建者名称")
+    is_common_step: Optional[Union[bool, int]] = Field(True, description="是否公共步骤")
+    module_type: int = Field(ModuleEnum.UI_STEP, description="模块类型")
+    module_id: Optional[int] = Field(None, description="模块ID")
+    project_id: Optional[int] = Field(None, description="项目ID")
+
+
+class CopyPlayStepSchema(BaseModel):
+    """复制play步骤模型"""
+    stepId: int = Field(..., description="步骤ID")
+    is_common_step: Optional[bool] = Field(True, description="是否公共步骤")
+
+
+class AssociationStepApiSchema(BaseModel):
+    """关联步骤API模型"""
+    stepId: int = Field(..., description="步骤ID")
+    apiId: int = Field(..., description="API ID")
+    interface_a_or_b: int = Field(..., description="接口A或B")
+    interface_fail_stop: int = Field(..., description="接口失败停止")

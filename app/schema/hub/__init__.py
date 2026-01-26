@@ -1,1 +1,69 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2025/8/4# @Author : cyq# @File : __init__.py# @Software: PyCharm# @Desc:from typing import Listfrom pydantic import BaseModelfrom app.schema import PageSchemafrom enums import ModuleEnumclass CaseStepInfoSchema(BaseModel):    id: int | None = None    step: int    todo: str    exp: strclass CaseHubFields(BaseModel):    case_title: str | None = None    case_level: str | None = None    case_desc: str | None = None    case_mark: str | None = None    case_setup: str | None = None    case_type: int | None = None    module_id: int | None = None    project_id: int | None = None    case_creator: int | None = None    case_info: List[CaseStepInfoSchema] | None = Noneclass InsertCaseSchema(CaseHubFields):    case_title: str    case_level: str    case_setup: str    case_type: int    module_id: int    project_id: int    case_info: List[CaseStepInfoSchema]class UpdateCaseSchema(CaseHubFields):    id: intclass PageCaseSchema(CaseHubFields, PageSchema):    module_type: int = ModuleEnum.CASEclass GetCaseSchema(BaseModel):    caseId: int__all__ = [    "InsertCaseSchema",    "UpdateCaseSchema",    "PageCaseSchema",    "GetCaseSchema"]
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2025/8/4
+# @Author : cyq
+# @File : __init__.py
+# @Software: PyCharm
+# @Desc: hub模块导出
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+from app.schema import PageSchema
+from enums import ModuleEnum
+
+
+class CaseStepInfoSchema(BaseModel):
+    """用例步骤信息模型"""
+    id: Optional[int] = Field(None, description="步骤ID")
+    step: int = Field(..., description="步骤序号")
+    todo: str = Field(..., description="操作步骤")
+    exp: str = Field(..., description="预期结果")
+
+
+class CaseHubFields(BaseModel):
+    """用例中心基础字段模型"""
+    case_title: Optional[str] = Field(None, description="用例标题")
+    case_level: Optional[str] = Field(None, description="用例级别")
+    case_desc: Optional[str] = Field(None, description="用例描述")
+    case_mark: Optional[str] = Field(None, description="用例备注")
+    case_setup: Optional[str] = Field(None, description="用例前置条件")
+    case_type: Optional[int] = Field(None, description="用例类型")
+    module_id: Optional[int] = Field(None, description="模块ID")
+    project_id: Optional[int] = Field(None, description="项目ID")
+    case_creator: Optional[int] = Field(None, description="用例创建者")
+    case_info: Optional[List[CaseStepInfoSchema]] = Field(None, description="用例步骤信息")
+
+
+class InsertCaseSchema(CaseHubFields):
+    """插入用例模型"""
+    case_title: str = Field(..., description="用例标题")
+    case_level: str = Field(..., description="用例级别")
+    case_setup: str = Field(..., description="用例前置条件")
+    case_type: int = Field(..., description="用例类型")
+    module_id: int = Field(..., description="模块ID")
+    project_id: int = Field(..., description="项目ID")
+    case_info: List[CaseStepInfoSchema] = Field(..., description="用例步骤信息")
+
+
+class UpdateCaseSchema(CaseHubFields):
+    """更新用例模型"""
+    id: int = Field(..., description="用例ID")
+
+
+class PageCaseSchema(CaseHubFields, PageSchema):
+    """用例分页查询模型"""
+    module_type: int = Field(ModuleEnum.CASE, description="模块类型")
+
+
+class GetCaseSchema(BaseModel):
+    """获取用例模型"""
+    caseId: int = Field(..., description="用例ID")
+
+
+__all__ = [
+    "InsertCaseSchema",
+    "UpdateCaseSchema",
+    "PageCaseSchema",
+    "GetCaseSchema"
+]
