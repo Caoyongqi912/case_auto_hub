@@ -591,26 +591,17 @@ Smtp_port = 578
 
 ---
 
-## 📄 许可证
 
-本项目采用MIT许可证 - 详见 [LICENSE](LICENSE) 文件
+## 📞 联系我
 
----
-
-## 📞 联系我们
-
-如果您有任何问题或建议，欢迎通过以下方式联系我们：
+如果您有任何问题或建议，欢迎通过以下方式联系我：
 
 - 微信：![微信](resource/wx.png)
-- 邮箱：admin@hub.com
 - GitHub Issues：[提交问题](https://github.com/yourusername/case_auto_hub/issues)
 
 ---
 
 <div align="center">
-
 **如果觉得这个项目对您有帮助，请给我们一个 ⭐️ Star！**
-
-Made with ❤️ by CaseHUB Team
 
 </div>
