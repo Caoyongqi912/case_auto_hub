@@ -53,8 +53,8 @@ class LocalConfig(BaseConfig):
 
     Record_Proxy = False
     MYSQL_SERVER = "127.0.0.1"
-    # MYSQL_PASSWORD = "sdkjfhsdkjhfsdkhfksd"   
-    MYSQL_PASSWORD = "qq23qq"
+    MYSQL_PASSWORD = "sdkjfhsdkjhfsdkhfksd"
+    # MYSQL_PASSWORD = "qq23qq"
     SQLALCHEMY_DATABASE_URI = '-mysql+mysqlconnector://{}:{}@{}:{}/{}'.format(
         'root', MYSQL_PASSWORD, MYSQL_SERVER, BaseConfig.MYSQL_PORT, BaseConfig.MYSQL_DATABASE)
 
