@@ -1,1 +1,52 @@
-version: '3.8'services:  case_auto_hub:    build: .    container_name: case_auto_hub_db    ports:      - "5050:5050"    environment:      - MYSQL_HOST=mysql      - MYSQL_PORT=3306      - MYSQL_USER=root      - MYSQL_PASSWORD=sdkjfhsdkjhfsdkhfksd      - MYSQL_DB=autoHub      - REDIS_HOST=redis      - REDIS_PORT=6379    depends_on:      - mysql      - redis    networks:      - backend  mysql:    image: mysql:8.0    container_name: mysql    environment:      MYSQL_ROOT_PASSWORD: sdkjfhsdkjhfsdkhfksd      MYSQL_DATABASE: autoHub    ports:      - "3306:3306"    volumes:      - mysql-data:/var/lib/mysql    networks:      - backend  redis:    image: redis:6.0    container_name: redis    ports:      - "6379:6379"    networks:      - backendnetworks:  backend:volumes:  mysql-data:
+version: '3.8'
+
+services:
+  case_auto_hub:
+    build: .
+    container_name: case_auto_hub
+    ports:
+      - "5050:5050"
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=sdkjfhsdkjhfsdkhfksd
+      - MYSQL_DB=autoHub
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ENV=docker
+    depends_on:
+      - mysql
+      - redis
+    volumes:
+      - ./script:/app/script
+    networks:
+      - backend
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: sdkjfhsdkjhfsdkhfksd
+      MYSQL_DATABASE: autoHub
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./script/initSQL.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - backend
+
+  redis:
+    image: redis:7.0
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - backend
+
+networks:
+  backend:
+
+volumes:
+  mysql-data:
