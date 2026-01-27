@@ -49,8 +49,6 @@ class LocalConfig(BaseConfig):
     TASK_WORKER_POOL_SIZE = 10
     FILE_AVATAR_PATH = DOMAIN + "/file/avatar/uid="
 
-
-
     Record_Proxy = False
     # 硬编码MySQL配置
     MYSQL_SERVER = "127.0.0.1"
@@ -58,18 +56,15 @@ class LocalConfig(BaseConfig):
     # MYSQL_PASSWORD = "qq23qq"
     MYSQL_DATABASE = 'autoHub'
     MYSQL_PORT: int = 3306
-    
+
     SQLALCHEMY_DATABASE_URI = 'mysql+mysqlconnector://{}:{}@{}/{}'.format(
         'root', MYSQL_PASSWORD, MYSQL_SERVER, MYSQL_DATABASE)
 
     ASYNC_SQLALCHEMY_URI = f'mysql+aiomysql://root:{MYSQL_PASSWORD}' \
                            f'@{MYSQL_SERVER}:{BaseConfig.MYSQL_PORT}/{BaseConfig.MYSQL_DATABASE}'
 
-
     Inter_TASK_URL = f"{DOMAIN}interface/task/detail/taskId=&projectId="
     Inter_REPORT_URL = f"{DOMAIN}/interface/task/report/detail/resultId="
-
-
 
     REDIS_DB = 0
     REDIS_WORKER_POOL_BD = 10
@@ -80,9 +75,7 @@ class LocalConfig(BaseConfig):
     REDIS_Broker: str = f"redis://{REDIS_SERVER}:{BaseConfig.REDIS_PORT}/1"
     REDIS_Backend: str = f"redis://{REDIS_SERVER}:{BaseConfig.REDIS_PORT}/2"
 
-
     CX_Oracle_Client_Dir = "/Users/cyq/Downloads/instantclient_23_3"
-
 
     # ======================= ui playwright ====================
     INIT_PLAY_BROWSER = False
@@ -93,12 +86,12 @@ class LocalConfig(BaseConfig):
     UI_TASK_URL = f"{DOMAIN}/ui/task/detail/taskId="
     UI_REPORT_URL = f"{DOMAIN}/ui/report/detail/resultId="
 
-
     # ======================= APScheduler ====================
     APS = False
     APS_TZ = pytz.timezone('Asia/Shanghai')
     APSJobStores = {
-        'default': RedisJobStore(
+        'default':
+        RedisJobStore(
             db=1,  # Redis 数据库编号
             jobs_key='apscheduler.jobs',  # 存储任务的键
             run_times_key='apscheduler.run_times',  # 存储任务运行时间的键
@@ -107,9 +100,7 @@ class LocalConfig(BaseConfig):
             port=BaseConfig.REDIS_PORT,  # Redis 服务器端口
             password=None  # Redis 密码（如果没有密码，设置为 None）
         ),
-
     }
-
 
     @staticmethod
     def task_url(target: str, task_id: int, project_id: int):
@@ -142,7 +133,7 @@ class DockerConfig(BaseConfig):
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "sdkjfhsdkjhfsdkhfksd")
     MYSQL_DATABASE = os.getenv("MYSQL_DB", "autoHub")
     MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
-    
+
     SQLALCHEMY_DATABASE_URI = 'mysql+mysqlconnector://{}:{}@{}/{}'.format(
         'root', MYSQL_PASSWORD, MYSQL_SERVER, MYSQL_DATABASE)
 
@@ -174,7 +165,8 @@ class DockerConfig(BaseConfig):
     APS = False
     APS_TZ = pytz.timezone('Asia/Shanghai')
     APSJobStores = {
-        'default': RedisJobStore(
+        'default':
+        RedisJobStore(
             db=1,  # Redis 数据库编号
             jobs_key='apscheduler.jobs',  # 存储任务的键
             run_times_key='apscheduler.run_times',  # 存储任务运行时间的键
@@ -183,7 +175,6 @@ class DockerConfig(BaseConfig):
             port=REDIS_PORT,  # Redis 服务器端口
             password=None  # Redis 密码（如果没有密码，设置为 None）
         ),
-
     }
 
     @staticmethod
