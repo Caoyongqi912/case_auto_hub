@@ -5,7 +5,7 @@ from app.schema import PageSchema
 class EnvField(BaseModel):
     id: int | None = None
     uid: str | None = None
-    name: str | None = None
+    method_name: str | None = None
     description: str | None = None
     host: str | None = None
     port: str | None = None

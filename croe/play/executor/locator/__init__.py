@@ -17,7 +17,7 @@ from ._locator import (
     GetByTitle,
     GetByTestId,
 )
-from ..context import StepContext
+from croe.play.context import StepContext
 
 
 class LocatorHandler:
@@ -29,14 +29,14 @@ class LocatorHandler:
     """
 
     @classmethod
-    def get_handler(cls, getter_name: str):
+    def get_handler(cls, locator_text: str):
         """
         根据 getter_name 获取对应的定位器处理器
 
         从 LocatorMethods._registry 中查询，时间复杂度为 O(1)。
 
         Args:
-            getter_name: 定位器名称（如 'get_by_alt_text'）
+            locator_text: 定位器名称（如 'get_by_alt_text'）
 
         Returns:
             对应的定位器类实例
@@ -44,12 +44,12 @@ class LocatorHandler:
         Raises:
             ValueError: 当 getter_name 不被支持时抛出
         """
-        handler_class = LocatorMethods.registry.get(getter_name)
+        handler_class = LocatorMethods.registry.get(locator_text)
 
         if handler_class is None:
             supported_getters = list(LocatorMethods.registry.keys())
             raise ValueError(
-                f"不支持的定位器类型: {getter_name}. "
+                f"不支持的定位器类型: {locator_text}. "
                 f"支持的类型: {', '.join(supported_getters)}"
             )
 
@@ -84,7 +84,7 @@ async def get_locator(context: StepContext) -> Locator:
         Locator: 匹配的定位器对象
 
     Raises:
-        ValueError: 当 getter 不被支持时抛出
+        ValueError: 当 locator 不被支持时抛出
         Exception: 当定位器获取失败时抛出
 
     示例：
@@ -93,15 +93,21 @@ async def get_locator(context: StepContext) -> Locator:
         locator = await get_locator(context)
     """
     try:
-        if context.getter:
+        # 验证 selector 不为空
+        if not context.selector:
+            raise ValueError(
+                f"步骤 {context.step.name} 缺少选择器：locator 和 selector 都为空"
+            )
+
+        if context.locator:
             # 获取对应的定位器处理器（O(1) 查询）
-            handler = LocatorHandler.get_handler(context.step.getter)
+            handler = LocatorHandler.get_handler(context.step.locator)
 
             # 调用处理器获取定位器
             locator = await handler.locator(context)
 
             log.info(
-                f"成功获取定位器 [{context.step.getter}]: {context.selector}"
+                f"成功获取定位器 [{context.step.locator}]: {context.selector}"
             )
         else:
             # 使用 CSS 选择器或 iframe 定位
@@ -119,7 +125,7 @@ async def get_locator(context: StepContext) -> Locator:
         raise
     except Exception as e:
         log.error(
-            f"获取定位器失败 [{context.step.getter}]: "
+            f"获取定位器失败 [{context.step.locator}]: "
             f"{context.selector} - {str(e)}"
         )
         raise
