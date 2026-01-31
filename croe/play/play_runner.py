@@ -1,9 +1,6 @@
 import json
-from typing import Sequence
-
 from playwright.async_api import Page
-
-from app.mapper.play import PlayCaseMapper, PlayCaseResultMapper, PlayCaseVariablesMapper, PlayStepContentMapper
+from app.mapper.play import PlayCaseMapper, PlayCaseResultMapper, PlayCaseVariablesMapper
 from app.model.playUI import PlayCase, PlayCaseResult, PlayTaskResult
 from croe.interface.manager.variable_manager import VariableManager
 from croe.play.context import PlayExecutionContext, StepContentContext
@@ -96,6 +93,8 @@ class PlayRunner:
                     execution_context=play_execute_context,
                     variable_manager=self.variable_manager
                 )
+                log.info(f"play_content_context {play_content_context}")
+
                 play_strategy = get_step_strategy(step_content.content_type)
                 play_step_success = await play_strategy.execute(play_content_context)
                 CASE_SUCCESS &= play_step_success

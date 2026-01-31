@@ -178,8 +178,10 @@ async def init_ui_methods():
     """
     初始化UI 方法API入库
     """
-    from script.init_method import init_play_method
+    from script.init_method import init_play_method,init_play_locator
     await init_play_method()
+    await init_play_locator()
+
 
 
 hub = caseHub()

@@ -285,9 +285,10 @@ class Mapper(Generic[M]):
             if session:
                 query = await session.scalars(
                     select(cls.__model__).filter_by(**kwargs).order_by(cls.__model__.create_time))
-            async with async_session() as session:
-                query = await session.scalars(
-                    select(cls.__model__).filter_by(**kwargs).order_by(cls.__model__.create_time))
+            else:
+                async with async_session() as session:
+                    query = await session.scalars(
+                        select(cls.__model__).filter_by(**kwargs).order_by(cls.__model__.create_time))
             return query.all()
         except Exception as e:
             raise e

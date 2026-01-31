@@ -13,6 +13,66 @@ from app.schema import PageSchema
 from enums import ModuleEnum
 
 
+class InsertPlayStepSchema(BaseModel):
+    name: str = Field(..., description="步骤名")
+    description: Optional[str] = Field(None, description="描述")
+    selector: Optional[str] = Field(None, description="步骤元素定位器")
+    locator: Optional[str] = Field(None, description="元素定位方式")
+    iframe_name: Optional[str] = Field(None, description="iframe名称")
+    new_page: bool = Field(False, description="是否新页面")
+    is_common: bool = Field(False, description="是否公共步骤")
+    method: Optional[str] = Field(None, description="方法")
+    key: Optional[str] = Field(None, description="键")
+    value: Optional[str] = Field(None, description="值")
+    module_id: int = Field(..., description="模块ID")
+    project_id: int = Field(..., description="项目ID")
+
+
+class InsertCasePlayStepSchema(InsertPlayStepSchema):
+    case_id: int
+
+
+class EditPlayStepSchema(BaseModel):
+    id: int = Field(..., description="步骤ID")
+    name: Optional[str] = Field(None, description="步骤名")
+    description: Optional[str] = Field(None, description="描述")
+    selector: Optional[str] = Field(None, description="步骤元素定位器")
+    locator: Optional[str] = Field(None, description="元素定位方式")
+    iframe_name: Optional[str] = Field(None, description="iframe名称")
+    new_page: bool = Field(False, description="是否新页面")
+    method: Optional[str] = Field(None, description="方法")
+    key: Optional[str] = Field(None, description="键")
+    value: Optional[str] = Field(None, description="值")
+    module_id: Optional[int] = Field(None, description="模块ID")
+    project_id: Optional[int] = Field(None, description="项目ID")
+
+
+class RemovePlayStepByIdSchema(BaseModel):
+    step_id: int = Field(..., description="用例ID")
+
+
+class GetPlayStepSchema(BaseModel):
+    """获取play步骤模型"""
+    step_id: int = Field(..., description="步骤ID")
+
+
+class CopyPlayStepSchema(BaseModel):
+    """复制play步骤模型"""
+    step_id: int = Field(..., description="步骤ID")
+    is_common: Optional[bool] = Field(True, description="是否公共步骤")
+
+
+class PageCommonPlayStepSchema(PageSchema):
+    """获取play步骤分页模型"""
+    id: Optional[int] = Field(None, description="用例ID")
+    uid: Optional[str] = Field(None, description="唯一标识")
+    is_common: bool = Field(True, description="是否公共步骤")
+    creatorName: Optional[str] = Field(None, description="创建者名称")
+    module_id: Optional[int] = Field(None, description="模块ID")
+    project_id: Optional[int] = Field(None, description="项目ID")
+    method: Optional[str] = Field(None, description="方法")
+
+
 class PlayStepConditionSchema(BaseModel):
     """play步骤条件模型"""
     key: str = Field(..., description="键")
@@ -50,13 +110,13 @@ class PlayStepBasicField(BaseModel):
     step_condition_order: Optional[int] = Field(None, description="步骤条件顺序")
 
 
-class InsertPlayStepSchema(PlayStepBasicField):
-    """插入play步骤模型"""
-    name: str = Field(..., description="名称")
-    description: str = Field(..., description="描述")
-    caseId: Optional[int] = Field(None, description="用例ID")
-    module_id: int = Field(..., description="模块ID")
-    project_id: int = Field(..., description="项目ID")
+# class InsertPlayStepSchema(PlayStepBasicField):
+#     """插入play步骤模型"""
+#     name: str = Field(..., description="名称")
+#     description: str = Field(..., description="描述")
+#     caseId: Optional[int] = Field(None, description="用例ID")
+#     module_id: int = Field(..., description="模块ID")
+#     project_id: int = Field(..., description="项目ID")
 
 
 class InsertPlayConditionStepSchema(PlayStepBasicField):
@@ -76,16 +136,18 @@ class UpdatePlayStepSchema(PlayStepBasicField):
     id: int = Field(..., description="步骤ID")
 
 
-class RemovePlayStepSchema(BaseModel):
+class RemovePlayStepContentSchema(BaseModel):
     """删除play步骤模型"""
-    stepId: int = Field(..., description="步骤ID")
-    caseId: Optional[int] = Field(None, description="用例ID")
+    content_id: int = Field(..., description="步骤ID")
+    case_id: int = Field(..., description="用例ID")
 
 
-class CopyPlayCaseStepSchema(BaseModel):
+
+
+class CopyPlayCaseStepContentSchema(BaseModel):
     """复制play用例步骤模型"""
-    stepId: int = Field(..., description="步骤ID")
-    caseId: int = Field(..., description="用例ID")
+    content_id: int = Field(..., description="步骤ID")
+    case_id: int = Field(..., description="用例ID")
 
 
 class PagePlayStepSchema(PageSchema):
@@ -98,12 +160,6 @@ class PagePlayStepSchema(PageSchema):
     module_type: int = Field(ModuleEnum.UI_STEP, description="模块类型")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
-
-
-class CopyPlayStepSchema(BaseModel):
-    """复制play步骤模型"""
-    stepId: int = Field(..., description="步骤ID")
-    is_common_step: Optional[bool] = Field(True, description="是否公共步骤")
 
 
 class AssociationStepApiSchema(BaseModel):

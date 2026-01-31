@@ -100,7 +100,7 @@ async def get_locator(context: StepContext) -> Locator:
             )
 
         if context.locator:
-            # 获取对应的定位器处理器（O(1) 查询）
+            # 获取对应的定位器处理器
             handler = LocatorHandler.get_handler(context.step.locator)
 
             # 调用处理器获取定位器

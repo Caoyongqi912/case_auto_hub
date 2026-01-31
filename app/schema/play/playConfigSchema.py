@@ -42,3 +42,8 @@ class PagePlayMethodSchema(PageSchema):
     value: Optional[str] = Field(None, description="值")
     need_locator: Optional[int] = Field(None, description="是否需要定位器")
     need_value: Optional[int] = Field(None, description="是否需要值")
+
+
+class PagePlayLocatorSchema(PageSchema):
+    """locator方法分页查询模型"""
+    getter_name: Optional[str] = Field(None, description="标签")

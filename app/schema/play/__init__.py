@@ -24,13 +24,12 @@ from .playCaseSchema import (
 from .playStepSchema import (
     InsertPlayStepSchema,
     UpdatePlayStepSchema,
-    RemovePlayStepSchema,
     PagePlayStepSchema,
     CopyPlayStepSchema,
     AssociationStepApiSchema,
     InsertPlayConditionStepSchema,
     ReorderPlayConditionStepsSchema,
-    CopyPlayCaseStepSchema
+    CopyPlayCaseStepContentSchema
 )
 
 from .playConfigSchema import (

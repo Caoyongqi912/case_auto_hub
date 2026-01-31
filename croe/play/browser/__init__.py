@@ -1,0 +1,196 @@
+import asyncio
+from typing import  Optional
+from playwright.async_api import async_playwright, Browser, BrowserContext, Page, ViewportSize
+from config import Config
+from utils import log
+
+
+class BrowserManager:
+    """
+    浏览器管理器
+
+    负责浏览器实例的创建、管理和生命周期控制。使用单例模式确保
+    整个测试过程中只有一个浏览器实例，提供线程安全的资源管理。
+    """
+    _playwright: Optional[async_playwright] = None
+    _browser: Optional[Browser] = None
+    _context: Optional[BrowserContext] = None
+    _lock = asyncio.Lock()
+
+    async def get_browser(self) -> Browser:
+        """
+        获取浏览器实例
+
+        如果浏览器已连接则直接返回，否则初始化新的浏览器实例。
+        使用锁确保线程安全。
+
+        Returns:
+            Browser: Playwright浏览器对象
+        """
+        async with self._lock:
+            if self._browser is not None and self._browser.is_connected():
+                log.info(f"[BrowserManager] Browser {self._browser} already connected ")
+                return self._browser
+            await self._cleanup_resources()
+            return await self._initialize_browser()
+
+    async def get_context(self) -> BrowserContext:
+        """
+        获取浏览器上下文
+
+        如果上下文已存在则直接返回，否则创建新的上下文。
+        使用锁确保线程安全。
+
+        Returns:
+            BrowserContext: 浏览器上下文对象
+        """
+        async with self._lock:
+            if self._context is not None:
+                return self._context
+
+        browser = await self.get_browser()
+        async with self._lock:
+            if self._context is None:
+                self._context = await self._create_context(browser)
+            return self._context
+
+    async def _initialize_browser(self) -> Browser:
+        """
+        初始化浏览器实例
+
+        使用配置参数启动Chromium浏览器。
+
+        Returns:
+            Browser: 初始化完成的浏览器对象
+        """
+        self._playwright = await async_playwright().start()
+        self._browser = await self._playwright.chromium.launch(
+            headless=Config.UI_Headless,
+            timeout=Config.UI_Timeout,
+            slow_mo=Config.UI_SLOW,
+            args=["--no-cache",
+                  "--no-sandbox",
+                  "--disable-dev-shm-usage",  # 在Docker中特别有用?
+                  ],
+        )
+        log.info(f"[BrowserManager] Browser {self._browser}  initialized successfully ")
+        return self._browser
+
+    async def _create_context(self, browser: Browser) -> BrowserContext:
+        """
+          创建浏览器上下文
+
+          根据配置设置语言、时区、视口大小和用户代理等属性。
+
+          Args:
+              browser: 浏览器实例
+
+          Returns:
+              BrowserContext: 创建的浏览器上下文对象
+          """
+        context = await browser.new_context(
+            locale="zh_CN",
+            ignore_https_errors=True,
+            timezone_id="Asia/Shanghai",
+            viewport=ViewportSize(width=1920, height=1080),
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+
+        )
+        context.set_default_navigation_timeout(Config.UI_Timeout)
+        log.info(f"[BrowserManager] BrowserContext {context} initialized successfully")
+        return context
+
+    async def _cleanup_resources(self):
+        """
+        清理所有浏览器资源
+
+        按顺序关闭上下文、浏览器和Playwright实例，
+        收集并记录清理过程中的错误。
+        """
+        errors = []
+        if self._context:
+            try:
+                await self._context.close()
+            except Exception as e:
+                errors.append(f"[BrowserManager] Context close error: {str(e)}")
+            finally:
+                self._context = None
+
+        if self._browser:
+            try:
+                await self._browser.close()
+            except Exception as e:
+                errors.append(f"[BrowserManager] Browser close error: {str(e)}")
+            finally:
+                self._browser = None
+
+        if self._playwright:
+            try:
+                await self._playwright.stop()
+            except Exception as e:
+                errors.append(f"[BrowserManager] Playwright stop error: {str(e)}")
+            finally:
+                self._playwright = None
+
+        if errors:
+            log.error(f"[BrowserManager] Cleanup errors: {errors}")
+
+    async def close_all(self):
+        await self._cleanup_resources()
+
+    async def new_page(self) -> Page:
+        """
+        创建新的页面
+
+        在当前浏览器上下文中创建一个新的页面对象。
+
+        Returns:
+            Page: 新创建的页面对象
+        """
+        context = await self.get_context()
+        return await context.new_page()
+
+
+class BrowserManagerFactory:
+    """
+    浏览器管理器工厂
+
+    使用工厂模式创建和管理浏览器管理器单例，确保全局只有一个
+    浏览器管理器实例。
+    """
+    _instance: Optional[BrowserManager] = None
+    _lock = asyncio.Lock()
+
+    @classmethod
+    async def get_instance(cls) -> BrowserManager:
+        """
+        获取浏览器管理器单例
+
+        如果实例不存在则创建新实例，否则返回现有实例。
+        使用锁确保线程安全。
+
+        Returns:
+            BrowserManager: 浏览器管理器单例实例
+        """
+        async with cls._lock:
+            if cls._instance is None:
+                cls._instance = BrowserManager()
+            return cls._instance
+
+    @classmethod
+    async def reset(cls):
+        """
+         重置浏览器管理器
+
+         关闭所有浏览器资源并清除单例实例，用于测试清理或重新初始化。
+         """
+        async with cls._lock:
+            if cls._instance:
+                await cls._instance.close_all()
+                cls._instance = None
+
+
+__all__ = [
+    "BrowserManager",
+    "BrowserManagerFactory",
+]

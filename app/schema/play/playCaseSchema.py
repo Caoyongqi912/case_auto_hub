@@ -11,6 +11,19 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.schema import PageSchema
 from enums import ModuleEnum
+class EditPlayStepContentSchema(BaseModel):
+    """删除play步骤模型"""
+    id: int = Field(..., description="步骤ID")
+    content_name: Optional[str] = Field(None, description="步骤名称")
+    enable: Optional[bool] = Field(None, description="是否启用")
+    api_script_text: Optional[str] = Field(None, description="API脚本文本")
+
+
+class AssociationPlayStepSchema(BaseModel):
+    """case 关联 公共 step"""
+    quote: bool = Field(..., description="是否引用")
+    case_id: int = Field(..., description="用例ID")
+    play_step_id_list: List[int] = Field(..., description="步骤Id")
 
 
 class GetPlayCaseByCaseId(BaseModel):
@@ -35,6 +48,8 @@ class PlayCaseBasicSchema(BaseModel):
     project_id: int = Field(..., description="项目ID")
 
 
+
+
 class EditPlayCaseBasicSchema(BaseModel):
     """编辑play用例基础信息模型"""
     id: int = Field(..., description="用例ID")
@@ -48,8 +63,8 @@ class EditPlayCaseBasicSchema(BaseModel):
 
 class ReOrderPlayStepSchema(BaseModel):
     """重排序play步骤模型"""
-    stepIds: List[int] = Field(..., description="步骤ID列表")
-    caseId: int = Field(..., description="用例ID")
+    content_id_list: List[int] = Field(..., description="步骤ID列表")
+    case_id: int = Field(..., description="用例ID")
 
 
 class PagePlayCaseSchema(PageSchema):
@@ -113,4 +128,4 @@ class EditPlayCaseVariableSchema(BaseModel):
     id: int = Field(..., description="变量ID")
     play_case_id: int = Field(..., description="play用例ID")
     key: Optional[str] = Field(None, description="键")
-    value: Optional[Any] = Field(None, description="值")
+    value: Optional[Any] = Field(None, description="值")
