@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.schema import PageSchema
 from enums import ModuleEnum
+
+
 class EditPlayStepContentSchema(BaseModel):
     """删除play步骤模型"""
     id: int = Field(..., description="步骤ID")
@@ -24,6 +26,12 @@ class AssociationPlayStepSchema(BaseModel):
     quote: bool = Field(..., description="是否引用")
     case_id: int = Field(..., description="用例ID")
     play_step_id_list: List[int] = Field(..., description="步骤Id")
+
+
+class AssociationPlayGroupSchema(BaseModel):
+    """case 关联 公共 step"""
+    case_id: int = Field(..., description="用例ID")
+    group_id_list: List[int] = Field(..., description="步骤组Id")
 
 
 class GetPlayCaseByCaseId(BaseModel):
@@ -46,8 +54,6 @@ class PlayCaseBasicSchema(BaseModel):
     step_num: int = Field(0, description="步骤数量")
     module_id: int = Field(..., description="模块ID")
     project_id: int = Field(..., description="项目ID")
-
-
 
 
 class EditPlayCaseBasicSchema(BaseModel):

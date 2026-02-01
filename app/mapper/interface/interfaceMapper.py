@@ -150,7 +150,7 @@ class AssociationHelper:
 
         if values:
             await session.execute(
-                insert(ConditionAPIAssociation).values(values)
+                insert(ConditionAPIAssociation).prefix_with('IGNORE').values(values)
             )
 
 

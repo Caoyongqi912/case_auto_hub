@@ -71,6 +71,7 @@ class PageCommonPlayStepSchema(PageSchema):
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
     method: Optional[str] = Field(None, description="方法")
+    module_type: int = ModuleEnum.UI_STEP
 
 
 class PlayStepConditionSchema(BaseModel):

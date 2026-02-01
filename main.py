@@ -25,13 +25,12 @@ async def lifespanApp(app: FastAPI):
 
     await init_db()
     redis_client = await init_redis()
-    pool = await init_worker_pool()
+    # pool = await init_worker_pool()
     aps = await init_aps(redis_client)
     await init_proxy()
     await init_ui_browser()
     await init_ui_methods()
     app.scheduler = aps
-    app.worker_pool = pool
 
     yield
     await aps.shutdown()
@@ -155,8 +154,10 @@ async def start_proxy():
     )
     dm.addons.add(InterfaceRecoder())
     await dm.run()
+
 async def init_worker_pool():
     from common.redis_worker_pool import r_pool
+    
     await r_pool.start()
     return r_pool
 

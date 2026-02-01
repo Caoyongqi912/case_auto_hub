@@ -1,1 +1,235 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2025/7/2# @Author : cyq# @File : playTaskMapper# @Software: PyCharm# @Desc:from typing import Listfrom sqlalchemy import select, insert, update, and_, deletefrom sqlalchemy.sql.functions import countfrom app.mapper import Mapperfrom app.mapper.play.common import get_case_last_indexfrom app.model import async_sessionfrom app.model.playUI import PlayTask, PlayTaskResult, PlayCase, PlayTaskCasesAssociationfrom enums import TaskStatusfrom croe.play.starter import UIStarterfrom utils import logclass PlayTaskMapper(Mapper[PlayTask]):    __model__ = PlayTask    @classmethod    async def query_auto_tasks(cls) -> List[PlayTask]:        """        查询所有定时任务        """        try:            async with async_session() as session:                tasks = await session.scalars(select(PlayTask).where(PlayTask.is_auto is True))                return tasks.all()        except Exception as e:            log.error(e)            raise e    @classmethod    async def remove_task(cls, taskId: int, scheduler):        """        删除删除        删除任务        """        try:            async with async_session() as session:                task = await cls.get_by_id(ident=taskId, session=session)                await scheduler.remove_job(task.uid)                await session.execute(delete(PlayTask).where(PlayTask.id == taskId))                await session.commit()        except Exception as e:            raise e    @classmethod    async def query_case(cls, taskId: int) -> List[PlayCase]:        """        查询用例        :param taskId: 任务id        :return:        """        try:            async with async_session() as session:                cases = await session.scalars(                    select(PlayCase).join(                        PlayTaskCasesAssociation,                        PlayTaskCasesAssociation.play_case_id == PlayCase.id                    ).where(                        PlayTaskCasesAssociation.play_task_id == taskId                    ).order_by(                        PlayTaskCasesAssociation.case_order                    )                )                return cases.all()        except Exception as e:            raise e    @classmethod    async def association_cases(cls, taskId: int, caseIdList: list[int]):        """        添加用例到task        :param taskId:        :param caseIdList:        :return:        """        try:            async with async_session() as session:                async with session.begin():                    task = await cls.get_by_id(ident=taskId, session=session)                    # 检查现有的 UI Case IDs                    existing_cases = await session.execute(select(PlayTaskCasesAssociation.play_case_id).where(                        PlayTaskCasesAssociation.play_task_id == taskId                    ))                    existing_case_ids = {row[0] for row in existing_cases}                    last_case_index = await get_case_last_index(session=session, taskId=taskId)                    # 批量插入用例                    new_cases = [                        {                            'play_task_id': taskId,                            'play_case_id': caseId,                            'case_order': index                        }                        for index, caseId in enumerate(caseIdList, start=last_case_index + 1)                        if caseId not in existing_case_ids                    ]                    if new_cases:                        result = await session.execute(insert(PlayTaskCasesAssociation).values(new_cases))                        task.play_case_num += result.rowcount  # 更新已添加的用例数量        except Exception as e:            raise e    @classmethod    async def reorder_association_case(cls, taskId: int, caseIdList: list[int]):        try:            async with async_session() as session:                for index, caseId in enumerate(caseIdList, start=1):                    await session.execute(update(PlayTaskCasesAssociation).where(                        and_(                            PlayTaskCasesAssociation.play_case_id == caseId,                            PlayTaskCasesAssociation.play_task_id == taskId                        )                    ).values(case_order=index))                await session.commit()        except Exception as e:            raise e    @classmethod    async def remove_association_case(cls, taskId: int, caseId: int):        """        移除用例        重新计算数量        :param taskId:        :param caseId:        :return:        """        try:            async with async_session() as session:                async with session.begin():                    task: PlayTask = await cls.get_by_id(ident=taskId, session=session)                    # 删除关联                    await session.execute(delete(PlayTaskCasesAssociation).where(                        and_(                            PlayTaskCasesAssociation.play_task_id == taskId,                            PlayTaskCasesAssociation.play_case_id == caseId                        )                    ))                    # # 重新排序                    # await reorder_case                    # 更新用例数量                    data = await session.execute(                        select(count('*')).where(PlayTaskCasesAssociation.play_task_id == taskId)                    )                    task.ui_case_num = data.scalar()        except Exception as e:            raise e    @classmethod    async def set_task_status(cls, taskId: int, status: TaskStatus):        try:            async with async_session() as session:                await session.execute(update(cls.__model__).where(                    cls.__model__.id == taskId                ).values(                    status=status                ))                await session.commit()        except Exception as e:            raise eclass PlayTaskResultMapper(Mapper[PlayTaskResult]):    __model__ = PlayTaskResult    @classmethod    async def init_task_result(cls, task: PlayTask, case_total_num: int, runner: UIStarter) -> PlayTaskResult:        """        初始化任务基础结果模型。        参数:        - task: PlayTask        - user: User        - case_total_num        返回:        返回初始化后的任务基础结果模型实例。        """        try:            async with async_session() as session:                result = PlayTaskResult(                    task_id=task.id,                    task_name=task.title,                    task_uid=task.uid,                    status=TaskStatus.RUNNING,                    starter_name=runner.username,                    project_id=task.project_id,                    module_id=task.module_id,                    total_number=case_total_num                )                session.add(result)                await session.commit()                # 刷新会话，将更改同步到数据库但不提交 # 会生成主键                await cls.flush_expunge(session, result)                return result        except Exception as e:            raise e    @classmethod    async def set_result(cls, result: PlayTaskResult):        try:            async with async_session() as session:                session.add(result)                await session.commit()        except Exception as e:            raise e    @classmethod    async def clear_result(cls, taskId: int):        """        清空任务结果        :param taskId:        :return:        """        try:            async with async_session() as session:                await session.execute(delete(PlayTaskResult).where(PlayTaskResult.task_id == taskId))                await session.commit()        except Exception as e:            raise e
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2025/7/2
+# @Author : cyq
+# @File : playTaskMapper
+# @Software: PyCharm
+# @Desc:
+from typing import List
+
+from sqlalchemy import select, insert, update, and_, delete
+from sqlalchemy.sql.functions import count
+
+from app.mapper import Mapper
+from app.model import async_session
+from app.model.playUI import PlayTask, PlayTaskResult, PlayCase, PlayTaskCasesAssociation
+from enums import TaskStatus
+from croe.play.starter import UIStarter
+from utils import log
+
+
+class PlayTaskMapper(Mapper[PlayTask]):
+    __model__ = PlayTask
+
+    @classmethod
+    async def query_auto_tasks(cls) -> List[PlayTask]:
+        """
+        查询所有定时任务
+        """
+        try:
+            async with async_session() as session:
+                tasks = await session.scalars(select(PlayTask).where(PlayTask.is_auto is True))
+                return tasks.all()
+        except Exception as e:
+            log.error(e)
+            raise e
+
+    @classmethod
+    async def remove_task(cls, taskId: int, scheduler):
+        """
+        删除删除
+        删除任务
+        """
+
+        try:
+            async with async_session() as session:
+                task = await cls.get_by_id(ident=taskId, session=session)
+                await scheduler.remove_job(task.uid)
+                await session.execute(delete(PlayTask).where(PlayTask.id == taskId))
+                await session.commit()
+
+
+        except Exception as e:
+            raise e
+
+    @classmethod
+    async def query_case(cls, taskId: int) -> List[PlayCase]:
+        """
+        查询用例
+        :param taskId: 任务id
+        :return:
+        """
+        try:
+            async with async_session() as session:
+                cases = await session.scalars(
+                    select(PlayCase).join(
+                        PlayTaskCasesAssociation,
+                        PlayTaskCasesAssociation.play_case_id == PlayCase.id
+                    ).where(
+                        PlayTaskCasesAssociation.play_task_id == taskId
+                    ).order_by(
+                        PlayTaskCasesAssociation.case_order
+                    )
+                )
+                return cases.all()
+        except Exception as e:
+            raise e
+
+    @classmethod
+    async def association_cases(cls, taskId: int, caseIdList: list[int]):
+        """
+        添加用例到task
+        :param taskId:
+        :param caseIdList:
+        :return:
+        """
+        try:
+            async with async_session() as session:
+                async with session.begin():
+                    task = await cls.get_by_id(ident=taskId, session=session)
+                    # 检查现有的 UI Case IDs
+                    existing_cases = await session.execute(select(PlayTaskCasesAssociation.play_case_id).where(
+                        PlayTaskCasesAssociation.play_task_id == taskId
+                    ))
+                    existing_case_ids = {row[0] for row in existing_cases}
+                    sql = (
+                        select(PlayTaskCasesAssociation.case_order).where(
+                            PlayTaskCasesAssociation.play_task_id == taskId
+                        ).order_by(PlayTaskCasesAssociation.case_order.desc()).limit(1)
+                    )
+                    result = await session.execute(sql)
+                    last_step_order = result.scalar()  # Fetch the first (and only) result
+                    last_step_order or 0
+                    # 批量插入用例
+                    new_cases = [
+                        {
+                            'play_task_id': taskId,
+                            'play_case_id': caseId,
+                            'case_order': index
+                        }
+                        for index, caseId in enumerate(caseIdList, start=last_case_index + 1)
+                        if caseId not in existing_case_ids
+                    ]
+                    if new_cases:
+                        result = await session.execute(insert(PlayTaskCasesAssociation).values(new_cases))
+                        task.play_case_num += result.rowcount  # 更新已添加的用例数量
+        except Exception as e:
+            raise e
+
+    @classmethod
+    async def reorder_association_case(cls, taskId: int, caseIdList: list[int]):
+        try:
+            async with async_session() as session:
+                for index, caseId in enumerate(caseIdList, start=1):
+                    await session.execute(update(PlayTaskCasesAssociation).where(
+                        and_(
+                            PlayTaskCasesAssociation.play_case_id == caseId,
+                            PlayTaskCasesAssociation.play_task_id == taskId
+                        )
+
+                    ).values(case_order=index))
+                await session.commit()
+        except Exception as e:
+            raise e
+
+    @classmethod
+    async def remove_association_case(cls, taskId: int, caseId: int):
+        """
+        移除用例
+        重新计算数量
+        :param taskId:
+        :param caseId:
+        :return:
+        """
+        try:
+            async with async_session() as session:
+                async with session.begin():
+                    task: PlayTask = await cls.get_by_id(ident=taskId, session=session)
+                    # 删除关联
+                    await session.execute(delete(PlayTaskCasesAssociation).where(
+                        and_(
+                            PlayTaskCasesAssociation.play_task_id == taskId,
+                            PlayTaskCasesAssociation.play_case_id == caseId
+                        )
+                    ))
+                    # # 重新排序
+                    # await reorder_case
+                    # 更新用例数量
+                    data = await session.execute(
+                        select(count('*')).where(PlayTaskCasesAssociation.play_task_id == taskId)
+                    )
+                    task.ui_case_num = data.scalar()
+        except Exception as e:
+            raise e
+
+    @classmethod
+    async def set_task_status(cls, taskId: int, status: TaskStatus):
+        try:
+            async with async_session() as session:
+                await session.execute(update(cls.__model__).where(
+                    cls.__model__.id == taskId
+                ).values(
+                    status=status
+                ))
+                await session.commit()
+        except Exception as e:
+            raise e
+
+
+class PlayTaskResultMapper(Mapper[PlayTaskResult]):
+    __model__ = PlayTaskResult
+
+    @classmethod
+    async def init_task_result(cls, task: PlayTask, case_total_num: int, runner: UIStarter) -> PlayTaskResult:
+        """
+        初始化任务基础结果模型。
+        参数:
+        - task: PlayTask
+        - user: User
+        - case_total_num
+
+        返回:
+        返回初始化后的任务基础结果模型实例。
+        """
+        try:
+            async with async_session() as session:
+                result = PlayTaskResult(
+                    task_id=task.id,
+                    task_name=task.title,
+                    task_uid=task.uid,
+                    status=TaskStatus.RUNNING,
+                    starter_name=runner.username,
+                    project_id=task.project_id,
+                    module_id=task.module_id,
+                    total_number=case_total_num
+                )
+                session.add(result)
+                await session.commit()
+                # 刷新会话，将更改同步到数据库但不提交 # 会生成主键
+                await cls.flush_expunge(session, result)
+                return result
+        except Exception as e:
+            raise e
+
+    @classmethod
+    async def set_result(cls, result: PlayTaskResult):
+        try:
+            async with async_session() as session:
+                session.add(result)
+                await session.commit()
+        except Exception as e:
+            raise e
+
+    @classmethod
+    async def clear_result(cls, taskId: int):
+        """
+        清空任务结果
+        :param taskId:
+        :return:
+        """
+        try:
+            async with async_session() as session:
+                await session.execute(delete(PlayTaskResult).where(PlayTaskResult.task_id == taskId))
+                await session.commit()
+        except Exception as e:
+            raise e
