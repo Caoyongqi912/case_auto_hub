@@ -436,8 +436,9 @@ async def execute_back(info: ExecutePlayCase, sr: User = Depends(Authentication(
     Returns:
         执行成功响应
     """
-    starter = UIStarter(sr)
-    create_task(Player(starter).run_case(**info.model_dump()))
+    starter = UIFStarter(sr)
+    from croe.play.play_runner import PlayRunner
+    create_task(PlayRunner(starter).run_case(**info.model_dump()))
     return Response.success()
 
 

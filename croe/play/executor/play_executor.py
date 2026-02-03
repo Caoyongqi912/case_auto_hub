@@ -6,7 +6,7 @@
 # @Software: PyCharm
 # @Desc:
 
-from typing import Optional
+from typing import Optional, Tuple
 
 from playwright.async_api import Page
 
@@ -20,7 +20,7 @@ class PlayExecutor:
     """ui 步骤执行"""
 
     @classmethod
-    async def execute(cls, step_context: StepContext) -> tuple[bool, Optional[Page]]:
+    async def execute(cls, step_context: StepContext) -> Tuple[bool, Optional[str]]:
         """
         UI 执行
         """
@@ -31,9 +31,14 @@ class PlayExecutor:
                 async with step_context.page.expect_popup() as p:
                     SUCCESS, MESSAGE = await method_chain.handle(locator=locator, context=step_context)
                     page = await p.value
-                    return SUCCESS, page
+                    log.info(f"[PlayExecutor] New page detected: {page.url}")
+                    # 如果有页面管理器，设置新页面为当前活动页面
+                    if step_context.page_manager:
+                        step_context.page_manager.set_page(page)
+                        await step_context.starter.send(f"📄 切换到新页面: {page.url}")
+                    return SUCCESS,MESSAGE
             SUCCESS, MESSAGE = await method_chain.handle(locator=locator, context=step_context)
-            return SUCCESS, None
+            return SUCCESS,MESSAGE
         except Exception as e:
             log.error(f"[PlayExecutor] execute error: {e}")
-            return False, None
+            return False, str(e)

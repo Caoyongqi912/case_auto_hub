@@ -1,8 +1,9 @@
 import asyncio
-from typing import  Optional
+from typing import Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, ViewportSize
 from config import Config
 from utils import log
+
 
 
 class BrowserManager:
@@ -190,7 +191,42 @@ class BrowserManagerFactory:
                 cls._instance = None
 
 
+class PageManager:
+    """
+    极简页面管理器 - 核心功能：跟踪当前活动页面
+
+    当操作产生新页面时，自动将新页面设为当前活动页面，
+    后续所有操作都在这个新页面上执行。
+    """
+
+    def __init__(self):
+        self._current_page: Optional[Page] = None
+
+    @property
+    def current_page(self) -> Page:
+        """获取当前活动页面"""
+        return self._current_page
+
+    def set_page(self, page: Page):
+        """设置当前页面（新页面产生时调用）"""
+        old_url = self._current_page.url if self._current_page else "None"
+        self._current_page = page
+        log.info(f"[PageManager] Current page switched: {old_url} -> {page.url}")
+
+    async def close(self):
+        """关闭当前页面"""
+        if self._current_page:
+            try:
+                await self._current_page.close()
+                log.info(f"[PageManager] Page closed: {self._current_page.url}")
+            except Exception as e:
+                log.error(f"[PageManager] Error closing page: {e}")
+            finally:
+                self._current_page = None
+
+
 __all__ = [
     "BrowserManager",
     "BrowserManagerFactory",
+    "PageManager",
 ]
