@@ -1,9 +1,8 @@
 import asyncio
-from typing import Optional
+from typing import Optional, List
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, ViewportSize
 from config import Config
 from utils import log
-
 
 
 class BrowserManager:
@@ -201,28 +200,31 @@ class PageManager:
 
     def __init__(self):
         self._current_page: Optional[Page] = None
+        self._pages: List[Page] = []  # 跟踪所有创建的页面
 
     @property
-    def current_page(self) -> Page:
+    def current_page(self) -> Optional[Page]:
         """获取当前活动页面"""
         return self._current_page
 
     def set_page(self, page: Page):
-        """设置当前页面（新页面产生时调用）"""
         old_url = self._current_page.url if self._current_page else "None"
         self._current_page = page
-        log.info(f"[PageManager] Current page switched: {old_url} -> {page.url}")
+        if page not in self._pages:
+            self._pages.append(page)
+        log.info(f"[PageManager] Page switched: {old_url} -> {page.url}")
+
 
     async def close(self):
-        """关闭当前页面"""
-        if self._current_page:
+        """关闭所有页面"""
+        for page in self._pages:
             try:
-                await self._current_page.close()
-                log.info(f"[PageManager] Page closed: {self._current_page.url}")
+                await page.close()
+                log.info(f"[PageManager] Page closed: {page.url}")
             except Exception as e:
                 log.error(f"[PageManager] Error closing page: {e}")
-            finally:
-                self._current_page = None
+        self._current_page = None
+        self._pages = []
 
 
 __all__ = [

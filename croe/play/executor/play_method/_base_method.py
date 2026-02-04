@@ -46,7 +46,8 @@ class BaseMethods(ABC):
         self._next_method = method
         return method
 
-    async def handle(self, locator: Locator, context: StepContext) -> tuple[bool, Optional[Dict[str, Any]]]:
+    async def handle(self, context: StepContext, locator: Optional[Locator] = None) -> tuple[
+        bool, Optional[Dict[str, Any]]]:
         """
         处理步骤请求
 
@@ -87,7 +88,8 @@ class BaseMethods(ABC):
         return context.step.method == self.method_name
 
     @abstractmethod
-    async def execute(self, locator: Locator, context: StepContext) -> tuple[bool, Optional[Dict[str, Any]]]:
+    async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> tuple[
+        bool, Optional[Dict[str, Any]]]:
         """
         执行具体的处理逻辑
 

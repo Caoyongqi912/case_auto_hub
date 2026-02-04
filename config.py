@@ -79,7 +79,7 @@ class LocalConfig(BaseConfig):
 
     # ======================= ui playwright ====================
     INIT_PLAY_BROWSER = False
-    UI_Headless = True
+    UI_Headless = False
     UI_Timeout = 10000
     UI_SLOW = 500
     UI_ERROR_PATH = DOMAIN + "/file/ui_case/uid="

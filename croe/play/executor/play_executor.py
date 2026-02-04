@@ -26,6 +26,8 @@ class PlayExecutor:
         """
         try:
             locator = await get_locator(step_context)
+
+            log.info(f"[PlayExecutor] execute step: locator = {locator}, method ={step_context.step.method}")
             # 如果操作打开了新页面、返回新页面的page 进行后续操作
             if step_context.step.new_page:
                 async with step_context.page.expect_popup() as p:
@@ -36,9 +38,9 @@ class PlayExecutor:
                     if step_context.page_manager:
                         step_context.page_manager.set_page(page)
                         await step_context.starter.send(f"📄 切换到新页面: {page.url}")
-                    return SUCCESS,MESSAGE
+                    return SUCCESS, MESSAGE
             SUCCESS, MESSAGE = await method_chain.handle(locator=locator, context=step_context)
-            return SUCCESS,MESSAGE
+            return SUCCESS, MESSAGE
         except Exception as e:
             log.error(f"[PlayExecutor] execute error: {e}")
             return False, str(e)

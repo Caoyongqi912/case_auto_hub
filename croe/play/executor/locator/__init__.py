@@ -5,6 +5,7 @@
 # @File : __init__.py
 # @Software: PyCharm
 # @Desc:
+from typing import Optional
 
 from playwright.async_api import Locator
 from utils import log
@@ -66,7 +67,7 @@ class LocatorHandler:
         return list(LocatorMethods.registry.keys())
 
 
-async def get_locator(context: StepContext) -> Locator:
+async def get_locator(context: StepContext) -> Optional[Locator]:
     """
     根据步骤上下文获取定位器
 
@@ -95,9 +96,7 @@ async def get_locator(context: StepContext) -> Locator:
     try:
         # 验证 selector 不为空
         if not context.selector:
-            raise ValueError(
-                f"步骤 {context.step.name} 缺少选择器：locator 和 selector 都为空"
-            )
+            return None
 
         if context.locator:
             # 获取对应的定位器处理器
