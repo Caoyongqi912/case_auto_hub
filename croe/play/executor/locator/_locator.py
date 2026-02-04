@@ -38,7 +38,7 @@ class LocatorMethods(ABC):
             LocatorMethods.registry[cls.getter_name] = cls
 
     @abstractmethod
-    async def locator(self, context) -> Locator:
+    def locator(self, context) -> Locator:
         """
         执行具体的处理逻辑
 
@@ -62,7 +62,7 @@ class GetByAltText(LocatorMethods):
     """
     getter_name = "get_by_alt_text"
 
-    async def locator(self, context: StepContext) -> Locator:
+    def locator(self, context: StepContext) -> Locator:
         """
         通过 alt 属性文本获取定位器
 
@@ -87,7 +87,7 @@ class GetByLabel(LocatorMethods):
     """
     getter_name = "get_by_label"
 
-    async def locator(self, context: StepContext) -> Locator:
+    def locator(self, context: StepContext) -> Locator:
         """
         通过 label 文本获取定位器
 
@@ -111,7 +111,7 @@ class GetByPlaceholder(LocatorMethods):
     """
     getter_name = "get_by_placeholder"
 
-    async def locator(self, context: StepContext) -> Locator:
+    def locator(self, context: StepContext) -> Locator:
         """
         通过 placeholder 属性获取定位器
 
@@ -135,7 +135,7 @@ class GetByTestId(LocatorMethods):
     """
     getter_name = "get_by_test_id"
 
-    async def locator(self, context: StepContext) -> Locator:
+    def locator(self, context: StepContext) -> Locator:
         """
         通过 data-testid 属性获取定位器
 
@@ -160,7 +160,7 @@ class GetByText(LocatorMethods):
     """
     getter_name = "get_by_text"
 
-    async def locator(self, context: StepContext) -> Locator:
+    def locator(self, context: StepContext) -> Locator:
         """
         通过文本内容获取定位器
 
@@ -184,7 +184,7 @@ class GetByTitle(LocatorMethods):
     """
     getter_name = "get_by_title"
 
-    async def locator(self, context: StepContext) -> Locator:
+    def locator(self, context: StepContext) -> Locator:
         """
         通过 title 属性获取定位器
 

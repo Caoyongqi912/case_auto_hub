@@ -6,7 +6,7 @@ from croe.interface.manager.variable_manager import VariableManager
 from croe.play.context import PlayExecutionContext, StepContentContext
 from croe.play.executor import get_step_strategy
 from croe.play.starter import UIStarter
-from croe.play.writer import Writer
+from croe.play.writer import Writer, ContentResultWriter
 from utils import log
 from croe.play.browser import BrowserManagerFactory, PageManager
 
@@ -51,7 +51,6 @@ class PlayRunner:
         await self.starter.send(f"用例 {play_case.title} 执行开始。执行人 {self.starter.username}")
         await self.starter.send(f"查询到关联Step x {case_step_content_length} ...")
 
-
         page_manager = await self.__init_page()
         await self.starter.send(f"初始化页面成功")
 
@@ -68,6 +67,12 @@ class PlayRunner:
             case_result=case_result,
             task_result=task_result,
         )
+
+        content_writer = ContentResultWriter(
+            play_case_result_id=case_result.id,
+            play_task_result_id=task_result.id if task_result else None
+        )
+
         try:
 
             for index, step_content in enumerate(case_step_contents, start=1):
@@ -87,12 +92,15 @@ class PlayRunner:
                     await self.starter.send(f"⏭️⏭️  SKIP_STEP {index} ： 遇到错误已停止")
                     continue
 
+
                 play_content_context = StepContentContext(
                     index=index,
                     page_manager=page_manager,
                     play_step_content=step_content,
                     variable_manager=self.variable_manager,
-                    starter=self.starter
+                    starter=self.starter,
+                    play_step_result_writer=content_writer,
+
                 )
                 log.info(f"play_content_context {play_content_context}")
 
@@ -114,6 +122,7 @@ class PlayRunner:
             # 清理页面资源
             if page_manager:
                 await page_manager.close()
+
     @staticmethod
     async def __init_page() -> PageManager:
         """

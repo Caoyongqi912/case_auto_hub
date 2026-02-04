@@ -7,7 +7,7 @@
 # @Desc:
 
 import re
-from typing import Any
+from typing import Any, Optional
 
 from playwright.async_api import Locator, expect
 
@@ -23,7 +23,7 @@ class AssertIsCheckedMethod(BaseMethods):
     """
     method_name = "expect.to_be_checked"
 
-    async def execute(self, locator: Locator, context: StepContext) -> tuple[bool, InfoDict]:
+    async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> tuple[bool, InfoDict]:
         assert_info = create_assert_info(
             assert_name=context.step.name,
             assert_opt="=",
@@ -52,7 +52,7 @@ class AssertIsDisabledMethod(BaseMethods):
     """
     method_name = "expect.to_be_disabled"
 
-    async def execute(self, locator: Locator, context: StepContext) -> tuple[bool, InfoDict]:
+    async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> tuple[bool, InfoDict]:
         assert_info = create_assert_info(
             assert_name=context.step.name,
             assert_opt="=",
@@ -81,7 +81,7 @@ class AssertIsEditableMethod(BaseMethods):
     """
     method_name = "expect.to_be_editable"
 
-    async def execute(self, locator: Locator, context: StepContext) -> tuple[bool, InfoDict]:
+    async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> tuple[bool, InfoDict]:
         assert_info = create_assert_info(
             assert_name=context.step.name,
             assert_opt="=",
@@ -110,7 +110,7 @@ class AssertIsEmptyMethod(BaseMethods):
     """
     method_name = "expect.to_be_empty"
 
-    async def execute(self, locator: Locator, context: StepContext) -> tuple[bool, InfoDict]:
+    async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> tuple[bool, InfoDict]:
         assert_info = create_assert_info(
             assert_name=context.step.name,
             assert_opt="=",
@@ -139,7 +139,7 @@ class AssertIsEnabledMethod(BaseMethods):
     """
     method_name = "expect.to_be_enabled"
 
-    async def execute(self, locator: Locator, context: StepContext) -> tuple[bool, InfoDict]:
+    async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> tuple[bool, InfoDict]:
         assert_info = create_assert_info(
             assert_name=context.step.name,
             assert_opt="=",
@@ -168,7 +168,7 @@ class AssertIsFocusedMethod(BaseMethods):
     """
     method_name = "expect.to_be_focused"
 
-    async def execute(self, locator: Locator, context: StepContext) -> tuple[bool, InfoDict]:
+    async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> tuple[bool, InfoDict]:
         assert_info = create_assert_info(
             assert_name=context.step.name,
             assert_opt="=",
@@ -197,7 +197,7 @@ class AssertIsHiddenMethod(BaseMethods):
     """
     method_name = "expect.to_be_hidden"
 
-    async def execute(self, locator: Locator, context: StepContext) -> tuple[bool, InfoDict]:
+    async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> tuple[bool, InfoDict]:
         assert_info = create_assert_info(
             assert_name=context.step.name,
             assert_opt="=",
@@ -226,7 +226,7 @@ class AssertUrlTitle(BaseMethods):
     """
     method_name = "expect.url_title"
 
-    async def execute(self, locator: Locator, context: StepContext) -> tuple[bool, InfoDict]:
+    async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> tuple[bool, InfoDict]:
         expect_value = context.step.value.strip()
         assert_info = create_assert_info(
             assert_name=context.step.name,

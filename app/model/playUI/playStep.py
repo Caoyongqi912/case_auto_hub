@@ -26,12 +26,11 @@ class PlayStepModel(BaseModel):
     is_ignore = Column(BOOLEAN, default=False, comment="忽略异常")
     is_common = Column(BOOLEAN, default=False, comment="是否是公共步骤")
 
-
     module_id = Column(INTEGER, nullable=True, comment="所属模块")
     project_id = Column(INTEGER, ForeignKey("project.id", ondelete="set null"), nullable=True, comment="所属项目")
 
     def __repr__(self):
-        return f"<PlayStepModel (name='{self.name}'  description='{self.description}' method={self.method})>"
+        return f"<PlayStepModel (name='{self.name} selector={self.selector} locator={self.locator} method={self.method})>"
 
     @property
     def desc(self):

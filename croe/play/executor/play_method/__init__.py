@@ -4,9 +4,9 @@
 # @Author : cyq
 # @File : __init__.py
 # @Software: PyCharm
-# @Desc:
+# @Desc: 步骤执行器注册中心 - 替代责任链模式，实现基于method_name的精确匹配
 
-from typing import List, Optional
+from typing import Dict, Type, Optional, List
 
 from ._base_method import BaseMethods
 from .action_methods import (
@@ -51,129 +51,121 @@ from .page_method import (
     ForwardMethod,
     WaitMethod,
 )
+from utils import log
 
 
-class PlayMethodChain:
+class StepExecutorRegistry:
     """
-    处理器链管理器
-
-    负责构建和管理处理器责任链，支持动态添加处理器和构建默认处理器链。
+    步骤执行器注册中心
+    
+    使用字典映射实现基于method_name的精确匹配，替代责任链模式。
+    提供高性能的步骤执行器查找和执行能力。
     """
-
+    
     def __init__(self):
+        self._executors: Dict[str, BaseMethods] = {}
+    
+    def register(self, executor_class: Type[BaseMethods]) -> None:
         """
-        初始化处理器链
-
-        创建空的处理器列表和链头。
-        """
-        self._methods: List[BaseMethods] = []
-        self._chain: Optional[BaseMethods] = None
-
-    def add_method(self, method: BaseMethods) -> "PlayMethodChain":
-        """
-        添加处理器到链中
-
-        将处理器添加到处理器列表，支持链式调用。
-
+        注册步骤执行器
+        
         Args:
-            method: 要添加的处理器实例
+            executor_class: 执行器类，必须继承自BaseMethods
+        """
+        executor = executor_class()
+        method_name = executor.method_name
+        if method_name in self._executors:
+            log.warning(f"Executor for method '{method_name}' already registered, overwriting")
+        self._executors[method_name] = executor
 
+    def get_executor(self, method_name: str) -> Optional[BaseMethods]:
+        """
+        获取指定method_name对应的执行器
+        
+        Args:
+            method_name: 方法名称
+            
         Returns:
-            PlayMethodChain: 返回自身，支持链式调用
+            执行器实例，如果未找到则返回None
         """
-        self._methods.append(method)
-        return self
-
-    def build(self) -> BaseMethods:
+        return self._executors.get(method_name)
+    
+    def has_executor(self, method_name: str) -> bool:
         """
-        构建处理器链
-
-        将所有添加的处理器按顺序连接成责任链，并返回链头。
-
+        检查是否存在指定method_name的执行器
+        
+        Args:
+            method_name: 方法名称
+            
         Returns:
-            BaseMethods: 责任链的头部处理器
-
-        Raises:
-            ValueError: 当没有添加任何处理器时抛出
+            如果存在返回True，否则返回False
         """
-        if not self._methods:
-            raise ValueError("No handlers added to chain")
-
-        if self._chain is None:
-            self._chain = self._methods[0]
-
-        for i in range(len(self._methods) - 1):
-            self._methods[i].set_next(self._methods[i + 1])
-
-        return self._chain
-
-    @classmethod
-    def create_default_chain(cls) -> BaseMethods:
+        return method_name in self._executors
+    
+    def get_all_method_names(self) -> List[str]:
         """
-        创建默认的处理器链
-
-        创建包含所有标准处理器的默认责任链，按功能分类排列：
-        1. 页面操作方法
-        2. 元素交互方法
-        3. 数据提取方法
-        4. 断言方法
-
+        获取所有已注册的方法名称
+        
         Returns:
-            BaseMethods: 构建完成的默认处理器链
+            方法名称列表
         """
-        chain = cls()
-
+        return list(self._executors.keys())
+    
+    def register_default_executors(self) -> None:
+        """
+        注册所有默认的执行器
+        """
         # 页面操作方法
-        chain.add_method(GotoMethod())
-        chain.add_method(ReloadMethod())
-        chain.add_method(BackMethod())
-        chain.add_method(ForwardMethod())
-        chain.add_method(WaitMethod())
-
+        self.register(GotoMethod)
+        self.register(ReloadMethod)
+        self.register(BackMethod)
+        self.register(ForwardMethod)
+        self.register(WaitMethod)
+        
         # 元素交互方法
-        chain.add_method(ClickMethod())
-        chain.add_method(DblclickMethod())
-        chain.add_method(CheckMethod())
-        chain.add_method(UncheckMethod())
-        chain.add_method(ClearMethod())
-        chain.add_method(FillMethod())
-        chain.add_method(TypeMethod())
-        chain.add_method(FocusMethod())
-        chain.add_method(BlurMethod())
-        chain.add_method(HoverMethod())
-        chain.add_method(PressMethod())
-        chain.add_method(SelectOptionLabelMethod())
-        chain.add_method(SelectOptionValueMethod())
-        chain.add_method(SelectOptionValuesMethod())
-        chain.add_method(SetCheckedMethod())
-        chain.add_method(SetUncheckedMethod())
-        chain.add_method(UploadMethod())
-
+        self.register(ClickMethod)
+        self.register(DblclickMethod)
+        self.register(CheckMethod)
+        self.register(UncheckMethod)
+        self.register(ClearMethod)
+        self.register(FillMethod)
+        self.register(TypeMethod)
+        self.register(FocusMethod)
+        self.register(BlurMethod)
+        self.register(HoverMethod)
+        self.register(PressMethod)
+        self.register(SelectOptionLabelMethod)
+        self.register(SelectOptionValueMethod)
+        self.register(SelectOptionValuesMethod)
+        self.register(SetCheckedMethod)
+        self.register(SetUncheckedMethod)
+        self.register(UploadMethod)
+        
         # 数据提取方法
-        chain.add_method(CountMethod())
-        chain.add_method(GetAttributeMethod())
-        chain.add_method(GetInnerTextMethod())
-        chain.add_method(GetInputValueMethod())
-        chain.add_method(GetTextContentMethod())
-        chain.add_method(EvaluateMethod())
-
+        self.register(CountMethod)
+        self.register(GetAttributeMethod)
+        self.register(GetInnerTextMethod)
+        self.register(GetInputValueMethod)
+        self.register(GetTextContentMethod)
+        self.register(EvaluateMethod)
+        
         # 断言方法
-        chain.add_method(AssertIsCheckedMethod())
-        chain.add_method(AssertIsDisabledMethod())
-        chain.add_method(AssertIsEditableMethod())
-        chain.add_method(AssertIsEmptyMethod())
-        chain.add_method(AssertIsEnabledMethod())
-        chain.add_method(AssertIsFocusedMethod())
-        chain.add_method(AssertIsHiddenMethod())
-        chain.add_method(AssertUrlTitle())
-
-        return chain.build()
+        self.register(AssertIsCheckedMethod)
+        self.register(AssertIsDisabledMethod)
+        self.register(AssertIsEditableMethod)
+        self.register(AssertIsEmptyMethod)
+        self.register(AssertIsEnabledMethod)
+        self.register(AssertIsFocusedMethod)
+        self.register(AssertIsHiddenMethod)
+        self.register(AssertUrlTitle)
 
 
-# 创建全局方法链实例
-method_chain = PlayMethodChain.create_default_chain()
+# 创建全局执行器注册中心实例
+executor_registry = StepExecutorRegistry()
+executor_registry.register_default_executors()
+
 
 __all__ = [
-    "method_chain",
-    "PlayMethodChain",
+    "StepExecutorRegistry",
+    "executor_registry",
 ]

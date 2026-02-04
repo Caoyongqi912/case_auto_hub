@@ -67,7 +67,7 @@ class LocatorHandler:
         return list(LocatorMethods.registry.keys())
 
 
-async def get_locator(context: StepContext) -> Optional[Locator]:
+def get_locator(context: StepContext) -> Optional[Locator]:
     """
     根据步骤上下文获取定位器
 
@@ -100,13 +100,12 @@ async def get_locator(context: StepContext) -> Optional[Locator]:
 
         if context.locator:
             # 获取对应的定位器处理器
-            handler = LocatorHandler.get_handler(context.step.locator)
-
+            handler_class = LocatorHandler.get_handler(context.step.locator)
+            log.debug(f"use Handler {handler_class}")
             # 调用处理器获取定位器
-            locator = await handler.locator(context)
-
+            locator = handler_class.locator(context)
             log.info(
-                f"成功获取定位器 [{context.step.locator}]: {context.selector}"
+                f"成功获取定位器 [{context.step.locator}]: {locator}"
             )
         else:
             # 使用 CSS 选择器或 iframe 定位
