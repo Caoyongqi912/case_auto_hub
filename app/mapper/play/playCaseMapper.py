@@ -705,6 +705,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
     async def init_case_result(cls,
                                play_case: PlayCase,
                                user: UIStarter,
+                               vars_list: List[Dict[str, Any]] = None,
                                task_result_id: int = None) -> PlayCaseResult:
         """
         初始化用例结果模型
@@ -713,7 +714,8 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
             play_case: 运行的用例对象
             user: 运行人
             task_result_id: 任务结果ID，可选
-            
+            vars_list: 变量
+
         Returns:
             PlayCaseResult: 初始化后的用例结果对象
             
@@ -724,22 +726,22 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
         """
         try:
             async with async_session() as session:
-                async with session.begin():
-                    result = PlayCaseResult(
-                        ui_case_Id=play_case.id,
-                        ui_case_name=play_case.title,
-                        ui_case_description=play_case.description,
-                        ui_case_step_num=play_case.step_num,
-                        starter_id=user.userId,
-                        starter_name=user.username,
-                        start_time=datetime.now(),
-                        task_result_id=task_result_id,
-                        status=Status.RUNNING,
-                        vars_info=[],
-                        asserts_info=[],
-                    )
-                    await cls.add_flush_expunge(session, result)
-                    return result
+                result = PlayCaseResult(
+                    ui_case_Id=play_case.id,
+                    ui_case_name=play_case.title,
+                    ui_case_description=play_case.description,
+                    ui_case_step_num=play_case.step_num,
+                    starter_id=user.userId,
+                    starter_name=user.username,
+                    start_time=datetime.now(),
+                    task_result_id=task_result_id,
+                    status=Status.RUNNING,
+                    vars_info=vars_list if vars_list else [],
+                    asserts_info=[],
+                )
+                await session.add(result)
+                await session.commit()
+                return result
         except Exception as e:
             log.error(e)
             raise e
@@ -901,8 +903,8 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
             case PlayStepContentType.STEP_PLAY_GROUP:
                 from app.mapper.play.playStepGroupMapper import PlayStepGroupMapper
                 group = await PlayStepGroupMapper.copy_group2(group_id=content.target_id,
-                                                             user=user,
-                                                             session=session)
+                                                              user=user,
+                                                              session=session)
                 new_content = PlayStepContent(
                     target_id=group.id,
                     content_name=group.name,

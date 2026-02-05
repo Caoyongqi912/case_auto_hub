@@ -10,9 +10,10 @@ from typing import Dict, Any, Optional
 
 from app.mapper.play import PlayCaseResultMapper
 from app.mapper.file import FileMapper
+from app.mapper.play.playResultMapper import PlayContentResultMapper
 from app.mapper.play.playTaskMapper import PlayTaskMapper, PlayTaskResultMapper
 from app.model.base import FileModel
-from app.model.playUI import PlayCaseResult, PlayTaskResult
+from app.model.playUI import PlayCaseResult, PlayTaskResult, PlayCase
 from app.model.playUI.PlayResult import PlayStepContentResult
 from croe.play.starter import UIStarter
 from utils import log
@@ -23,6 +24,9 @@ import os
 
 
 class ContentResultWriter:
+    """
+    步骤结果写入
+    """
 
     def __init__(self, play_case_result_id: int, play_task_result_id: Optional[int] = None):
         self.play_case_result_id = play_case_result_id
@@ -30,126 +34,157 @@ class ContentResultWriter:
         self.content_results = []
 
     async def add_content_result(self, content_result: PlayStepContentResult):
-        content_result.play_case_result_id = self.play_case_result_id,
-        content_result.play_task_result_id = self.play_task_result_id,
-        self.content_results.append(    
+        content_result.play_case_result_id = self.play_case_result_id
+        content_result.play_task_result_id = self.play_task_result_id
+        self.content_results.append(
             content_result,
         )
 
     async def flush(self):
         if not self.content_results:
+            log.warning("[ContentResultWriter] No content results to write")
             return
+        integer = await PlayContentResultMapper.save_result_batch(self.content_results)
+        log.info(f"[ContentResultWriter] Batch inserted {integer} results")
+
+    @property
+    def results(self):
+        return self.content_results
+
+
+class PlayCaseResultWriter:
+    """
+    UI 业务流 结果写入
+    """
+
+    def __init__(self, starter: UIStarter, play_task_result_id: int = None):
+        self._starter = starter
+        self.play_case_result: Optional[PlayCaseResult] = None
+        self.play_task_result_id = play_task_result_id
+
+    async def init_result(self, play_case: PlayCase, vars_info: Dict[str, str] = None):
+        """
+        初始化
+        """
+        vars_list = self._build_vars(vars_info)
+        self.play_case_result = await PlayCaseResultMapper.init_case_result(
+            play_case=play_case,
+            user=self._starter,
+            task_result_id=self.play_task_result_id,
+            vars_list=vars_list,
+        )
+
+    async def write_result(self, SUCCESS=bool):
+        """
+        写入最终结果
+        """
+        end_time = datetime.datetime.now()
+        self.play_case_result.status.end_time = end_time
+        self.play_case_result.status.use_time = GenerateTools.timeDiff(self.play_case_result.start_time, end_time)
+        self.play_case_result.status = Status.DONE
+        self.play_case_result.result = Result.SUCCESS if SUCCESS else Result.FAIL
+        self.play_case_result.result.running_logs = "".join(self._starter.logs)
+
+
+
+    @staticmethod
+    def _build_vars(vars_map: Dict[str, Any]):
+        """
+        写入前置变量
+        """
+        vars_list = []
+        for k, v in vars_map.items():
+            _varsInfo = {
+                "id": GenerateTools.getTime(3),
+                "step_name": "Before_Vars",
+                "extract_method": "Before",
+                "key": k,
+                "value": v
+            }
+            vars_list.append(_varsInfo)
+        return vars_list
 
 
 class Writer:
+    """
+    执行db记录
+    """
+
+    @staticmethod
+    async def write_base_result(base_result: PlayTaskResult):
         """
-        执行db记录
+        回写测试结果
+        :param base_result: 测试结果实体
+        :return:
+        """
+        eTime = datetime.datetime.now()
+        base_result.rate_number = round(base_result.success_number / base_result.total_number * 100, 2)
+        base_result.end_time = eTime
+        base_result.total_usetime = GenerateTools.timeDiff(base_result.start_time, eTime)
+        base_result.status = Status.DONE
+        if base_result.fail_number > 0:
+            base_result.result = Result.FAIL
+        else:
+            base_result.result = Result.SUCCESS
+        await PlayTaskMapper.set_task_status(base_result.task_id, Status.WAIT)
+
+        return await PlayTaskResultMapper.set_result(base_result)
+
+    @staticmethod
+    async def write_case_result(case_result: PlayCaseResult,
+                                starter: UIStarter,
+                                errorMsgMap: Dict[str, str] = None):
+        """
+        回写测试结果
+        :param case_result: 测试结果实体
+        :param starter: UIStarter
+        :param errorMsgMap: 错误信息
+        :return:
+        """
+        eTime = datetime.datetime.now()
+        case_result.end_time = eTime
+        case_result.use_time = GenerateTools.timeDiff(case_result.start_time, eTime)
+        case_result.result = Result.SUCCESS
+        case_result.status = Status.DONE
+        case_result.running_logs = "".join(starter.logs)
+
+        if errorMsgMap:
+            log.info(f"error_msg = {errorMsgMap}")
+            case_result.result = Result.FAIL
+            PATH_KEY = "ui_case_err_step_pic_path"
+            if errorMsgMap.get(PATH_KEY):
+                file = await Writer.write_error_file(errorMsgMap.get(PATH_KEY))
+                errorMsgMap[PATH_KEY] = f"{Config.UI_ERROR_PATH}{file.uid}"
+            for k, v in errorMsgMap.items():
+                setattr(case_result, k, v)
+        await PlayCaseResultMapper.set_case_result(case_result)
+
+    @staticmethod
+    async def write_error_file(filepath: str) -> FileModel:
+        """
+        db 写入 file
+        :param filepath:
+        :return:
+        """
+        fileName = os.path.split(filepath)[-1]
+        file = await FileMapper.insert_file(
+            filePath=filepath,
+            fileName=fileName
+        )
+        return file
+
+    @staticmethod
+    async def write_assert_info(case_result: PlayCaseResult,
+                                assertsInfo: Any = None):
+        """
+        写入assertInfo
+        :param case_result:
+        :param assertsInfo:
+        :return:
         """
 
-        @staticmethod
-        async def write_base_result(base_result: PlayTaskResult):
-            """
-            回写测试结果
-            :param base_result: 测试结果实体
-            :return:
-            """
-            eTime = datetime.datetime.now()
-            base_result.rate_number = round(base_result.success_number / base_result.total_number * 100, 2)
-            base_result.end_time = eTime
-            base_result.total_usetime = GenerateTools.timeDiff(base_result.start_time, eTime)
-            base_result.status = Status.DONE
-            if base_result.fail_number > 0:
-                base_result.result = Result.FAIL
-            else:
-                base_result.result = Result.SUCCESS
-            await PlayTaskMapper.set_task_status(base_result.task_id, Status.WAIT)
+        if case_result.asserts_info is None:
+            case_result.asserts_info = []
 
-            return await PlayTaskResultMapper.set_result(base_result)
-
-        @staticmethod
-        async def write_case_result(case_result: PlayCaseResult,
-                                    starter: UIStarter,
-                                    errorMsgMap: Dict[str, str] = None):
-            """
-            回写测试结果
-            :param case_result: 测试结果实体
-            :param starter: UIStarter
-            :param errorMsgMap: 错误信息
-            :return:
-            """
-            eTime = datetime.datetime.now()
-            case_result.end_time = eTime
-            case_result.use_time = GenerateTools.timeDiff(case_result.start_time, eTime)
-            case_result.result = Result.SUCCESS
-            case_result.status = Status.DONE
-            case_result.running_logs = "".join(starter.logs)
-
-            if errorMsgMap:
-                log.info(f"error_msg = {errorMsgMap}")
-                case_result.result = Result.FAIL
-                PATH_KEY = "ui_case_err_step_pic_path"
-                if errorMsgMap.get(PATH_KEY):
-                    file = await Writer.write_error_file(errorMsgMap.get(PATH_KEY))
-                    errorMsgMap[PATH_KEY] = f"{Config.UI_ERROR_PATH}{file.uid}"
-                for k, v in errorMsgMap.items():
-                    setattr(case_result, k, v)
-            await PlayCaseResultMapper.set_case_result(case_result)
-
-        @staticmethod
-        async def write_error_file(filepath: str) -> FileModel:
-            """
-            db 写入 file
-            :param filepath:
-            :return:
-            """
-            fileName = os.path.split(filepath)[-1]
-            file = await FileMapper.insert_file(
-                filePath=filepath,
-                fileName=fileName
-            )
-            return file
-
-        @staticmethod
-        async def write_assert_info(case_result: PlayCaseResult,
-                                    assertsInfo: Any = None):
-            """
-            写入assertInfo
-            :param case_result:
-            :param assertsInfo:
-            :return:
-            """
-
-            if case_result.asserts_info is None:
-                case_result.asserts_info = []
-
-            case_result.asserts_info.extend(assertsInfo)
-            await PlayCaseResultMapper.set_case_result_assertInfo(case_result.id, case_result.asserts_info)
-
-        @staticmethod
-        async def write_vars_info(case_result: PlayCaseResult,
-                                  step_name: str,
-                                  extract_method: str,
-                                  varsInfo: Dict[str, Any] = None):
-            """
-            写入assertInfo
-            :param case_result:
-            :param extract_method:
-            :param step_name:
-            :param varsInfo:
-            :return:
-            """
-            for k, v in varsInfo.items():
-                _varsInfo = {
-                    "id": GenerateTools.getTime(3),
-                    "step_name": step_name,
-                    "extract_method": extract_method,
-                    "key": k,
-                    "value": v
-                }
-                case_result.vars_info.append(_varsInfo)
-            unique_dict = {}
-            for item in case_result.vars_info:
-                ck = (item['key'], item['value'])
-                unique_dict[ck] = item
-            unique_data = list(unique_dict.values())
-            await PlayCaseResultMapper.set_case_result_varsInfo(case_result.id, unique_data)
+        case_result.asserts_info.extend(assertsInfo)
+        await PlayCaseResultMapper.set_case_result_assertInfo(case_result.id, case_result.asserts_info)
