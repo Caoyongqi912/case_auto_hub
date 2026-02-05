@@ -97,6 +97,7 @@ class BrowserManager:
 
         )
         context.set_default_navigation_timeout(Config.UI_Timeout)
+        context.set_default_timeout(Config.UI_Timeout)
         log.info(f"[BrowserManager] BrowserContext {context} initialized successfully")
         return context
 

@@ -20,6 +20,7 @@ class GotoMethod(BaseMethods):
         try:
             page = context.page
             url = await context.variable_manager.trans(context.step.value)
+            log.info(f"GotoMethod url: {url}")
             await page.goto(url)
             await context.log(f"跳转页面 ✅ : {url}")
             return create_success_result(f"跳转页面 ✅ : {url}").to_tuple()
@@ -62,6 +63,7 @@ class ReloadMethod(BaseMethods):
                 error_type="interaction_failed",
                 message=f"页面刷新失败: {str(e)} ",
             ).to_tuple()
+
 
 class BackMethod(BaseMethods):
     """
