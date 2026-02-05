@@ -33,7 +33,6 @@ class PlayExecutor:
             await step_context.starter.send(f"❌ 执行失败: {error_msg}")
             return False, error_msg
 
-
         executor = executor_registry.get_executor(method_name)
         if not executor:
             available_methods = executor_registry.get_all_method_names()
@@ -41,9 +40,6 @@ class PlayExecutor:
             log.error(f"[PlayExecutor] {error_msg}")
             await step_context.starter.send(f"❌ {error_msg}")
             return False, error_msg
-
-
-        log.info(f"[PlayExecutor] execute step: method = {method_name}, executor = {executor.__class__.__name__}")
 
         locator = get_locator(step_context)
         log.info(f"[PlayExecutor] execute step: locator = {locator}, method ={step_context.step.method}")
@@ -56,6 +52,7 @@ class PlayExecutor:
                 except Exception as e:
                     log.exception(f"[PlayExecutor] Error executing method '{method_name}' with new page: {e}")
                     error_msg = f"Execution failed for method '{method_name}': {str(e)}"
+
                     await step_context.starter.send(f"❌ {error_msg}")
                     return False, error_msg
 

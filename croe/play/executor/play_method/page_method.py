@@ -51,13 +51,13 @@ class ReloadMethod(BaseMethods):
             await context.log("刷新页面 ✅")
             return create_success_result(f"刷新页面 ✅").to_tuple()
         except PlaywrightTimeoutError as e:
-            log.error(f"[ReloadMethod] 页面刷新超时: {e}")
+            await context.starter.send(f"[ReloadMethod] 页面刷新超时: {e}")
             return create_error_result(
                 error_type="timeout",
                 message=f"页面刷新超时: {str(e)} ",
             ).to_tuple()
         except Exception as e:
-            log.error(f"[ReloadMethod] reload error: {e}")
+            await context.starter.send(f"[ReloadMethod] reload error: {e}")
             return create_error_result(
                 error_type="interaction_failed",
                 message=f"页面刷新失败: {str(e)} ",
@@ -76,13 +76,13 @@ class BackMethod(BaseMethods):
             await context.starter.send("返回上一页 ✅")
             return create_success_result(f"返回上一页 ✅").to_tuple()
         except PlaywrightTimeoutError as e:
-            log.error(f"[BackMethod] 页面返回超时: {e}")
+            await context.starter.send(f"[BackMethod] 页面返回超时: {e}")
             return create_error_result(
                 error_type="timeout",
                 message=f"页面返回超时: {str(e)} ",
             ).to_tuple()
         except Exception as e:
-            log.error(f"[BackMethod] back error: {e}")
+            await context.starter.send(f"[BackMethod] back error: {e}")
             return create_error_result(
                 error_type="interaction_failed",
                 message=f"页面返回失败: {str(e)} ",
@@ -102,13 +102,13 @@ class ForwardMethod(BaseMethods):
             await context.starter.send("前进下一页 ✅")
             return create_success_result(f"前进下一页 ✅").to_tuple()
         except PlaywrightTimeoutError as e:
-            log.error(f"[ForwardMethod] 页面前进超时: {e}")
+            await context.starter.send(f"[ForwardMethod] 页面前进超时: {e}")
             return create_error_result(
                 error_type="timeout",
                 message=f"页面前进超时: {str(e)} ",
             ).to_tuple()
         except Exception as e:
-            log.error(f"[ForwardMethod] forward error: {e}")
+            await context.starter.send(f"[ForwardMethod] forward error: {e}")
             return create_error_result(
                 error_type="interaction_failed",
                 message=f"页面前进失败: {str(e)} ",
@@ -132,7 +132,7 @@ class WaitMethod(BaseMethods):
             await context.starter.send(f"等待 ✅ : {wait_time}ms")
             return create_success_result(f"等待 ✅ : {wait_time}ms").to_tuple()
         except Exception as e:
-            log.error(f"[WaitMethod] wait error: {e}")
+            await context.starter.send(f"[WaitMethod] wait error: {e}")
             return create_error_result(
                 error_type="interaction_failed",
                 message=f"等待失败: {str(e)} ",

@@ -28,6 +28,7 @@ class ClickMethod(BaseMethods):
             return result.to_tuple()
         except TimeoutError as e:
             # 返回超时错误
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -35,6 +36,7 @@ class ClickMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"点击操作失败 ❌: {str(e)}")
             # 返回交互失败错误
             result = create_error_result(
                 error_type="interaction_failed",
@@ -55,6 +57,7 @@ class DblclickMethod(BaseMethods):
             result = create_success_result(message=f"双击元素成功: {context.selector}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -62,6 +65,7 @@ class DblclickMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"双击操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"双击操作失败: {str(e)}",
@@ -81,6 +85,7 @@ class CheckMethod(BaseMethods):
             result = create_success_result(message=f"勾选复选框成功: {context.selector}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -88,6 +93,7 @@ class CheckMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"勾选操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"勾选操作失败: {str(e)}",
@@ -107,6 +113,7 @@ class UncheckMethod(BaseMethods):
             result = create_success_result(message=f"取消勾选成功: {context.selector}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -114,6 +121,7 @@ class UncheckMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"取消勾选操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"取消勾选操作失败: {str(e)}",
@@ -133,6 +141,7 @@ class ClearMethod(BaseMethods):
             result = create_success_result(message=f"清空输入框成功: {context.selector}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -140,6 +149,7 @@ class ClearMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"清空操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"清空操作失败: {str(e)}",
@@ -160,6 +170,7 @@ class FillMethod(BaseMethods):
             result = create_success_result(message=f"填充输入成功: {context.selector} = {value}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -167,6 +178,7 @@ class FillMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"填充操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"填充操作失败: {str(e)}",
@@ -187,6 +199,7 @@ class TypeMethod(BaseMethods):
             result = create_success_result(message=f"输入文本成功: {context.selector} = {value}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -194,6 +207,7 @@ class TypeMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"输入文本操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"输入文本操作失败: {str(e)}",
@@ -213,6 +227,7 @@ class FocusMethod(BaseMethods):
             result = create_success_result(message=f"聚焦元素成功: {context.selector}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -220,6 +235,7 @@ class FocusMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"聚焦操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"聚焦操作失败: {str(e)}",
@@ -239,6 +255,7 @@ class BlurMethod(BaseMethods):
             result = create_success_result(message=f"失焦元素成功: {context.selector}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -246,6 +263,7 @@ class BlurMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"失焦操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"失焦操作失败: {str(e)}",
@@ -265,6 +283,7 @@ class HoverMethod(BaseMethods):
             result = create_success_result(message=f"悬停元素成功: {context.selector}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -272,6 +291,7 @@ class HoverMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"悬停操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"悬停操作失败: {str(e)}",
@@ -292,6 +312,7 @@ class PressMethod(BaseMethods):
             result = create_success_result(message=f"按键操作成功: {key}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -299,6 +320,7 @@ class PressMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"按键操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"按键操作失败: {str(e)}",
@@ -319,6 +341,7 @@ class SelectOptionLabelMethod(BaseMethods):
             result = create_success_result(message=f"选择选项(标签)成功: {context.selector} = {value}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -326,6 +349,7 @@ class SelectOptionLabelMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"选择选项操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"选择选项操作失败: {str(e)}",
@@ -346,6 +370,7 @@ class SelectOptionValueMethod(BaseMethods):
             result = create_success_result(message=f"选择选项(值)成功: {context.selector} = {value}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -353,6 +378,7 @@ class SelectOptionValueMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"选择选项操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"选择选项操作失败: {str(e)}",
@@ -374,6 +400,7 @@ class SelectOptionValuesMethod(BaseMethods):
             result = create_success_result(message=f"选择多个选项成功: {context.selector} = {values}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -381,6 +408,7 @@ class SelectOptionValuesMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"选择多个选项操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"选择多个选项操作失败: {str(e)}",
@@ -400,6 +428,7 @@ class SetCheckedMethod(BaseMethods):
             result = create_success_result(message=f"设置勾选成功: {context.selector}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -407,6 +436,7 @@ class SetCheckedMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"设置勾选操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"设置勾选操作失败: {str(e)}",
@@ -426,6 +456,7 @@ class SetUncheckedMethod(BaseMethods):
             result = create_success_result(message=f"设置未勾选成功: {context.selector}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -433,6 +464,7 @@ class SetUncheckedMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"设置未勾选操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"设置未勾选操作失败: {str(e)}",
@@ -456,6 +488,7 @@ class UploadMethod(BaseMethods):
             result = create_success_result(message=f"上传文件成功: {context.value}")
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -463,6 +496,7 @@ class UploadMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"上传文件操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="interaction_failed",
                 message=f"上传文件操作失败: {str(e)}",
@@ -491,6 +525,7 @@ class CountMethod(BaseMethods):
             )
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -498,6 +533,7 @@ class CountMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"提取数量操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="unknown",
                 message=f"提取数量操作失败: {str(e)}",
@@ -533,6 +569,7 @@ class GetAttributeMethod(BaseMethods):
             )
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -540,6 +577,7 @@ class GetAttributeMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"提取属性操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="unknown",
                 message=f"提取属性操作失败: {str(e)}",
@@ -568,6 +606,7 @@ class GetInnerTextMethod(BaseMethods):
             )
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -575,6 +614,7 @@ class GetInnerTextMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"提取文本操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="unknown",
                 message=f"提取文本操作失败: {str(e)}",
@@ -603,6 +643,7 @@ class GetInputValueMethod(BaseMethods):
             )
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -610,6 +651,7 @@ class GetInputValueMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"提取值操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="unknown",
                 message=f"提取值操作失败: {str(e)}",
@@ -642,6 +684,7 @@ class GetTextContentMethod(BaseMethods):
             )
             return result.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -649,6 +692,7 @@ class GetTextContentMethod(BaseMethods):
             )
             return result.to_tuple()
         except Exception as e:
+            await context.log(f"提取文本内容操作失败 ❌: {str(e)}")
             result = create_error_result(
                 error_type="unknown",
                 message=f"提取文本内容操作失败: {str(e)}",
@@ -680,6 +724,7 @@ class EvaluateMethod(BaseMethods):
             )
             return result_obj.to_tuple()
         except TimeoutError as e:
+            await context.log(f"元素定位超时 ❌: {str(e)}")
             result_obj = create_error_result(
                 error_type="timeout",
                 message=f"元素定位超时: {str(e)}",
@@ -687,6 +732,7 @@ class EvaluateMethod(BaseMethods):
             )
             return result_obj.to_tuple()
         except Exception as e:
+            await context.log(f"执行脚本操作失败 ❌: {str(e)}")
             result_obj = create_error_result(
                 error_type="unknown",
                 message=f"执行脚本操作失败: {str(e)}",

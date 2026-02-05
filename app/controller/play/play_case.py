@@ -300,13 +300,18 @@ async def page_case_result(pageInfo: PagePlayCaseResultSchema, _: User = Depends
         分页查询结果
     """
     data = await PlayCaseResultMapper.page_query(**pageInfo.model_dump(exclude_none=True,
-                                                                       exclude_unset=True),
-                                                 task_result_id=None)
+                                                                       exclude_unset=True))
+    return Response.success(data,exclude={
+        "asserts_info","running_logs",
+    })
+
+@router.get("/queryContentResults",description="查询步骤详情")
+async def query_content_results(case_result_id:int, _: User = Depends(Authentication())):
+    data = await PlayCaseResultMapper.query_contents(case_result_id)
     return Response.success(data)
 
-
 @router.get("/result_detail", description="用例结果详情")
-async def get_case_result(uid: str, _: User = Depends(Authentication())):
+async def get_case_result(case_result_id: int, _: User = Depends(Authentication())):
     """
     获取用例执行结果详情
 
@@ -317,7 +322,7 @@ async def get_case_result(uid: str, _: User = Depends(Authentication())):
     Returns:
         用例执行结果详情
     """
-    result = await PlayCaseResultMapper.get_by_uid(uid)
+    result = await PlayCaseResultMapper.get_by_id(case_result_id)
     return Response.success(result)
 
 

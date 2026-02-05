@@ -80,7 +80,7 @@ class LocalConfig(BaseConfig):
     # ======================= ui playwright ====================
     INIT_PLAY_BROWSER = False
     UI_Headless = True
-    UI_Timeout = 3000
+    UI_Timeout = 1000
     UI_SLOW = 500
     UI_ERROR_PATH = DOMAIN + "/file/ui_case/uid="
     UI_TASK_URL = f"{DOMAIN}/ui/task/detail/taskId="

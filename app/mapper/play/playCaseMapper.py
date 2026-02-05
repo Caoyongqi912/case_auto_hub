@@ -23,6 +23,7 @@ from ..file import FileMapper
 from ...exception import NotFind
 from app.model.playUI.playStepContent import PlayStepContent
 from app.model.playUI.playAssociation import PlayCaseStepContentAssociation
+from app.model.playUI.PlayResult import PlayStepContentResult
 
 
 class CommonHelper:
@@ -662,6 +663,30 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
     __model__ = PlayCaseResult
 
     @classmethod
+    async def query_contents(cls, case_result_id: int) -> List[PlayStepContentResult]:
+        """
+        查询步骤结果
+
+        Args:
+            case_result_id 用例结果ID
+
+        Returns:
+            List[PlayStepContentResult]
+        """
+
+        try:
+            async with async_session() as session:
+                case_result = await cls.get_by_id(ident=case_result_id, session=session)
+
+                stmt = select(PlayStepContentResult).where(
+                    PlayStepContentResult.play_case_result_id == case_result.id
+                ).order_by(PlayStepContentResult.content_step)
+                result = await session.scalars(stmt)
+                return result.all()
+        except Exception as e:
+            raise e
+
+    @classmethod
     async def clear_case_result(cls, caseId: int):
         """
         清空用例调试历史
@@ -726,24 +751,24 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
         """
         try:
             async with async_session() as session:
-                result = PlayCaseResult(
-                    ui_case_Id=play_case.id,
-                    ui_case_name=play_case.title,
-                    ui_case_description=play_case.description,
-                    ui_case_step_num=play_case.step_num,
-                    starter_id=user.userId,
-                    starter_name=user.username,
-                    start_time=datetime.now(),
-                    task_result_id=task_result_id,
-                    status=Status.RUNNING,
-                    vars_info=vars_list if vars_list else [],
-                    asserts_info=[],
-                )
-                await session.add(result)
-                await session.commit()
-                return result
+                async with session.begin():
+                    result = PlayCaseResult(
+                        ui_case_Id=play_case.id,
+                        ui_case_name=play_case.title,
+                        ui_case_description=play_case.description,
+                        ui_case_step_num=play_case.step_num,
+                        starter_id=user.userId,
+                        starter_name=user.username,
+                        start_time=datetime.now(),
+                        task_result_id=task_result_id,
+                        status=Status.RUNNING,
+                        vars_info=vars_list if vars_list else [],
+                        asserts_info=[],
+                    )
+
+                    return await cls.add_flush_expunge(session, result)
         except Exception as e:
-            log.error(e)
+            log.exception(e)
             raise e
 
     @classmethod

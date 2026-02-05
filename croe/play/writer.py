@@ -51,6 +51,9 @@ class ContentResultWriter:
     def results(self):
         return self.content_results
 
+    def __repr__(self):
+        return f"<ContentResultWriter case_result_id={self.play_case_result_id}> task_result_id={self.play_task_result_id}> results={len(self.content_results)}> />"
+
 
 class PlayCaseResultWriter:
     """
@@ -61,6 +64,14 @@ class PlayCaseResultWriter:
         self._starter = starter
         self.play_case_result: Optional[PlayCaseResult] = None
         self.play_task_result_id = play_task_result_id
+
+    @property
+    def play_case_result_id(self):
+        if self.play_case_result:
+            return self.play_case_result.id
+        else:
+            log.warning("[PlayCaseResultWriter] No case result to write")
+            return None
 
     async def init_result(self, play_case: PlayCase, vars_info: Dict[str, str] = None):
         """
@@ -79,12 +90,12 @@ class PlayCaseResultWriter:
         写入最终结果
         """
         end_time = datetime.datetime.now()
-        self.play_case_result.status.end_time = end_time
-        self.play_case_result.status.use_time = GenerateTools.timeDiff(self.play_case_result.start_time, end_time)
+        self.play_case_result.end_time = end_time
+        self.play_case_result.use_time = GenerateTools.timeDiff(self.play_case_result.start_time, end_time)
         self.play_case_result.status = Status.DONE
         self.play_case_result.result = Result.SUCCESS if SUCCESS else Result.FAIL
-        self.play_case_result.result.running_logs = "".join(self._starter.logs)
-
+        self.play_case_result.running_logs = "".join(self._starter.logs)
+        await PlayCaseResultMapper.set_case_result(self.play_case_result)
 
 
     @staticmethod
@@ -103,6 +114,9 @@ class PlayCaseResultWriter:
             }
             vars_list.append(_varsInfo)
         return vars_list
+
+    def __repr__(self):
+        return f"<PlayCaseResultWriter case_result_id={self.play_case_result_id}, case_task_result_id={self.play_task_result_id}>"
 
 
 class Writer:

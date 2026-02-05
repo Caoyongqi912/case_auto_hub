@@ -27,19 +27,23 @@ class PlayRunner:
         :param error_stop:
         :return:
         """
+        try:
+            play_case = await PlayCaseMapper.get_by_id(ident=case_id)
+            log.info(f"查询到业务流用例  {play_case}")
 
-        play_case = await PlayCaseMapper.get_by_id(ident=case_id)
-        log.info(f"查询到业务流用例  {play_case}")
+            # 查询初始化变量
+            await self.init_case_variables(play_case=play_case)
 
-        # 查询初始化变量
-        await self.init_case_variables(play_case=play_case)
+            # 初始化用例结果，
+            case_result_writer = PlayCaseResultWriter(starter=self.starter)
+            await case_result_writer.init_result(play_case=play_case, vars_info=self.variable_manager.variables)
+            log.info(f"init case_result_writer = {case_result_writer}")
 
-        # 初始化用例结果，
-        case_result_writer = PlayCaseResultWriter(starter=self.starter)
-        await case_result_writer.init_result(play_case=play_case, vars_info=self.variable_manager.variables)
-
-        # 执行用例
-        await self.execute_case(play_case=play_case, case_result_writer=case_result_writer, error_stop=error_stop)
+            # 执行用例
+            await self.execute_case(play_case=play_case, case_result_writer=case_result_writer, error_stop=error_stop)
+        except Exception as e:
+            log.exception(e)
+            raise e
 
     async def execute_case(self, play_case: PlayCase, case_result_writer: PlayCaseResultWriter,
                            task_result: PlayTaskResult = None,
@@ -53,6 +57,7 @@ class PlayRunner:
         :return:
         """
         # 默认结果为成功
+        page_manager = None
         CASE_SUCCESS = True
 
         case_step_contents = await PlayCaseMapper.query_content_steps(case_id=play_case.id)
@@ -60,20 +65,22 @@ class PlayRunner:
         await self.starter.send(f"用例 {play_case.title} 执行开始。执行人 {self.starter.username}")
         await self.starter.send(f"查询到关联Step x {case_step_content_length} ...")
 
-        page_manager = await self.__init_page()
-        await self.starter.send(f"初始化页面成功")
-
         if not case_step_contents:
             await self.starter.send("无可执行业务流步骤，结束执行")
             return await self.starter.over()
 
-        #   初始化。创建结果写入器
+        # 初始化。步骤结果写入器
         content_writer = ContentResultWriter(
             play_case_result_id=case_result_writer.play_case_result.id,
             play_task_result_id=task_result.id if task_result else None
         )
+        log.debug(f"init content_writer = {content_writer}")
 
         try:
+            page_manager = await self.__init_page()
+
+            await self.starter.send(f"初始化页面成功")
+
             for index, step_content in enumerate(case_step_contents, start=1):
                 await self.starter.send(
                     f"✍️✍️ {'=' * 20} EXECUTE_STEP {index} ： {step_content} {'=' * 20}"
@@ -111,7 +118,11 @@ class PlayRunner:
             log.exception(e)
 
         finally:
+            await self.starter.send(f'执行完成 >> {play_case}, 结果: {CASE_SUCCESS}')
+            await case_result_writer.write_result(CASE_SUCCESS)
+            await self.starter.over(case_result_writer.play_case_result.uid)
             await self.__clean(page_manager)
+            return CASE_SUCCESS
 
     # 清理页面资源
 
@@ -124,7 +135,7 @@ class PlayRunner:
 
         if self.browser:
             await self.browser.close_all()
-
+        await self.variable_manager.clear()
         await self.starter.clear_logs()
 
     async def __init_page(self) -> PageManager:
@@ -132,9 +143,9 @@ class PlayRunner:
         初始化页面
         :return:
         """
-        self.browser = await BrowserManagerFactory.get_instance()
-        page = await self.browser.new_page()
-
+        self.instance = await BrowserManagerFactory.get_instance()
+        browser_context = await self.instance.get_browser()
+        page = await browser_context.new_page()
         page_manager = PageManager()
         page_manager.set_page(page=page)
         return page_manager
