@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError
 
 from croe.play.context import StepContext
-from croe.play.executor.play_method.result_types import create_error_info
+from croe.play.executor.play_method.result_types import create_error_info, StepExecutionResult
 from utils import log
 
 
@@ -27,8 +27,7 @@ class BaseMethods(ABC):
     requires_locator: bool = True
 
     @abstractmethod
-    async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> tuple[
-        bool, Optional[Dict[str, Any]]]:
+    async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
         """
         执行具体的处理逻辑
 

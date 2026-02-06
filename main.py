@@ -5,6 +5,7 @@ import click
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import ORJSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.errors import ServerErrorMiddleware
 from starlette.middleware.cors import CORSMiddleware
@@ -14,6 +15,7 @@ from app.ws import asgi_app
 from utils import log
 from common import rc, RedisClient
 from config import Config
+import os
 
 
 @asynccontextmanager
@@ -25,7 +27,7 @@ async def lifespanApp(app: FastAPI):
 
     await init_db()
     redis_client = await init_redis()
-    # pool = await init_worker_pool()
+    pool = await init_worker_pool()
     aps = await init_aps(redis_client)
     await init_proxy()
     await init_ui_browser()
@@ -74,6 +76,8 @@ def caseHub():
         handler=error_middleware,
     )
 
+    # 静态文件服务 - 用于访问截图等静态文件
+    _hub.mount("/static", StaticFiles(directory=Config.ROOT), name="static")
     # socket io 挂载
     _hub.mount("/", asgi_app)
     return _hub

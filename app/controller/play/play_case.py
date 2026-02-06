@@ -316,7 +316,7 @@ async def get_case_result(case_result_id: int, _: User = Depends(Authentication(
     获取用例执行结果详情
 
     Args:
-        uid: 结果唯一标识
+        case_result_id: 结果唯一标识
         _: 当前登录用户（未使用）
 
     Returns:

@@ -45,6 +45,7 @@ class EditPlayStepSchema(BaseModel):
     value: Optional[str] = Field(None, description="值")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
+    is_ignore: bool = Field(None, description="是否忽略异常")
 
 
 class RemovePlayStepByIdSchema(BaseModel):
@@ -141,8 +142,6 @@ class RemovePlayStepContentSchema(BaseModel):
     """删除play步骤模型"""
     content_id: int = Field(..., description="步骤ID")
     case_id: int = Field(..., description="用例ID")
-
-
 
 
 class CopyPlayCaseStepContentSchema(BaseModel):

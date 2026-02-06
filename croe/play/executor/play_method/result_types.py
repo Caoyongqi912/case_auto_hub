@@ -23,16 +23,19 @@ class StepExecutionResult:
     """
     success: bool
     """执行是否成功"""
-    
+
     message: Optional[str] = None
     """执行结果消息（错误信息或成功消息）"""
-    
+
     error_type: Optional[ErrorType] = None
     """错误类型（仅当success为False时有值）"""
-    
-    data: Optional[Dict[str, Any]] = None
-    """执行产生的额外数据（如断言信息、提取的变量等）"""
-    
+
+    assert_data: Optional[Dict[str, Any]] = None
+    """执行产生的额外数据（如断言信息）"""
+
+    extract_data: Optional[Dict[str, Any]] = None
+    """执行产生的额外数据（提取的变量）"""
+
     def to_tuple(self) -> tuple[bool, Optional[str]]:
         """
         转换为旧格式的元组，保持向后兼容
@@ -43,13 +46,15 @@ class StepExecutionResult:
         return self.success, self.message
 
 
-def create_success_result(message: Optional[str] = None, data: Optional[Dict[str, Any]] = None) -> StepExecutionResult:
+def create_success_result(message: Optional[str] = None, assert_data: Optional[Dict[str, Any]] = None,
+                          extract_data: Optional[Dict[str, Any]] = None) -> StepExecutionResult:
     """
     创建成功执行结果
     
     Args:
         message: 成功消息
-        data: 额外数据
+        assert_data: 断言数据
+        extract_data: 变量谁
         
     Returns:
         StepExecutionResult: 成功的执行结果
@@ -57,15 +62,16 @@ def create_success_result(message: Optional[str] = None, data: Optional[Dict[str
     return StepExecutionResult(
         success=True,
         message=message,
-        data=data
+        assert_data=assert_data,
+        extract_data=extract_data
     )
 
 
 def create_error_result(
-    error_type: ErrorType,
-    message: str,
-    selector: Optional[str] = None,
-    **extra
+        error_type: ErrorType,
+        message: str,
+        selector: Optional[str] = None,
+        **extra
 ) -> StepExecutionResult:
     """
     创建错误执行结果
@@ -84,20 +90,19 @@ def create_error_result(
         data["selector"] = selector
     if extra:
         data.update(extra)
-    
+
     return StepExecutionResult(
         success=False,
         message=message,
         error_type=error_type,
-        data=data
     )
 
 
 def create_error_info(
-    error_type: ErrorType,
-    message: str,
-    selector: Optional[str] = None,
-    **extra
+        error_type: ErrorType,
+        message: str,
+        selector: Optional[str] = None,
+        **extra
 ) -> InfoDict:
     """
     创建错误信息字典（保持向后兼容）
@@ -123,12 +128,12 @@ def create_error_info(
 
 
 def create_assert_info(
-    assert_name: str,
-    assert_opt: str,
-    assert_expect: Any,
-    assert_actual: Any,
-    assert_result: bool,
-    **extra
+        assert_name: str,
+        assert_opt: str,
+        assert_expect: Any,
+        assert_actual: Any,
+        assert_result: bool,
+        **extra
 ) -> InfoDict:
     """
     创建断言信息字典（保持向后兼容）

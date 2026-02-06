@@ -68,10 +68,10 @@ class BrowserManager:
             headless=Config.UI_Headless,
             timeout=Config.UI_Timeout,
             slow_mo=Config.UI_SLOW,
-            args=["--no-cache",
-                  "--no-sandbox",
-                  "--disable-dev-shm-usage",  # 在Docker中特别有用?
-                  ],
+            # args=["--no-cache",
+            #       "--no-sandbox",
+            #       "--disable-dev-shm-usage",  # 在Docker中特别有用?
+            #       ],
         )
         log.info(f"[BrowserManager] Browser {self._browser}  initialized successfully ")
         return self._browser

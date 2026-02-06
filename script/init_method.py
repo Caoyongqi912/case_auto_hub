@@ -266,8 +266,8 @@ methods_list = [  # ========== 页面操作方法 ==========
         'value': "get_text_content",
         'description': "获取元素textContent",
         'need_locator': True,
-        'need_value': True,
-        'need_key': False
+        'need_value': False,
+        'need_key': True
     },
     {
         'label': "执行脚本",

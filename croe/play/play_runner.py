@@ -74,8 +74,6 @@ class PlayRunner:
             play_case_result_id=case_result_writer.play_case_result.id,
             play_task_result_id=task_result.id if task_result else None
         )
-        log.debug(f"init content_writer = {content_writer}")
-
         try:
             page_manager = await self.__init_page()
 
@@ -83,7 +81,7 @@ class PlayRunner:
 
             for index, step_content in enumerate(case_step_contents, start=1):
                 await self.starter.send(
-                    f"✍️✍️ {'=' * 20} EXECUTE_STEP {index} ： {step_content} {'=' * 20}"
+                    f"✍️✍️ {'=' * 10} EXECUTE_STEP {index} ： {step_content} {'=' * 10}"
                 )
 
                 # 步骤开关 用例调试中使用 任务执行默认开启
@@ -110,6 +108,7 @@ class PlayRunner:
                 play_step_success = await play_strategy.execute(play_content_context)
                 CASE_SUCCESS &= play_step_success
 
+                # 如果是失败 error_step true
                 if not CASE_SUCCESS and error_stop:
                     break
             # 一次性写入 content results

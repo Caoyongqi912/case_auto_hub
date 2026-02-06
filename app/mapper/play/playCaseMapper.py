@@ -701,26 +701,12 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
         """
         try:
             async with async_session() as session:
-                async with session.begin():
-                    # 查找失败结果 删除本地附件
-                    search_sql = select(cls.__model__.ui_case_err_step_pic_path).where(
-                        and_(
-                            cls.__model__.result == Result.FAIL,
-                            cls.__model__.ui_case_Id == caseId,
-                            cls.__model__.task_result_id is None
-                        )
-                    )
-                    data = await session.scalars(search_sql)
-                    datas = data.all()
-                    file_ids = [i.split("uid=")[-1] for i in datas if i]
-                    for i in file_ids:
-                        await FileMapper.remove_file(i, session)
-
-                    delete_sql = delete(cls.__model__).where(and_(
-                        cls.__model__.ui_case_Id == caseId,
-                        cls.__model__.task_result_id is None
-                    ))
-                    await session.execute(delete_sql)
+                delete_sql = delete(cls.__model__).where(and_(
+                    cls.__model__.ui_case_Id == caseId,
+                    cls.__model__.task_result_id == None
+                ))
+                await session.execute(delete_sql)
+                await session.commit()
         except Exception as e:
             session.rollback()
             log.error(e)
