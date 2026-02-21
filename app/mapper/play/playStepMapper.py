@@ -70,29 +70,39 @@ class PlayStepV2Mapper(Mapper[PlayStepModel]):
 
     @classmethod
     async def update_step(cls, id: int, **kwargs):
-        from app.mapper.play.playCaseMapper import PlayStepContentMapper
+        """
+        更新步骤
+        :param id: 步骤ID
+        :param kwargs: 更新参数
+        :return: 更新后的步骤对象
+        """
+
+        from app.model.playUI.playStepContent import PlayStepContent
+        from sqlalchemy import update
 
         try:
             async with async_session() as session:
                 async with session.begin():
+                    # 1. 更新 PlayStepModel
                     step = await cls.update_by_id(
                         session=session,
                         ident=id,
                         **kwargs
                     )
 
-                    contents = await PlayStepContentMapper.query_by(
-                        target_id=id,
-                        content_type=PlayStepContentType.STEP_PLAY,
-                    )
-                    if contents:
-                        for content in contents:
-                            content.content_name = step.name
-                            content.content_desc = step.method
-                            await cls.add_flush_expunge(session=session,
-                                                        model=content)
-
-
+                    # 2. 批量更新关联的 PlayStepContent
+                    # 只有当 name 或 method 被修改时才同步
+                    if 'name' in kwargs or 'method' in kwargs:
+                        stmt = update(PlayStepContent).where(
+                            and_(
+                                PlayStepContent.target_id == id,
+                                PlayStepContent.content_type == PlayStepContentType.STEP_PLAY
+                            )
+                        ).values(
+                            content_name=kwargs.get('name', step.name),
+                            content_desc=kwargs.get('method', step.method)
+                        )
+                        await session.execute(stmt)
 
         except Exception as e:
             log.exception(e)

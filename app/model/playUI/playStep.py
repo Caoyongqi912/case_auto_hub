@@ -5,8 +5,7 @@
 # @File : playStep
 # @Software: PyCharm
 # @Desc:
-from sqlalchemy import Column, String, BOOLEAN, ForeignKey, INTEGER, JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, String, BOOLEAN, ForeignKey, INTEGER
 from app.model import BaseModel
 
 
@@ -37,3 +36,6 @@ class PlayStepModel(BaseModel):
         if len(self.description) > 10:
             return self.description[:10] + "..."
         return self.description
+
+
+

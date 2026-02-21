@@ -1,14 +1,13 @@
 import json
 from typing import Optional
 
-from playwright.async_api import Page
-from app.mapper.play import PlayCaseMapper, PlayCaseResultMapper, PlayCaseVariablesMapper, PlayStepContentMapper
-from app.model.playUI import PlayCase, PlayCaseResult, PlayTaskResult
-from croe.interface.manager.variable_manager import VariableManager
-from croe.play.context import PlayExecutionContext, StepContentContext
+from app.mapper.play import PlayCaseMapper, PlayCaseVariablesMapper
+from app.model.playUI import PlayCase, PlayTaskResult
+from croe._manager.variable_manager import VariableManager
+from croe.play.context import StepContentContext
 from croe.play.executor import get_step_strategy
 from croe.play.starter import UIStarter
-from croe.play.writer import Writer, ContentResultWriter, PlayCaseResultWriter
+from croe.play.writer import ContentResultWriter, PlayCaseResultWriter
 from utils import log
 from croe.play.browser import BrowserManagerFactory, PageManager, BrowserManager
 
@@ -102,7 +101,6 @@ class PlayRunner:
                     variable_manager=self.variable_manager,
                     starter=self.starter,
                     play_step_result_writer=content_writer,
-
                 )
                 play_strategy = get_step_strategy(step_content.content_type)
                 play_step_success = await play_strategy.execute(play_content_context)
@@ -115,13 +113,15 @@ class PlayRunner:
             await content_writer.flush()
         except Exception as e:
             log.exception(e)
-
+            CASE_SUCCESS = False  # 发生异常时标记为失败
+            raise
         finally:
             await self.starter.send(f'执行完成 >> {play_case}, 结果: {CASE_SUCCESS}')
             await case_result_writer.write_result(CASE_SUCCESS)
             await self.starter.over(case_result_writer.play_case_result.uid)
             await self.__clean(page_manager)
-            return CASE_SUCCESS
+        
+        return CASE_SUCCESS
 
     # 清理页面资源
 
@@ -142,8 +142,8 @@ class PlayRunner:
         初始化页面
         :return:
         """
-        self.instance = await BrowserManagerFactory.get_instance()
-        browser_context = await self.instance.get_browser()
+        self.browser = await BrowserManagerFactory.get_instance()
+        browser_context = await self.browser.get_browser()
         page = await browser_context.new_page()
         page_manager = PageManager()
         page_manager.set_page(page=page)

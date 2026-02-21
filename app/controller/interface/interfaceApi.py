@@ -14,8 +14,7 @@ from app.response import Response
 from app.schema.interface import *
 from app.schema.interface.interfaceApiSchema import TryScriptSchema
 from croe.interface.executor.interface_executor import InterfaceExecutor
-from croe.interface.manager.script_manager import ScriptManager
-from croe.interface.manager.variable_manager import VariableManager
+from croe._manager import ScriptManager,VariableManager
 from croe.interface.runner import InterfaceRunner
 from croe.interface.starter import APIStarter
 

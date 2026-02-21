@@ -17,9 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, update, delete, case, insert
 from app.mapper.play.playStepMapper import PlayStepV2Mapper
 from croe.play.starter import UIStarter
-from enums.CaseEnum import Result, Status, PlayStepContentType
+from enums.CaseEnum import Status, PlayStepContentType
 from utils import log
-from ..file import FileMapper
 from ...exception import NotFind
 from app.model.playUI.playStepContent import PlayStepContent
 from app.model.playUI.playAssociation import PlayCaseStepContentAssociation
@@ -496,47 +495,28 @@ class PlayCaseMapper(Mapper[PlayCase]):
         Returns:
             Sequence[PlayStepContent]: 步骤内容列表，按步骤顺序排序
         """
-        if session is None:
-            session = async_session()
-        scalars_data = await session.scalars(
-            select(PlayStepContent).join(
-                PlayCaseStepContentAssociation,
-                PlayStepContent.id == PlayCaseStepContentAssociation.play_step_content_id
-            ).where(
-                PlayCaseStepContentAssociation.play_case_id == case_id
-            ).order_by(
-                PlayCaseStepContentAssociation.step_order
-            )
-        )
-        return scalars_data.all()
-
-    @classmethod
-    async def copy_case(cls, caseId: int, cr: User):
-        """
-        复制用例
-        
-        Args:
-            caseId: 要复制的用例ID
-            cr: 当前操作用户
-            
-        Returns:
-            PlayCase: 复制后的新用例对象
-            
-        Notes:
-            - 复制用例基本信息
-            - 复制用例的步骤
-            - 复制用例的变量
-            - 使用事务确保操作的原子性
-            - 使用asyncio.gather并发复制步骤，提高效率
-            - 使用批量操作减少数据库交互次数
-        """
+        should_close = False
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    pass
+            if session is None:
+                session = async_session()
+                should_close = True
+            
+            scalars_data = await session.scalars(
+                select(PlayStepContent).join(
+                    PlayCaseStepContentAssociation,
+                    PlayStepContent.id == PlayCaseStepContentAssociation.play_step_content_id
+                ).where(
+                    PlayCaseStepContentAssociation.play_case_id == case_id
+                ).order_by(
+                    PlayCaseStepContentAssociation.step_order
+                )
+            )
+            return scalars_data.all()
+        finally:
+            if should_close and session:
+                await session.close()
 
-        except Exception as e:
-            raise e
+
 
 
 class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
@@ -548,33 +528,41 @@ class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
     __model__ = PlayCaseVariables
 
     @classmethod
-    async def copy_vars(cls, target_caseId: int, new_caseId: int, session: AsyncSession, cr: User):
+    async def copy_vars(cls, target_case_id: int, new_case_id: int, session: AsyncSession, cr: User):
         """
         复制用例变量
         
         Args:
-            target_caseId: 目标用例ID
-            new_caseId: 新用例ID
+            target_case_id: 目标用例ID
+            new_case_id: 新用例ID
             session: 数据库会话对象
             cr: 当前操作用户
             
         Notes:
             - 复制目标用例的所有变量到新用例
             - 更新变量的创建人信息
+            - 使用批量插入提高性能
         """
         try:
             exe = await session.execute(select(cls.__model__).where(
-                cls.__model__.play_case_id == target_caseId
+                cls.__model__.play_case_id == target_case_id
             ))
             case_vars = exe.scalars().all()
 
             if case_vars:
+                # 批量插
+                values = []
                 for var in case_vars:
                     v = var.copy_map()
-                    v['play_case_id'] = new_caseId
+                    v['play_case_id'] = new_case_id
                     v['creator'] = cr.id
                     v['creatorName'] = cr.username
-                    await cls.save(session=session, **v)
+                    values.append(v)
+                
+                if values:
+                    await session.execute(
+                        insert(cls.__model__).values(values)
+                    )
         except Exception as e:
             raise e
 
@@ -663,15 +651,20 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
     __model__ = PlayCaseResult
 
     @classmethod
-    async def query_contents(cls, case_result_id: int) -> List[PlayStepContentResult]:
+    async def query_contents(cls, case_result_id: int) -> List[Dict[str, Any]]:
         """
-        查询步骤结果
+        查询步骤结果（嵌套结构）
 
         Args:
             case_result_id 用例结果ID
 
         Returns:
-            List[PlayStepContentResult]
+            List[Dict]: 嵌套结构列表
+                [
+                    {"result": step_result, "children": []},
+                    {"result": group_result, "children": [child1, child2, ...]},
+                    ...
+                ]
         """
 
         try:
@@ -680,19 +673,54 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
 
                 stmt = select(PlayStepContentResult).where(
                     PlayStepContentResult.play_case_result_id == case_result.id
-                ).order_by(PlayStepContentResult.content_step)
-                result = await session.scalars(stmt)
-                return result.all()
+                ).order_by(PlayStepContentResult.content_step, PlayStepContentResult.id)
+                all_results = (await session.scalars(stmt)).all()
+                
+                # 构建嵌套结构
+                return cls._build_nested_results(all_results)
         except Exception as e:
             raise e
+    
+    @staticmethod
+    def _build_nested_results(all_results: List[PlayStepContentResult]) -> List[Dict[str, Any]]:
+        """
+        将平铺的结果列表构建为嵌套结构
+        
+        Args:
+            all_results: 平铺的结果列表
+        
+        Returns:
+            嵌套结构列表
+        """
+        # 1. 分离主步骤和子步骤
+        main_steps = []
+        child_map = {}  # parent_id ->; [child_results]
+        
+        for result in all_results:
+            if result.parent_result_id is None:
+                main_steps.append(result)
+            else:
+                if result.parent_result_id not in child_map:
+                    child_map[result.parent_result_id] = []
+                child_map[result.parent_result_id].append(result)
+        
+        # 2. 构建嵌套结构
+        nested_results = []
+        for main_step in main_steps:
+            nested_results.append({
+                "result": main_step,
+                "children": child_map.get(main_step.id, [])
+            })
+        
+        return nested_results
 
     @classmethod
-    async def clear_case_result(cls, caseId: int):
+    async def clear_case_result(cls, case_id: int):
         """
         清空用例调试历史
         
         Args:
-            caseId: 用例ID
+            case_id: 用例ID
             
         Notes:
             - 删除失败结果中的本地附件
@@ -701,14 +729,13 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
         """
         try:
             async with async_session() as session:
-                delete_sql = delete(cls.__model__).where(and_(
-                    cls.__model__.ui_case_Id == caseId,
-                    cls.__model__.task_result_id == None
-                ))
-                await session.execute(delete_sql)
-                await session.commit()
+                async with session.begin():
+                    delete_sql = delete(cls.__model__).where(and_(
+                        cls.__model__.ui_case_Id == case_id,
+                        cls.__model__.task_result_id == None
+                    ))
+                    await session.execute(delete_sql)
         except Exception as e:
-            session.rollback()
             log.error(e)
             raise e
 
@@ -820,12 +847,12 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
     @classmethod
     async def add_content(cls, case_id: int, user: User, content_type: PlayStepContentType, is_common=True):
         """
-
-        :param case_id:
-        :param user:
-        :param content_type:
-        :param is_common:
-        :return:
+        添加步骤内容
+        :param case_id: 用例ID
+        :param user: 用户对象
+        :param content_type: 步骤类型
+        :param is_common: 是否公共步骤
+        :return: 添加后的步骤内容对象
         """
 
         async with async_session() as session:
@@ -855,15 +882,14 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
                            content_desc: str = None,
                            ):
         """
-
-        :param session:
-        :param content_type:
-        :param target_id:
-        :param is_common:
-        :param content_name:
-        :param content_desc:
-
-        :return:
+        初始化步骤内容
+        :param session: 数据库会话
+        :param content_type: 步骤类型
+        :param target_id: 目标ID
+        :param is_common: 是否公共步骤
+        :param content_name: 步骤名称
+        :param content_desc: 步骤描述
+        :return: 初始化后的步骤内容对象
         """
         content = PlayStepContent(
             content_name=content_name,
@@ -872,10 +898,6 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
             is_common=is_common,
             target_id=target_id,
         )
-        match content_type:
-            case PlayStepContentType.STEP_PLAY:
-                content.target_id = target_id
-            # todo other content_type
         return await cls.add_flush_expunge(session, content)
 
     @classmethod
@@ -891,6 +913,7 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
         content = await cls.get_by_id(ident=content_id, session=session)
 
         match content.content_type:
+            # 复制步骤 私有
             case PlayStepContentType.STEP_PLAY:
                 step = await PlayStepV2Mapper.get_by_id(ident=content.target_id, session=session)
 
@@ -902,15 +925,16 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
 
                 new_content = PlayStepContent(
                     target_id=new_step.id,
-                    content_name=content.content_name,
-                    content_desc=content.content_desc,
-                    content_type=content.content_type,
+                    content_name=new_step.name,
+                    content_desc=new_step.description,
+                    content_type=PlayStepContentType.STEP_PLAY,
                     is_common=False,
                     creator=user.id,
                     creatorName=user.username,
                 )
                 return await cls.add_flush_expunge(session, new_content)
 
+            # 复制组
             case PlayStepContentType.STEP_PLAY_GROUP:
                 from app.mapper.play.playStepGroupMapper import PlayStepGroupMapper
                 group = await PlayStepGroupMapper.copy_group2(group_id=content.target_id,

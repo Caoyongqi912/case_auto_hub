@@ -1,4 +1,9 @@
 import asyncio
+import sys
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 from typing import Optional, List
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page, ViewportSize
 from config import Config
@@ -63,6 +68,7 @@ class BrowserManager:
         Returns:
             Browser: 初始化完成的浏览器对象
         """
+        
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(
             headless=Config.UI_Headless,

@@ -26,7 +26,7 @@ from app.mapper.play.playCaseMapper import PlayCaseMapper, PlayCaseResultMapper,
 from app.schema.play.playCaseSchema import ExecutePlayCase, AssociationPlayStepSchema, EditPlayStepContentSchema, \
     AssociationPlayGroupSchema
 from app.schema.play.playStepSchema import InsertCasePlayStepSchema, RemovePlayStepContentSchema, \
-    CopyPlayCaseStepContentSchema
+    CopyPlayCaseStepContentSchema, InsertPlayStepContentSchema
 from croe.play.starter import UIStarter
 from utils import log
 
@@ -216,6 +216,21 @@ async def remove_step(stepInfo: RemovePlayStepContentSchema, _: User = Depends(A
     return Response.success()
 
 
+@router.post("/insert_content", description="插入步骤")
+async def insert_content(content: InsertPlayStepContentSchema, user: User = Depends(Authentication())):
+    """
+    插入步骤内容
+
+    Args:
+        content: 步骤插入信息
+        user: 当前登录用户
+
+    Returns:
+        插入成功响应
+    """
+    await PlayStepContentMapper.save(**content.model_dump(), creator_user=user)
+    return Response.success()
+
 @router.post("/edit_content", description="修改步骤")
 async def update_content(content: EditPlayStepContentSchema, user: User = Depends(Authentication())):
     """
@@ -338,7 +353,7 @@ async def clear_result(caseId: int, _: User = Depends(Authentication())):
     Returns:
         清空成功响应
     """
-    await PlayCaseResultMapper.clear_case_result(caseId=caseId)
+    await PlayCaseResultMapper.clear_case_result(case_id=caseId)
     return Response.success()
 
 

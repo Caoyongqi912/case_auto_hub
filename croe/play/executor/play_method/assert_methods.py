@@ -7,14 +7,14 @@
 # @Desc:
 
 import re
-from typing import Any, Optional
+from typing import  Optional
 
 from playwright.async_api import Locator, expect
 
 from utils import GenerateTools, log
 from ._base_method import BaseMethods
 from croe.play.context import StepContext
-from .result_types import InfoDict, create_assert_info, StepExecutionResult
+from .result_types import  create_assert_info, StepExecutionResult
 
 
 class AssertIsCheckedMethod(BaseMethods):

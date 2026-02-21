@@ -13,7 +13,7 @@ from playwright.async_api import Locator, TimeoutError
 from croe.play.context import StepContext
 from utils import log
 from ._base_method import BaseMethods
-from .result_types import InfoDict, create_error_info, create_success_result, create_error_result, StepExecutionResult
+from .result_types import create_success_result, create_error_result, StepExecutionResult
 
 
 class ClickMethod(BaseMethods):

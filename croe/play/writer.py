@@ -26,30 +26,85 @@ import os
 class ContentResultWriter:
     """
     步骤结果写入
+    - 步骤1
+    - 步骤2
+    - 步骤组3
+        - 步骤组3-1
+        - 步骤组3-2
+    - 步骤4
+    
+    存储结构:
+    {
+        1: {"result": step1_result, "children": []},
+        2: {"result": step2_result, "children": []},
+        3: {"result": group3_result, "children": [child1, child2]},
+        4: {"result": step4_result, "children": []}
+    }
     """
 
     def __init__(self, play_case_result_id: int, play_task_result_id: Optional[int] = None):
         self.play_case_result_id = play_case_result_id
         self.play_task_result_id = play_task_result_id
-        self.content_results = []
+        self.content_results = {}
 
-    async def add_content_result(self, content_result: PlayStepContentResult):
+    async def add_content_result(self, step_index: int, content_result: PlayStepContentResult):
+        """
+        添加主步骤结果
+        Args:
+            step_index (int): 主步骤的索引
+            content_result (PlayStepContentResult): 主步骤的结果对象
+        """
         content_result.play_case_result_id = self.play_case_result_id
         content_result.play_task_result_id = self.play_task_result_id
-        self.content_results.append(
-            content_result,
-        )
+        self.content_results[step_index] = {
+            "result": content_result,
+            "children": []
+        }
+    
+    async def update_content_result(self, step_index: int, success:bool):
+        """
+        更新主步骤结果
+        Args:
+            step_index (int): 主步骤的索引
+            success (bool): 主步骤的执行结果
+        """
+        if step_index in self.content_results:
+            self.content_results[step_index]["result"].content_result = success
+        else:
+            log.warning(f"[ContentResultWriter] Step index {step_index} not found")
+     
+    
+    async def add_child_content_result(self, parent_index: int, content_result: PlayStepContentResult):
+        """
+        添加子步骤结果到指定父步骤
+        Args:
+            parent_index (int): 父步骤的索引
+            content_result (PlayStepContentResult): 子步骤的结果对象
+        """
+        content_result.play_case_result_id = self.play_case_result_id
+        content_result.play_task_result_id = self.play_task_result_id
+        if parent_index in self.content_results:
+            self.content_results[parent_index]["children"].append(content_result)
+        else:
+            log.warning(f"[ContentResultWriter] Parent index {parent_index} not found, adding as main step")
+    
+
 
     async def flush(self):
         if not self.content_results:
-            log.warning("[ContentResultWriter] No content results to write")
+            log.error("[ContentResultWriter] No content results to write")
             return
-        integer = await PlayContentResultMapper.save_result_batch(self.content_results)
-        log.info(f"[ContentResultWriter] Batch inserted {integer} results")
+        
+        # 直接批量插入所有结果
+        count = await PlayContentResultMapper.save_result_batch(self.content_results)
+        log.info(f"[ContentResultWriter] Batch inserted {count} results")
 
     @property
     def results(self):
-        return self.content_results
+        """
+        返回展平的结果列表
+        """
+        return len(self.content_results)
 
     def __repr__(self):
         return f"<ContentResultWriter case_result_id={self.play_case_result_id}> task_result_id={self.play_task_result_id}> results={len(self.content_results)}> />"
