@@ -83,6 +83,8 @@ class PlayGroupContentStrategy(StepBaseStrategy):
                 result =result,
                 step_content=group_step_context,
             )
+            if not GROUP_SUCCESS:
+                break
             
 
 

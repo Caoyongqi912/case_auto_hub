@@ -7,6 +7,7 @@
 # @Desc: https://playwright.dev/python/docs/api/class-locator#locator-all
 
 from typing import Optional
+from enums import ExtractTargetVariablesEnum
 
 from playwright.async_api import Locator, TimeoutError
 
@@ -466,10 +467,13 @@ class CountMethod(BaseMethods):
             await context.log(f"提取数量 ✅ : {key} = {count}")
             return create_success_result(
                 message=f"提取数量成功: {key} = {count}",
-                extract_data={
-                    "variable_name": key,
-                    "extracted_value": str(count),
-                }
+                extract_data=[
+                    {
+                        ExtractTargetVariablesEnum.KEY: key,
+                        ExtractTargetVariablesEnum.VALUE: str(count),
+                        ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.PLAY_VARIABLE
+                    }
+                ]
             )
         except TimeoutError as e:
             await context.log(f"元素定位超时 ❌: {str(e)}")
@@ -505,10 +509,13 @@ class GetAttributeMethod(BaseMethods):
             await context.log(f"提取属性 ✅ : {key} = {value}")
             return create_success_result(
                 message=f"提取属性成功: {key} = {value}",
-                extract_data={
-                    "variable_name": key,
-                    "extracted_value": value,
-                }
+                extract_data=[
+                    {
+                        ExtractTargetVariablesEnum.KEY: key,
+                        ExtractTargetVariablesEnum.VALUE: value,
+                        ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.PLAY_VARIABLE
+                    }
+                ]
             )
         except TimeoutError as e:
             await context.log(f"元素定位超时 ❌: {str(e)}")
@@ -538,10 +545,13 @@ class GetInnerTextMethod(BaseMethods):
             await context.log(f"提取文本 ✅ : {key} = {value}")
             return create_success_result(
                 message=f"提取文本成功: {key} = {value}",
-                extract_data={
-                    "variable_name": key,
-                    "extracted_value": value,
-                }
+                extract_data=[
+                    {
+                        ExtractTargetVariablesEnum.KEY: key,
+                        ExtractTargetVariablesEnum.VALUE: value,
+                        ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.PLAY_VARIABLE
+                    }
+                ]
             )
         except TimeoutError as e:
             await context.log(f"元素定位超时 ❌: {str(e)}")
@@ -571,10 +581,13 @@ class GetInputValueMethod(BaseMethods):
             await context.log(f"提取值 ✅ : {key} = {value}")
             return create_success_result(
                 message=f"提取值成功: {key} = {value}",
-                extract_data={
-                    "variable_name": key,
-                    "extracted_value": value.strip(),
-                }
+                extract_data=[
+                    {
+                        ExtractTargetVariablesEnum.KEY: key,
+                        ExtractTargetVariablesEnum.VALUE: value.strip(),
+                        ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.PLAY_VARIABLE
+                    }
+                ]
             )
         except TimeoutError as e:
             await context.log(f"元素定位超时 ❌: {str(e)}")
@@ -608,10 +621,11 @@ class GetTextContentMethod(BaseMethods):
             await context.log(f"提取文本内容 ✅ : {key} = {value}")
             return create_success_result(
                 message=f"提取文本内容成功: {key} = {value}",
-                extract_data={
-                    "variable_name": key,
-                    "extracted_value": value,
-                }
+                extract_data=[{
+                    ExtractTargetVariablesEnum.KEY: key,
+                    ExtractTargetVariablesEnum.VALUE: value,
+                    ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.PLAY_VARIABLE
+                }]
             )
         except TimeoutError as e:
             await context.log(f"元素定位超时 ❌: {str(e)}")

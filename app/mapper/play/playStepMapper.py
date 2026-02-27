@@ -7,7 +7,7 @@
 # @Desc:
 from typing import List
 
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper import Mapper
 from app.model import async_session
@@ -84,9 +84,10 @@ class PlayStepV2Mapper(Mapper[PlayStepModel]):
             async with async_session() as session:
                 async with session.begin():
                     # 1. 更新 PlayStepModel
-                    step = await cls.update_by_id(
+                    step = await cls.get_by_id(ident=id, session=session)
+                    step = await cls.update_cls(
+                        target=step,
                         session=session,
-                        ident=id,
                         **kwargs
                     )
 

@@ -116,7 +116,6 @@ async def association_play_step(association: AssociationPlayStepSchema, user: Us
     return Response.success()
 
 
-
 @router.post("/associationPlayGroup", description="关联公共步骤组")
 async def association_play_group(association: AssociationPlayGroupSchema, user: User = Depends(Authentication())):
     """
@@ -228,8 +227,9 @@ async def insert_content(content: InsertPlayStepContentSchema, user: User = Depe
     Returns:
         插入成功响应
     """
-    await PlayStepContentMapper.save(**content.model_dump(), creator_user=user)
+    await PlayStepContentMapper.add_content(user=user, **content.model_dump(exclude_none=True))
     return Response.success()
+
 
 @router.post("/edit_content", description="修改步骤")
 async def update_content(content: EditPlayStepContentSchema, user: User = Depends(Authentication())):
@@ -243,11 +243,11 @@ async def update_content(content: EditPlayStepContentSchema, user: User = Depend
     Returns:
         更新成功响应
     """
-    await PlayStepContentMapper.update_by_id(**content.model_dump(
+    data= await PlayStepContentMapper.update_by_id(**content.model_dump(
         exclude_none=True,
         exclude_unset=True
     ), updateUser=user)
-    return Response.success()
+    return Response.success(data)
 
 
 @router.get("/query_all", description="查询所有用例")
@@ -316,14 +316,16 @@ async def page_case_result(pageInfo: PagePlayCaseResultSchema, _: User = Depends
     """
     data = await PlayCaseResultMapper.page_query(**pageInfo.model_dump(exclude_none=True,
                                                                        exclude_unset=True))
-    return Response.success(data,exclude={
-        "asserts_info","running_logs",
+    return Response.success(data, exclude={
+        "asserts_info", "running_logs",
     })
 
-@router.get("/queryContentResults",description="查询步骤详情")
-async def query_content_results(case_result_id:int, _: User = Depends(Authentication())):
+
+@router.get("/queryContentResults", description="查询步骤详情")
+async def query_content_results(case_result_id: int, _: User = Depends(Authentication())):
     data = await PlayCaseResultMapper.query_contents(case_result_id)
     return Response.success(data)
+
 
 @router.get("/result_detail", description="用例结果详情")
 async def get_case_result(case_result_id: int, _: User = Depends(Authentication())):

@@ -109,15 +109,15 @@ class StepBaseStrategy(ABC):
 
         if result.extract_data:
             content_result.extracts = result.extract_data
-        
+
         # 截图
-        if not result.success and step_content.play_step_content.content_type == PlayStepContentType.STEP_PLAY:
+        # 执行失败 && play 类型 && 不是 交互错误interaction_failed
+        if not result.success and step_content.play_step_content.content_type == PlayStepContentType.STEP_PLAY and result.error_type != 'interaction_failed':
             path = await self.to_screenshot(step_content)
             if path:
                 content_result.content_screenshot_path = path
-        
+
         return content_result
-        
 
     @staticmethod
     async def to_screenshot(step_content: StepContentContext):

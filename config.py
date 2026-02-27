@@ -52,8 +52,8 @@ class LocalConfig(BaseConfig):
     Record_Proxy = False
     # 硬编码MySQL配置
     MYSQL_SERVER = "127.0.0.1"
-    # MYSQL_PASSWORD = "sdkjfhsdkjhfsdkhfksd"
-    MYSQL_PASSWORD = "qq23qq"
+    MYSQL_PASSWORD = "sdkjfhsdkjhfsdkhfksd"
+    # MYSQL_PASSWORD = "qq23qq"
     MYSQL_DATABASE = 'autoHub'
     MYSQL_PORT: int = 3306
 
@@ -79,8 +79,8 @@ class LocalConfig(BaseConfig):
 
     # ======================= ui playwright ====================
     INIT_PLAY_BROWSER = False
-    UI_Headless = True
-    UI_Timeout = 1000
+    UI_Headless = False
+    UI_Timeout = 3000
     UI_SLOW = 500
     UI_ERROR_PATH = DOMAIN + "/file/ui_case/uid="
     UI_TASK_URL = f"{DOMAIN}/ui/task/detail/taskId="
@@ -154,7 +154,7 @@ class DockerConfig(BaseConfig):
 
     # ======================= ui playwright ====================
     INIT_PLAY_BROWSER = False
-    UI_Headless = True
+    UI_Headless = False
     UI_Timeout = 10000
     UI_SLOW = 500
     UI_ERROR_PATH = DOMAIN + "/file/ui_case/uid="

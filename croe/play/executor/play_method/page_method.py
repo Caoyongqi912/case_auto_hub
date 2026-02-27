@@ -5,7 +5,7 @@ from playwright.async_api import Locator, TimeoutError as PlaywrightTimeoutError
 from croe.play.context import StepContext
 from utils import log
 from ._base_method import BaseMethods
-from .result_types import  create_success_result, create_error_result, StepExecutionResult
+from .result_types import create_success_result, create_error_result, StepExecutionResult
 
 
 class GotoMethod(BaseMethods):
@@ -20,7 +20,7 @@ class GotoMethod(BaseMethods):
         try:
             page = context.page
             url = await context.variable_manager.trans(context.step.value)
-            await page.goto(url)
+            await page.goto(url=url, wait_until="domcontentloaded",timeout=60000)
             message = f"跳转页面 ✅ : {url}"
             await context.log(message)
             return create_success_result(message)

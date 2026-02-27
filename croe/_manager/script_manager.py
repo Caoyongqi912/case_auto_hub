@@ -81,6 +81,40 @@ class ScriptSecurityError(Exception):
     pass
 
 
+def _validate_ast(node: ast.AST) -> None:
+    """
+    验证 AST 安全性
+
+    Args:
+        node: AST 节点
+
+    Raises:
+        ScriptSecurityError: 发现不安全的节点
+    """
+    # 排除上下文类型（Store, Load, Del）
+    EXCLUDED_CTX_TYPES = (ast.Store, ast.Load, ast.Del)
+
+    for child in ast.walk(node):
+        # 跳过上下文类型
+        if isinstance(child, EXCLUDED_CTX_TYPES):
+            continue
+
+        # 检查节点类型
+        if type(child) not in ALLOWED_NODE_TYPES:
+            raise ScriptSecurityError(f"不允许的节点类型: {type(child).__name__}")
+
+        # 检查属性访问
+        if isinstance(child, ast.Attribute):
+            if child.attr in DISALLOWED_ATTRS:
+                raise ScriptSecurityError(f"不允许的属性访问: {child.attr}")
+
+        # 检查函数调用
+        if isinstance(child, ast.Call):
+            if isinstance(child.func, ast.Name):
+                if child.func.id in DISALLOWED_ATTRS:
+                    raise ScriptSecurityError(f"不允许的函数调用: {child.func.id}")
+
+
 class ScriptManager:
     """
     脚本管理器
@@ -131,7 +165,7 @@ class ScriptManager:
             raise
 
         # 3. 安全验证 AST
-        self._validate_ast(tree)
+        _validate_ast(tree)
 
         # 4. 执行脚本
         exec_globals = {**SAFE_BUILTINS, **self._allowed_functions}
@@ -147,41 +181,22 @@ class ScriptManager:
         return self._collect_results(local_vars)
 
     def _collect_results(self, local_vars: Dict[str, Any]) -> Dict[str, Any]:
-        """收集执行结果 - 只收集非下划线开头且类型安全的变量"""
+        """收集执行结果 - 收集 local_vars 和 self._variables 中的变量"""
         results: Dict[str, Any] = {}
+        
+        # 收集 local_vars 中的变量
         for name, value in local_vars.items():
             if not name.startswith('_') and isinstance(value, ALLOWED_TYPES):
                 results[name] = value
                 self._variables[name] = value
-        
+
+
+        # 收集 self._variables 中的变量
+        for name, value in self._variables.items():
+            if name not in results and not name.startswith('_') and isinstance(value, ALLOWED_TYPES):
+                results[name] = value
         log.info(f"脚本执行结果: {results}")
         return results
-
-    def _validate_ast(self, node: ast.AST) -> None:
-        """
-        验证 AST 安全性
-        
-        Args:
-            node: AST 节点
-            
-        Raises:
-            ScriptSecurityError: 发现不安全的节点
-        """
-        for child in ast.walk(node):
-            # 检查节点类型
-            if type(child) not in ALLOWED_NODE_TYPES:
-                raise ScriptSecurityError(f"不允许的节点类型: {type(child).__name__}")
-            
-            # 检查属性访问
-            if isinstance(child, ast.Attribute):
-                if child.attr in DISALLOWED_ATTRS:
-                    raise ScriptSecurityError(f"不允许的属性访问: {child.attr}")
-            
-            # 检查函数调用
-            if isinstance(child, ast.Call):
-                if isinstance(child.func, ast.Name):
-                    if child.func.id in DISALLOWED_ATTRS:
-                        raise ScriptSecurityError(f"不允许的函数调用: {child.func.id}")
 
     def _hub_variables_set(self, key: str, value: Any) -> None:
         """设置变量"""

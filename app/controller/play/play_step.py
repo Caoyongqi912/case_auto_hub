@@ -14,6 +14,7 @@ from app.model.base import User
 from app.response import Response
 from app.schema.play import InsertPlayStepSchema, CopyPlayStepSchema
 from app.schema.play.playStepSchema import EditPlayStepSchema, RemovePlayStepByIdSchema, PageCommonPlayStepSchema
+from utils import log
 
 router = APIRouter(prefix="/play/step", tags=['公共步骤管理'])
 
@@ -68,7 +69,8 @@ async def update_step(stepInfo: EditPlayStepSchema, user: User = Depends(Authent
     Returns:
         更新后的步骤信息
     """
-    step = await PlayStepV2Mapper.update_by_id(
+    log.info(stepInfo)
+    step = await PlayStepV2Mapper.update_step(
         updateUser=user,
         **stepInfo.model_dump(
             exclude_none=True,

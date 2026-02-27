@@ -6,6 +6,7 @@
 # @Software: PyCharm
 # @Desc:
 from .play_group_strategy import PlayGroupContentStrategy
+from .play_db_strategy import PlayDBContentStrategy
 from .play_step_strategy import PlayStepContentStrategy
 from .play_script_strategy import PlayScriptContentStrategy
 from .play_loop_Strategy import PlayLoopContentStrategy
@@ -18,5 +19,6 @@ __all__ = [
     "PlayScriptContentStrategy",
     "PlayLoopContentStrategy",
     "PlayAssertContentStrategy",
-    "PlayInterfaceContentStrategy"
+    "PlayInterfaceContentStrategy",
+    "PlayDBContentStrategy"
 ]

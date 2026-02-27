@@ -32,10 +32,10 @@ class PlayStepContent(BaseModel):
 
     def __repr__(self):
         if self.content_type == PlayStepContentType.STEP_PLAY:
-            return f"<UI STEP (id={self.id},Name=\"{self.content_name}\", Desc=\"{self.content_desc}\",is_common={self.is_common} />"
+            return f"<UI STEP (id={self.id},Name=\"{self.content_name}\", Desc=\"{self.content_desc}\"/>"
         elif self.content_type == PlayStepContentType.STEP_PLAY_GROUP:
-            return f"<UI GROUP STEP (id={self.id},Name=\"{self.content_name}\", Desc=\"{self.content_desc}\" />"
-        elif self.content_type == PlayStepContentType.STEP_SCRIPT:
+            return f"<UI GROUP STEP (id={self.id},Name=\"{self.content_name}\", Desc=\"{self.content_desc}\"/>"
+        elif self.content_type == PlayStepContentType.STEP_PLAY_SCRIPT:
             return f"<UI SCRIPT STEP (id={self.id},Name=\"{self.content_name}\", Desc=\"{self.content_desc}\" />"
         return ""
 

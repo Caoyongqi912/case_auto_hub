@@ -30,6 +30,8 @@ def get_step_strategy(step_type: int):
         case PlayStepContentType.STEP_PLAY_ASSERT:
             pass
 
+        case PlayStepContentType.STEP_PLAY_DB:
+            return PlayDBContentStrategy()
         case _:
             raise Exception(f"Unknown step type: {step_type}")
 

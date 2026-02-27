@@ -12,12 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
 from app.mapper.interface import InterfaceConditionMapper, InterfaceMapper
+from app.mapper.project.dbConfigMapper import CaseContentDBExecuteMapper
 from app.model import async_session
 from app.model.base import User
 from app.model.interface import InterFaceCaseModel, InterfaceModel
 
 from app.model.interface.InterfaceCaseStepContent import InterfaceCaseStepContent, \
-    InterfaceCondition, InterfaceDBExecute, InterfaceLoopModal
+    InterfaceCondition, DBExecuteModel, InterfaceLoopModal
 from app.model.interface.association import InterfaceCaseStepContentAssociation, LoopAPIAssociation
 from enums.CaseEnum import CaseStepContentType, LoopTypeEnum
 from utils import log
@@ -504,8 +505,7 @@ class InterfaceCaseStepContentMapper(Mapper[InterfaceCaseStepContent]):
 
                 # db
                 if content_type == CaseStepContentType.STEP_API_DB:
-                    from .interfaceMapper import InterfaceCaseContentDBExecuteMapper
-                    _db = await InterfaceCaseContentDBExecuteMapper.init_empty(creator_user=user,
+                    _db = await CaseContentDBExecuteMapper.init_empty(creator_user=user,
                                                                                session=session)
                     content.target_id = _db.id
 
@@ -610,24 +610,6 @@ class InterfaceCaseStepContentMapper(Mapper[InterfaceCaseStepContent]):
 
         return await cls.add_flush_expunge(session, new_content)
 
-
-class InterfaceCaseContentDBExecuteMapper(Mapper[InterfaceDBExecute]):
-    """接口用例数据库执行Mapper"""
-    __model__ = InterfaceDBExecute
-
-    @classmethod
-    async def init_empty(cls, creator_user: User, session: AsyncSession = None) -> InterfaceDBExecute:
-        """
-        初始化空的数据库执行对象
-        :param creator_user: 创建人
-        :param session: 会话对象
-        :return: 数据库执行对象
-        """
-        if session:
-            return await cls.save(creator_user=creator_user, session=session)
-        else:
-            async with async_session() as session:
-                return await cls.save(creator_user=creator_user, session=session)
 
 
 class InterfaceLoopMapper(Mapper[InterfaceLoopModal]):

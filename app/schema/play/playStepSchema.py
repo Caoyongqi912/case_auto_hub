@@ -140,16 +140,16 @@ class UpdatePlayStepSchema(PlayStepBasicField):
 
 class InsertPlayStepContentSchema(BaseModel):
     """插入步骤"""
-    content_name:str = Field(..., description="步骤名称")
-    content_desc:Optional[str] = Field(None, description="步骤描述")
-    content_type:int = Field(..., description="步骤类型")
+    case_id: int = Field(..., description="用例ID")
+    content_name: Optional[str] = Field(None, description="步骤名称")
+    content_desc: Optional[str] = Field(None, description="步骤描述")
+    content_type: int = Field(..., description="步骤类型")
 
-    enable:bool = Field(True, description="是否启用")
-    is_common:bool = Field(False, description="是否公共步骤")
-    script_text:Optional[str] = Field(None, description="脚本文本")
-    assert_list:Optional[List[str]] = Field(None, description="断言")
-    target_id:Optional[int] = Field(None, description="外键 ID ")
-
+    enable: bool = Field(True, description="是否启用")
+    is_common: bool = Field(False, description="是否公共步骤")
+    script_text: Optional[str] = Field(None, description="脚本文本")
+    assert_list: Optional[List[str]] = Field(None, description="断言")
+    target_id: Optional[int] = Field(None, description="外键 ID ")
 
 
 class RemovePlayStepContentSchema(BaseModel):

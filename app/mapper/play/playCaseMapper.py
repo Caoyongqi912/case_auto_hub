@@ -500,7 +500,7 @@ class PlayCaseMapper(Mapper[PlayCase]):
             if session is None:
                 session = async_session()
                 should_close = True
-            
+
             scalars_data = await session.scalars(
                 select(PlayStepContent).join(
                     PlayCaseStepContentAssociation,
@@ -515,8 +515,6 @@ class PlayCaseMapper(Mapper[PlayCase]):
         finally:
             if should_close and session:
                 await session.close()
-
-
 
 
 class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
@@ -558,7 +556,7 @@ class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
                     v['creator'] = cr.id
                     v['creatorName'] = cr.username
                     values.append(v)
-                
+
                 if values:
                     await session.execute(
                         insert(cls.__model__).values(values)
@@ -675,12 +673,12 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                     PlayStepContentResult.play_case_result_id == case_result.id
                 ).order_by(PlayStepContentResult.content_step, PlayStepContentResult.id)
                 all_results = (await session.scalars(stmt)).all()
-                
+
                 # 构建嵌套结构
                 return cls._build_nested_results(all_results)
         except Exception as e:
             raise e
-    
+
     @staticmethod
     def _build_nested_results(all_results: List[PlayStepContentResult]) -> List[Dict[str, Any]]:
         """
@@ -695,7 +693,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
         # 1. 分离主步骤和子步骤
         main_steps = []
         child_map = {}  # parent_id ->; [child_results]
-        
+
         for result in all_results:
             if result.parent_result_id is None:
                 main_steps.append(result)
@@ -703,7 +701,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                 if result.parent_result_id not in child_map:
                     child_map[result.parent_result_id] = []
                 child_map[result.parent_result_id].append(result)
-        
+
         # 2. 构建嵌套结构
         nested_results = []
         for main_step in main_steps:
@@ -711,7 +709,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                 "result": main_step,
                 "children": child_map.get(main_step.id, [])
             })
-        
+
         return nested_results
 
     @classmethod
@@ -845,13 +843,16 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
     __model__ = PlayStepContent
 
     @classmethod
-    async def add_content(cls, case_id: int, user: User, content_type: PlayStepContentType, is_common=True):
+    async def add_content(cls, case_id: int, user: User, content_type: PlayStepContentType,
+                          enable: bool = False,
+                          is_common: bool = False):
         """
         添加步骤内容
         :param case_id: 用例ID
         :param user: 用户对象
         :param content_type: 步骤类型
         :param is_common: 是否公共步骤
+        :param enable: 使用禁用
         :return: 添加后的步骤内容对象
         """
 
@@ -864,8 +865,12 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
                     content_type=content_type,
                     is_common=is_common,
                     creator=user.id,
+                    enable=enable,
                     creatorName=user.username,
                 )
+                match content_type:
+                    case PlayStepContentType.STEP_PLAY_SCRIPT:
+                        content.content_name = "脚本"
                 last_index = await CommonHelper.get_case_step_last_index(case_id, session)
                 await cls.add_flush_expunge(session, content)
                 await CommonHelper.create_single_case_content_association(

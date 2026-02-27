@@ -18,7 +18,7 @@ class EditPlayStepContentSchema(BaseModel):
     id: int = Field(..., description="步骤ID")
     content_name: Optional[str] = Field(None, description="步骤名称")
     enable: Optional[bool] = Field(None, description="是否启用")
-    api_script_text: Optional[str] = Field(None, description="API脚本文本")
+    script_text: Optional[str] = Field(None, description="API脚本文本")
 
 
 class AssociationPlayStepSchema(BaseModel):

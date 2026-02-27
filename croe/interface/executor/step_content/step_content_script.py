@@ -13,7 +13,7 @@ from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 from croe._manager import ScriptManager,ScriptSecurityError
 from croe.interface.types import InterfaceCaseContent, VARS
-from enums import InterfaceExtractTargetVariablesEnum
+from enums import ExtractTargetVariablesEnum
 from croe.interface.starter import APIStarter
 
 
@@ -42,9 +42,9 @@ class APIScriptContentStrategy(StepBaseStrategy):
             step_content=step_context.content,
             starter=step_context.starter,
             script_vars=[{
-                InterfaceExtractTargetVariablesEnum.KEY: k,
-                InterfaceExtractTargetVariablesEnum.VALUE: v,
-                InterfaceExtractTargetVariablesEnum.Target: InterfaceExtractTargetVariablesEnum.StepScript
+                ExtractTargetVariablesEnum.KEY: k,
+                ExtractTargetVariablesEnum.VALUE: v,
+                ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.StepScript
             } for k, v in _extracted_vars.items()],
         )
         return True
