@@ -34,6 +34,12 @@ class AssociationPlayGroupSchema(BaseModel):
     group_id_list: List[int] = Field(..., description="步骤组Id")
 
 
+class AssociationInterfaceSchema(BaseModel):
+    """case 关联 公共 接口"""
+    case_id: int = Field(..., description="用例ID")
+    interface_id: int = Field(..., description="接口ID")
+
+
 class GetPlayCaseByCaseId(BaseModel):
     """根据用例ID获取play用例模型"""
     caseId: Union[int, str] = Field(..., description="用例ID")

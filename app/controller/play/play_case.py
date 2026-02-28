@@ -24,7 +24,7 @@ from app.schema.play import (
 )
 from app.mapper.play.playCaseMapper import PlayCaseMapper, PlayCaseResultMapper, PlayStepContentMapper
 from app.schema.play.playCaseSchema import ExecutePlayCase, AssociationPlayStepSchema, EditPlayStepContentSchema, \
-    AssociationPlayGroupSchema
+    AssociationPlayGroupSchema, AssociationInterfaceSchema
 from app.schema.play.playStepSchema import InsertCasePlayStepSchema, RemovePlayStepContentSchema, \
     CopyPlayCaseStepContentSchema, InsertPlayStepContentSchema
 from croe.play.starter import UIStarter
@@ -117,18 +117,28 @@ async def association_play_step(association: AssociationPlayStepSchema, user: Us
 
 
 @router.post("/associationPlayGroup", description="关联公共步骤组")
-async def association_play_group(association: AssociationPlayGroupSchema, user: User = Depends(Authentication())):
+async def association_play_group(association: AssociationPlayGroupSchema, _: User = Depends(Authentication())):
     """
     关联公共步骤到用例组
 
     Args:
         association: 关联参数
-        user: 当前登录用户
+        _: 当前登录用户
 
     Returns:
         关联成功响应
     """
     await PlayCaseMapper.association_groups(**association.model_dump())
+    return Response.success()
+
+
+@router.post("/associationInterfaceAPI", description="关联接口")
+async def association_interface(association: AssociationInterfaceSchema, _: User = Depends(Authentication())):
+    """
+    关联接口到Play case
+    """
+
+    await PlayCaseMapper.association_interface(**association.model_dump())
     return Response.success()
 
 
@@ -243,7 +253,7 @@ async def update_content(content: EditPlayStepContentSchema, user: User = Depend
     Returns:
         更新成功响应
     """
-    data= await PlayStepContentMapper.update_by_id(**content.model_dump(
+    data = await PlayStepContentMapper.update_by_id(**content.model_dump(
         exclude_none=True,
         exclude_unset=True
     ), updateUser=user)

@@ -19,6 +19,7 @@ from app.mapper.play.playStepMapper import PlayStepV2Mapper
 from croe.play.starter import UIStarter
 from enums.CaseEnum import Status, PlayStepContentType
 from utils import log
+from ..interface import InterfaceResultMapper, InterfaceMapper
 from ..project.dbConfigMapper import CaseContentDBExecuteMapper
 from ...exception import NotFind
 from app.model.playUI.playStepContent import PlayStepContent
@@ -110,13 +111,48 @@ class CommonHelper:
 class PlayCaseMapper(Mapper[PlayCase]):
     __model__ = PlayCase
 
+
+
+
+    @classmethod
+    async def association_interface(cls, case_id: int, interface_id: int):
+        """
+        关联接口
+
+        Args:
+            case_id: 用例
+            interface_id: 接口
+        """
+
+        try:
+            async with async_session() as session:
+                async with session.begin():
+                    play_case = await cls.get_by_id(ident=case_id, session=session)
+                    interface = await InterfaceMapper.get_by_id(ident=interface_id, session=session)
+
+                    interface_content = await PlayStepContentMapper.init_content(
+                        session=session,
+                        target_id=interface.id,
+                        is_common=False,
+                        content_name=interface.name,
+                        content_desc=interface.description,
+                        content_type=PlayStepContentType.STEP_PLAY_API,
+                    )
+                    last_index = await CommonHelper.get_case_step_last_index(case_id, session)
+                    await CommonHelper.create_single_case_content_association(
+                        session, case_id, interface_content.id, last_index + 1
+                    )
+                    play_case.step_num += 1
+        except Exception as e:
+            raise
+
     @classmethod
     async def association_groups(cls, case_id: int, group_id_list: List[int]):
         """
         关联公共步骤到用例
 
         :param case_id: 用例iD
-        :param group_id: 关联组id
+        :param group_id_list: 关联组id
         :return:
         """
         if not case_id:
@@ -676,12 +712,13 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                 all_results = (await session.scalars(stmt)).all()
 
                 # 构建嵌套结构
-                return cls._build_nested_results(all_results)
+                return await cls._build_nested_results(all_results, session)
         except Exception as e:
             raise e
 
     @staticmethod
-    def _build_nested_results(all_results: List[PlayStepContentResult]) -> List[Dict[str, Any]]:
+    async def _build_nested_results(all_results: List[PlayStepContentResult], session: AsyncSession) -> List[
+        Dict[str, Any]]:
         """
         将平铺的结果列表构建为嵌套结构
         
@@ -697,7 +734,16 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
 
         for result in all_results:
             if result.parent_result_id is None:
-                main_steps.append(result)
+                result_map = result.to_dict()
+
+                if result.content_type == PlayStepContentType.STEP_PLAY_API:
+                    """接口结果查询"""
+                    log.debug(f"PlayStepContentType.STEP_PLAY_API: {result.content_target_result_id}")
+                    interface_result = await InterfaceResultMapper.get_by_id(ident=result.content_target_result_id,
+                                                                             session=session)
+                    result_map["target_result"] = interface_result.to_dict()
+
+                main_steps.append(result_map)
             else:
                 if result.parent_result_id not in child_map:
                     child_map[result.parent_result_id] = []
@@ -708,7 +754,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
         for main_step in main_steps:
             nested_results.append({
                 "result": main_step,
-                "children": child_map.get(main_step.id, [])
+                "children": child_map.get(main_step['id'], [])
             })
 
         return nested_results

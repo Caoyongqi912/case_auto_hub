@@ -24,6 +24,9 @@ class StepExecutionResult:
     success: bool
     """执行是否成功"""
 
+    content_target_result_id:Optional[int] = None
+    """其他模型id"""
+
     message: Optional[str] = None
     """执行结果消息（错误信息或成功消息）"""
 

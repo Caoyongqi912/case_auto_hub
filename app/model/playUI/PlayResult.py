@@ -28,7 +28,7 @@ class PlayStepContentResult(BaseModel):
     content_step = Column(INTEGER, nullable=False, comment="步骤")
     # CaseStepContentType
     content_type = Column(INTEGER, nullable=False, comment="步骤类型")
-    # STEP GROUP ..
+    # STEP GROUP /. API
     content_target_result_id = Column(INTEGER, nullable=True, comment="目标ID")
     
 

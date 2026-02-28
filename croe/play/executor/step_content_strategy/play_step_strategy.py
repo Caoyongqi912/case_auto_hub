@@ -51,7 +51,7 @@ class PlayStepContentStrategy(StepBaseStrategy):
         await self.write_result(
             result=result,
             start_time=start_time,
-            step_content=step_content,
+            step_context=step_content,
             ignore=IS_IGNORE
         )
         return SUCCESS

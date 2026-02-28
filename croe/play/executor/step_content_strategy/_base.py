@@ -35,7 +35,7 @@ class StepBaseStrategy(ABC):
             self,
             result: StepExecutionResult,
             start_time: datetime.datetime,
-            step_content: StepContentContext,
+            step_context: StepContentContext,
             ignore: bool = False,
     ):
         """
@@ -47,11 +47,11 @@ class StepBaseStrategy(ABC):
         content_result = await self._build_content_result(
             result=result,
             start_time=start_time,
-            step_content=step_content,
+            step_context=step_context,
             ignore=ignore,
         )
-        await step_content.play_step_result_writer.add_content_result(
-            step_index=step_content.index,
+        await step_context.play_step_result_writer.add_content_result(
+            step_index=step_context.index,
             content_result=content_result
         )
 
@@ -60,7 +60,7 @@ class StepBaseStrategy(ABC):
             parent_index: int,
             result: StepExecutionResult,
             start_time: datetime.datetime,
-            step_content: StepContentContext,
+            step_context: StepContentContext,
             ignore: bool = False,
     ):
         """
@@ -69,10 +69,10 @@ class StepBaseStrategy(ABC):
         content_result = await self._build_content_result(
             result=result,
             start_time=start_time,
-            step_content=step_content,
+            step_context=step_context,
             ignore=ignore,
         )
-        await step_content.play_step_result_writer.add_child_content_result(
+        await step_context.play_step_result_writer.add_child_content_result(
             parent_index=parent_index,
             content_result=content_result
         )
@@ -81,7 +81,7 @@ class StepBaseStrategy(ABC):
             self,
             result: StepExecutionResult,
             start_time: datetime.datetime,
-            step_content: StepContentContext,
+            step_context: StepContentContext,
             ignore: bool = False,
     ) -> PlayStepContentResult:
         """
@@ -89,16 +89,17 @@ class StepBaseStrategy(ABC):
         """
         end_time = datetime.datetime.now()
         content_result = PlayStepContentResult(
-            content_step=step_content.index,
-            content_id=step_content.play_step_content.id,
-            content_name=step_content.play_step_content.content_name,
-            content_desc=step_content.play_step_content.content_desc,
-            content_type=step_content.play_step_content.content_type,
-            starter_id=step_content.starter.userId,
-            starter_name=step_content.starter.username,
+            content_step=step_context.index,
+            content_id=step_context.play_step_content.id,
+            content_name=step_context.play_step_content.content_name,
+            content_desc=step_context.play_step_content.content_desc,
+            content_type=step_context.play_step_content.content_type,
+            starter_id=step_context.starter.userId,
+            starter_name=step_context.starter.username,
             start_time=start_time,
             use_time=GenerateTools.timeDiff(start_time, end_time),
             content_ignore_error=ignore,
+            content_target_result_id=result.content_target_result_id
         )
         content_result.content_result = result.success
         content_result.content_message = result.message
@@ -112,15 +113,15 @@ class StepBaseStrategy(ABC):
 
         # 截图
         # 执行失败 && play 类型 && 不是 交互错误interaction_failed
-        if not result.success and step_content.play_step_content.content_type == PlayStepContentType.STEP_PLAY and result.error_type != 'interaction_failed':
-            path = await self.to_screenshot(step_content)
+        if not result.success and step_context.play_step_content.content_type == PlayStepContentType.STEP_PLAY and result.error_type != 'interaction_failed':
+            path = await self.to_screenshot(step_context)
             if path:
                 content_result.content_screenshot_path = path
 
         return content_result
 
     @staticmethod
-    async def to_screenshot(step_content: StepContentContext):
+    async def to_screenshot(step_context: StepContentContext):
         """
         截图
         :return:
@@ -132,17 +133,17 @@ class StepBaseStrategy(ABC):
             # 确保目录存在
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
-            await step_content.page.screenshot(
+            await step_context.page.screenshot(
                 path=str(local_path),
                 full_page=False,
             )
             # 返回包含static前缀的路径，前端可以通过静态文件服务访问
-            await step_content.starter.send("完成失败截图✅")
+            await step_context.starter.send("完成失败截图✅")
             from app.mapper.file import FileMapper
             file = await FileMapper.insert_file(filePath=str(local_path), fileName=fileName)
             error_path = f"{Config.UI_ERROR_PATH}{file.uid}"
 
             return error_path
         except Exception as e:
-            await step_content.starter.send(f"截图失败❌ {str(e)}")
+            await step_context.starter.send(f"截图失败❌ {str(e)}")
             return None

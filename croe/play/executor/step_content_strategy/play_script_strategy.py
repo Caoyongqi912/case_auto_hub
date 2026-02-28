@@ -39,7 +39,7 @@ class PlayScriptContentStrategy(StepBaseStrategy):
                                            extract_data=script_vars
                                            ),
                 start_time=start_time,
-                step_content=step_context
+                step_context=step_context
             )
 
             return True

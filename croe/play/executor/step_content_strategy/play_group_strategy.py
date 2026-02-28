@@ -36,7 +36,7 @@ class PlayGroupContentStrategy(StepBaseStrategy):
         await self.write_result(
             start_time = start_time,
             result =group_container_result,
-            step_content=step_context,
+            step_context=step_context,
         )
 
         # 步骤组执行开始
@@ -81,7 +81,7 @@ class PlayGroupContentStrategy(StepBaseStrategy):
                 parent_index=step_context.index,
                 start_time = step_start_time,
                 result =result,
-                step_content=group_step_context,
+                step_context=group_step_context,
             )
             if not GROUP_SUCCESS:
                 break
