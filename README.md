@@ -317,7 +317,7 @@ python run.py
 
 展示所有接口的概览，支持快速筛选和搜索。
 
-![API列表](resource/apiList.png)
+![API列表](resource/api.png)
 
 ### 🔍 API详情
 
@@ -346,7 +346,7 @@ python run.py
 
 强大的断言功能，支持多种断言类型。
 
-![接口断言](resource/assert.png)
+![接口断言](resource/api_asserts.png)
 
 ### 🔧 变量写入
 
@@ -406,7 +406,7 @@ python run.py
 
 ### 📋 用例管理
 
-完整的用例管理功能，支持增删改查、复制、拖拽等。
+用例管理功能，支持增删改查、复制、拖拽等。(初步版本、会重构)
 
 ![用例管理](resource/casehub.gif)
 
