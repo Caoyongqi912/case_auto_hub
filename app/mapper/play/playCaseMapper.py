@@ -19,6 +19,7 @@ from app.mapper.play.playStepMapper import PlayStepV2Mapper
 from croe.play.starter import UIStarter
 from enums.CaseEnum import Status, PlayStepContentType
 from utils import log
+from ..project.dbConfigMapper import CaseContentDBExecuteMapper
 from ...exception import NotFind
 from app.model.playUI.playStepContent import PlayStepContent
 from app.model.playUI.playAssociation import PlayCaseStepContentAssociation
@@ -871,6 +872,13 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
                 match content_type:
                     case PlayStepContentType.STEP_PLAY_SCRIPT:
                         content.content_name = "脚本"
+
+                    case PlayStepContentType.STEP_PLAY_DB:
+                        _db = await CaseContentDBExecuteMapper.init_empty(creator_user=user,
+                                                                          session=session)
+                        content.content_name = "DB操作"
+                        content.target_id = _db.id
+
                 last_index = await CommonHelper.get_case_step_last_index(case_id, session)
                 await cls.add_flush_expunge(session, content)
                 await CommonHelper.create_single_case_content_association(
@@ -955,6 +963,17 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
                     creatorName=user.username,
                 )
                 return await cls.add_flush_expunge(session, new_content)
+        new_content = PlayStepContent(
+            content_name=content.content_name,
+            content_desc=content.content_desc,
+            content_type=content.content_type,
+            assert_list=content.assert_list,
+            is_common=False,
+            script_text=content.script_text,
+            creator=user.id,
+            creatorName=user.username,
+        )
+        return await cls.add_flush_expunge(session, new_content)
 
     @classmethod
     async def delete_content(cls, content: PlayStepContent, session: AsyncSession):

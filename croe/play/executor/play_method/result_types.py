@@ -6,7 +6,7 @@
 # @Software: PyCharm
 # @Desc: 定义方法执行结果的类型和工具函数
 
-from typing import Dict, Any, Optional, Literal
+from typing import Dict, Any, Optional, Literal, List
 from dataclasses import dataclass
 
 # 类型别名
@@ -33,7 +33,7 @@ class StepExecutionResult:
     assert_data: Optional[Dict[str, Any]] = None
     """执行产生的额外数据（如断言信息）"""
 
-    extract_data: Optional[Dict[str, Any]] = None
+    extract_data: Optional[List[Dict[str, Any]]] = None
     """执行产生的额外数据（提取的变量）"""
 
     def to_tuple(self) -> tuple[bool, Optional[str]]:

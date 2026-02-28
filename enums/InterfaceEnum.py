@@ -68,6 +68,7 @@ class ExtractTargetVariablesEnum:
 
     PLAY_VARIABLE = 14  # UI 方法提取
     StepScript = 11  # UI 脚本用例流程
+    StepDB = 15  # DB提取
     ResponseJsonExtract = 6
     ResponseHeaderExtract = 7
     ResponseTextExtract = 8
