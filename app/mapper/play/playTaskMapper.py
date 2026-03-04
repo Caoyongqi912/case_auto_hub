@@ -163,7 +163,7 @@ class PlayTaskMapper(Mapper[PlayTask]):
             raise e
 
     @classmethod
-    async def set_task_status(cls, taskId: int, status: TaskStatus):
+    async def set_task_status(cls, taskId: int, status: str):
         try:
             async with async_session() as session:
                 await session.execute(update(cls.__model__).where(

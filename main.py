@@ -160,7 +160,9 @@ async def start_proxy():
 
 async def init_worker_pool():
     from common.redis_worker_pool import r_pool
+    from common import rc
     
+    await r_pool.set_redis_client(rc)
     await r_pool.start()
     return r_pool
 

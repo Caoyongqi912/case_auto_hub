@@ -46,27 +46,30 @@ class PlayRunner:
 
     async def execute_case(self, play_case: PlayCase, case_result_writer: PlayCaseResultWriter,
                            task_result: PlayTaskResult = None,
-                           error_stop: bool = True):
+                           error_stop: bool = True,
+                           write_result_on_failure: bool = True) -> bool:
         """
 
         :param play_case:
         :param case_result_writer:
         :param task_result:
         :param error_stop:
-        :return:
+        :param write_result_on_failure: 失败时是否写入结果（重试场景下设为False）
+        :return: bool - 用例执行是否成功
         """
         # 默认结果为成功
         page_manager = None
-        CASE_SUCCESS = True
+        case_success = True
 
         case_step_contents = await PlayCaseMapper.query_content_steps(case_id=play_case.id)
         case_step_content_length = len(case_step_contents)
         await self.starter.send(f"用例 {play_case.title} 执行开始。执行人 {self.starter.username}")
-        await self.starter.send(f"查询到关联Step x {case_step_content_length} ...")
+        await self.starter.send(f"查询到关联步骤 x {case_step_content_length} ...")
 
         if not case_step_contents:
             await self.starter.send("无可执行业务流步骤，结束执行")
-            return await self.starter.over()
+            await self.starter.over()
+            return case_success
 
         # 初始化。步骤结果写入器
         content_writer = ContentResultWriter(
@@ -80,17 +83,17 @@ class PlayRunner:
 
             for index, step_content in enumerate(case_step_contents, start=1):
                 await self.starter.send(
-                    f"✍️✍️ {'=' * 10} EXECUTE_STEP {index} ： {step_content} {'=' * 10}"
+                    f"✍️✍️ {'=' * 10} 执行步骤 {index} ： {step_content} {'=' * 10}"
                 )
 
                 # 步骤开关 用例调试中使用 任务执行默认开启
                 if step_content.enable == 0 and not task_result:
-                    await self.starter.send(f"✍️✍️  EXECUTE_STEP {index} ： 调试禁用 跳过执行")
+                    await self.starter.send(f"✍️✍️  执行步骤 {index} ： 调试禁用 跳过执行")
                     continue
 
-                # 如果 CASE_SUCCESS 已经是 False 且需要错误停止，则跳过后续步骤
-                if not CASE_SUCCESS and error_stop:
-                    await self.starter.send(f"⏭️⏭️  SKIP_STEP {index} ： 遇到错误已停止")
+                # 如果 case_success 已经是 False 且需要错误停止，则跳过后续步骤
+                if not case_success and error_stop:
+                    await self.starter.send(f"⏭️⏭️  跳过步骤 {index} ： 遇到错误已停止")
                     continue
 
                 # 步骤 执行
@@ -104,26 +107,26 @@ class PlayRunner:
                 )
                 play_strategy = get_step_strategy(step_content.content_type)
                 play_step_success = await play_strategy.execute(play_content_context)
-                CASE_SUCCESS &= play_step_success
+                case_success &= play_step_success
 
                 # 如果是失败 error_step true
-                if not CASE_SUCCESS and error_stop:
+                if not case_success and error_stop:
                     break
-            # 一次性写入 content results
-            await content_writer.flush()
+
         except Exception as e:
             log.exception(e)
-            CASE_SUCCESS = False  # 发生异常时标记为失败
+            case_success = False  # 发生异常时标记为失败
             raise
         finally:
-            await self.starter.send(f'执行完成 >> {play_case}, 结果: {CASE_SUCCESS}')
-            await case_result_writer.write_result(CASE_SUCCESS)
+            await self.starter.send(f'执行完成 >> {play_case}, 结果: {case_success}')
+            # 只有成功时 或者 允许失败写入时 才写入结果
+            if case_success or write_result_on_failure:
+                # 一次性写入 content results
+                await content_writer.flush()
+                await case_result_writer.write_result(case_success)
             await self.starter.over(case_result_writer.play_case_result.uid)
             await self.__clean(page_manager)
-        
-        return CASE_SUCCESS
-
-    # 清理页面资源
+        return case_success
 
     async def __clean(self, page_manager: Optional[PageManager] = None):
         """

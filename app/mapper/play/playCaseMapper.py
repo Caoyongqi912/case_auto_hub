@@ -9,6 +9,9 @@ import asyncio
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Sequence
 
+from sqlalchemy.testing.config import ident
+from sympy.strategies.branch import condition
+
 from app.mapper import Mapper
 from app.model import async_session
 from app.model.base import User
@@ -19,6 +22,7 @@ from app.mapper.play.playStepMapper import PlayStepV2Mapper
 from croe.play.starter import UIStarter
 from enums.CaseEnum import Status, PlayStepContentType
 from utils import log
+from .playStepGroupMapper import PlayStepGroupMapper
 from ..interface import InterfaceResultMapper, InterfaceMapper
 from ..project.dbConfigMapper import CaseContentDBExecuteMapper
 from ...exception import NotFind
@@ -110,9 +114,6 @@ class CommonHelper:
 
 class PlayCaseMapper(Mapper[PlayCase]):
     __model__ = PlayCase
-
-
-
 
     @classmethod
     async def association_interface(cls, case_id: int, interface_id: int):
@@ -553,6 +554,58 @@ class PlayCaseMapper(Mapper[PlayCase]):
             if should_close and session:
                 await session.close()
 
+    @classmethod
+    async def reload_content(cls, case_id: int):
+        """
+        刷新content
+        Args:
+            case_id：用例id
+        """
+
+        try:
+            async with async_session() as session:
+                async with session.begin():
+                    play_case = await cls.get_by_id(ident=case_id, session=session)
+
+                    scalars_data = await session.scalars(
+                        select(PlayStepContent).join(
+                            PlayCaseStepContentAssociation,
+                            PlayStepContent.id == PlayCaseStepContentAssociation.play_step_content_id
+                        ).where(
+                            PlayCaseStepContentAssociation.play_case_id == case_id
+                        ).order_by(
+                            PlayCaseStepContentAssociation.step_order
+                        )
+                    )
+                    contents = scalars_data.all()
+
+                    # 重新计算步骤数量
+                    play_case.step_num = len(contents)
+                    for content in contents:
+                        match content.content:
+                            case PlayStepContentType.STEP_PLAY:
+                                play = await PlayStepV2Mapper.get_by_id(ident=content.target_id, session=session)
+                                content.content_name = play.name
+                                content.content_desc = play.description
+                            case PlayStepContentType.STEP_PLAY_API:
+                                api = await InterfaceMapper.get_by_id(ident=content.target_id, session=session)
+                                content.content_name = api.name
+                                content.content_desc = api.description
+                            case PlayStepContentType.STEP_PLAY_GROUP:
+                                group = await PlayStepGroupMapper.get_by_id(ident=content.target_id, session=session)
+                                content.content_name = group.name
+                                content.content_desc = group.description
+                            case _:
+                                continue
+
+
+
+
+
+
+        except Exception as e:
+            raise e
+
 
 class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
     """
@@ -677,13 +730,13 @@ class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
         return True
 
 
-class PlayCaseResultMapper(Mapper[PlayCaseResult]):
+class PlayCaseResultMapper(Mapper[PlayStepContentResult]):
     """
     用例结果映射器
     
     处理用例执行结果的相关操作
     """
-    __model__ = PlayCaseResult
+    __model__ = PlayStepContentResult
 
     @classmethod
     async def query_contents(cls, case_result_id: int) -> List[Dict[str, Any]]:

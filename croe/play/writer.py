@@ -13,9 +13,10 @@ from app.mapper.file import FileMapper
 from app.mapper.play.playResultMapper import PlayContentResultMapper
 from app.mapper.play.playTaskMapper import PlayTaskMapper, PlayTaskResultMapper
 from app.model.base import FileModel
-from app.model.playUI import PlayCaseResult, PlayTaskResult, PlayCase
+from app.model.playUI import PlayCaseResult, PlayTaskResult, PlayCase, PlayTask
 from app.model.playUI.PlayResult import PlayStepContentResult
 from croe.play.starter import UIStarter
+from enums import TaskStatus
 from utils import log
 from enums.CaseEnum import Result, Status
 from config import Config
@@ -60,8 +61,8 @@ class ContentResultWriter:
             "result": content_result,
             "children": []
         }
-    
-    async def update_content_result(self, step_index: int, success:bool):
+
+    async def update_content_result(self, step_index: int, success: bool):
         """
         更新主步骤结果
         Args:
@@ -72,8 +73,7 @@ class ContentResultWriter:
             self.content_results[step_index]["result"].content_result = success
         else:
             log.warning(f"[ContentResultWriter] Step index {step_index} not found")
-     
-    
+
     async def add_child_content_result(self, parent_index: int, content_result: PlayStepContentResult):
         """
         添加子步骤结果到指定父步骤
@@ -87,14 +87,12 @@ class ContentResultWriter:
             self.content_results[parent_index]["children"].append(content_result)
         else:
             log.warning(f"[ContentResultWriter] Parent index {parent_index} not found, adding as main step")
-    
-
 
     async def flush(self):
         if not self.content_results:
             log.error("[ContentResultWriter] No content results to write")
             return
-        
+
         # 直接批量插入所有结果
         count = await PlayContentResultMapper.save_result_batch(self.content_results)
         log.info(f"[ContentResultWriter] Batch inserted {count} results")
@@ -152,7 +150,6 @@ class PlayCaseResultWriter:
         self.play_case_result.running_logs = "".join(self._starter.logs)
         await PlayCaseResultMapper.set_case_result(self.play_case_result)
 
-
     @staticmethod
     def _build_vars(vars_map: Dict[str, Any]):
         """
@@ -174,86 +171,42 @@ class PlayCaseResultWriter:
         return f"<PlayCaseResultWriter case_result_id={self.play_case_result_id}, case_task_result_id={self.play_task_result_id}>"
 
 
-class Writer:
-    """
-    执行db记录
-    """
+class PlayTaskResultWriter:
+
+    def __init__(self, starter: UIStarter):
+        self.starter = starter
 
     @staticmethod
-    async def write_base_result(base_result: PlayTaskResult):
-        """
-        回写测试结果
-        :param base_result: 测试结果实体
-        :return:
-        """
-        eTime = datetime.datetime.now()
-        base_result.rate_number = round(base_result.success_number / base_result.total_number * 100, 2)
-        base_result.end_time = eTime
-        base_result.total_usetime = GenerateTools.timeDiff(base_result.start_time, eTime)
-        base_result.status = Status.DONE
-        if base_result.fail_number > 0:
-            base_result.result = Result.FAIL
-        else:
-            base_result.result = Result.SUCCESS
-        await PlayTaskMapper.set_task_status(base_result.task_id, Status.WAIT)
-
-        return await PlayTaskResultMapper.set_result(base_result)
+    async def set_task_running(task_id: int):
+        return await PlayTaskMapper.set_task_status(task_id, Status.RUNNING)
 
     @staticmethod
-    async def write_case_result(case_result: PlayCaseResult,
-                                starter: UIStarter,
-                                errorMsgMap: Dict[str, str] = None):
-        """
-        回写测试结果
-        :param case_result: 测试结果实体
-        :param starter: UIStarter
-        :param errorMsgMap: 错误信息
-        :return:
-        """
-        eTime = datetime.datetime.now()
-        case_result.end_time = eTime
-        case_result.use_time = GenerateTools.timeDiff(case_result.start_time, eTime)
-        case_result.result = Result.SUCCESS
-        case_result.status = Status.DONE
-        case_result.running_logs = "".join(starter.logs)
+    async def set_task_wait(task_id: int):
+        return await PlayTaskMapper.set_task_status(task_id, Status.WAIT)
 
-        if errorMsgMap:
-            log.info(f"error_msg = {errorMsgMap}")
-            case_result.result = Result.FAIL
-            PATH_KEY = "ui_case_err_step_pic_path"
-            if errorMsgMap.get(PATH_KEY):
-                file = await Writer.write_error_file(errorMsgMap.get(PATH_KEY))
-                errorMsgMap[PATH_KEY] = f"{Config.UI_ERROR_PATH}{file.uid}"
-            for k, v in errorMsgMap.items():
-                setattr(case_result, k, v)
-        await PlayCaseResultMapper.set_case_result(case_result)
-
-    @staticmethod
-    async def write_error_file(filepath: str) -> FileModel:
-        """
-        db 写入 file
-        :param filepath:
-        :return:
-        """
-        fileName = os.path.split(filepath)[-1]
-        file = await FileMapper.insert_file(
-            filePath=filepath,
-            fileName=fileName
+    async def init_result(self, task: PlayTask, case_nums: int) -> PlayTaskResult:
+        await self.set_task_running(task_id=task.id)
+        return await PlayTaskResultMapper.init_task_result(
+            task=task,
+            case_total_num=case_nums,
+            runner=self.starter,
         )
-        return file
 
-    @staticmethod
-    async def write_assert_info(case_result: PlayCaseResult,
-                                assertsInfo: Any = None):
+    async def write_final_result(self, task_result: PlayTaskResult):
         """
-        写入assertInfo
-        :param case_result:
-        :param assertsInfo:
-        :return:
+        写入最终结果
         """
-
-        if case_result.asserts_info is None:
-            case_result.asserts_info = []
-
-        case_result.asserts_info.extend(assertsInfo)
-        await PlayCaseResultMapper.set_case_result_assertInfo(case_result.id, case_result.asserts_info)
+        end_time = datetime.datetime.now()
+        await  self.set_task_wait(task_id=task_result.task_id)
+        if task_result.total_number > 0:
+            task_result.rate_number = round(task_result.success_number / task_result.total_number * 100, 2)
+        else:
+            task_result.rate_number = 0
+        task_result.end_time = end_time
+        task_result.total_usetime = GenerateTools.timeDiff(task_result.start_time, end_time)
+        task_result.status = Status.DONE
+        if task_result.fail_number > 0:
+            task_result.result = Result.FAIL
+        else:
+            task_result.result = Result.SUCCESS
+        return await PlayTaskResultMapper.set_result(task_result)
