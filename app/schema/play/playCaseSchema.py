@@ -10,6 +10,7 @@ from typing import List, Any, Optional, Union
 from pydantic import BaseModel, Field, field_validator
 
 from app.schema import PageSchema
+from app.schema.interface import UpdateCaseContentAssert
 from enums import ModuleEnum
 
 
@@ -19,6 +20,7 @@ class EditPlayStepContentSchema(BaseModel):
     content_name: Optional[str] = Field(None, description="步骤名称")
     enable: Optional[bool] = Field(None, description="是否启用")
     script_text: Optional[str] = Field(None, description="API脚本文本")
+    assert_list: Optional[List[UpdateCaseContentAssert]] = Field(None, description="断言")
 
 
 class AssociationPlayStepSchema(BaseModel):

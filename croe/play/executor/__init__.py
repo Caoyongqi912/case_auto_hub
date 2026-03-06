@@ -18,8 +18,6 @@ def get_step_strategy(step_type: int):
         case PlayStepContentType.STEP_PLAY_GROUP:
             return PlayGroupContentStrategy()
 
-
-
         case PlayStepContentType.STEP_PLAY_API:
             return PlayInterfaceContentStrategy()
 
@@ -28,8 +26,7 @@ def get_step_strategy(step_type: int):
         case PlayStepContentType.STEP_PLAY_CONDITION:
             pass
         case PlayStepContentType.STEP_PLAY_ASSERT:
-            pass
-
+            return PlayAssertContentStrategy()
         case PlayStepContentType.STEP_PLAY_DB:
             return PlayDBContentStrategy()
         case _:

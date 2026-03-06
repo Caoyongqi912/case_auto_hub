@@ -12,7 +12,6 @@ from .play_script_strategy import PlayScriptContentStrategy
 from .play_loop_Strategy import PlayLoopContentStrategy
 from .play_assert_strategy import PlayAssertContentStrategy
 from .play_interface_strategy import PlayInterfaceContentStrategy
-
 __all__ = [
     "PlayGroupContentStrategy",
     "PlayStepContentStrategy",

@@ -3,7 +3,7 @@ from typing import Optional
 
 from app.mapper.play import PlayCaseMapper, PlayCaseVariablesMapper
 from app.model.playUI import PlayCase, PlayTaskResult
-from croe._manager.variable_manager import VariableManager
+from croe.a_manager.variable_manager import VariableManager
 from croe.play.context import StepContentContext
 from croe.play.executor import get_step_strategy
 from croe.play.starter import UIStarter

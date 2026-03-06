@@ -730,13 +730,13 @@ class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
         return True
 
 
-class PlayCaseResultMapper(Mapper[PlayStepContentResult]):
+class PlayCaseResultMapper(Mapper[PlayCaseResult]):
     """
     用例结果映射器
     
     处理用例执行结果的相关操作
     """
-    __model__ = PlayStepContentResult
+    __model__ = PlayCaseResult
 
     @classmethod
     async def query_contents(cls, case_result_id: int) -> List[Dict[str, Any]]:

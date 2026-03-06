@@ -304,6 +304,7 @@ async def copy_case(case: GetPlayCaseByCaseId, cr: User = Depends(Authentication
     Returns:
         复制后的用例信息
     """
+    # todo
     case = await PlayCaseMapper.copy_case(
         caseId=case.caseId, cr=cr)
 

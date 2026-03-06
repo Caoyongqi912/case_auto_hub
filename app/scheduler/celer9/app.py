@@ -19,31 +19,72 @@ celery_app = Celery(
         "app.scheduler.celer9.tasks",
     ]
 )
-
 celery_app.conf.update(
+    # 消息代理URL，用于任务消息的传递和队列管理
+    # Redis作为消息中间件，实现任务的生产和消费
     broker_url=Config.REDIS_Broker,
+    
+    # 结果后端URL，用于存储任务执行结果
+    # Redis存储任务状态、返回值和元数据
     result_backend=Config.REDIS_Backend,
+    
+    # 任务序列化格式，将任务参数和结果序列化为JSON格式
     task_serializer="json",
+    
+    # 结果序列化格式，将任务执行结果序列化为JSON格式
     result_serializer="json",
+    
+    # 接受的内容类型，只接受JSON格式的消息，增强安全性
     accept_content=["json"],
+    
+    # 时区设置，使用上海时区（东八区）
     timezone="Asia/Shanghai",
+    
+    # 启用UTC时间，结合timezone参数实现时间转换
+    # 当enable_utc=True时，内部时间使用UTC，显示时转换为timezone
     enable_utc=True,
+    
+    # 跟踪任务开始状态，将任务状态从PENDING更新为STARTED
+    # 需要result_backend支持，便于监控任务执行状态
     task_track_started=True,
+    
+    # 任务硬超时时间（秒），超时后强制终止任务
+    # 防止任务无限期运行，消耗资源
     task_time_limit=3600,
+    
+    # 任务软超时时间（秒），触发SoftTimeLimitExceeded异常
+    # 允许任务在收到异常后进行清理工作
     task_soft_time_limit=3300,
+    
+    # Worker预取乘数，控制每个worker预取的任务数量
+    # 设置为1表示每个worker只预取1个任务，避免worker负载不均
     worker_prefetch_multiplier=1,
+    
+    # Worker子进程最大任务数，达到此数量后重启子进程
+    # 防止内存泄漏和长时间运行导致的问题
     worker_max_tasks_per_child=1000,
+    
+    # Beat调度器配置，初始化为空字典
+    # 存储定时任务的调度配置，格式为 {task_name: schedule_entry}
     beat_schedule={},
+    
+    # 默认任务队列，未指定队列的任务将发送到此队列
     task_default_queue="default",
+    
+    # 任务队列配置，定义不同类型的队列
+    # 用于任务分类和优先级管理
     task_queues={
+        # 默认队列，处理普通任务
         "default": {
-            "exchange": "default",
-            "routing_key": "default",
+            "exchange": "default",           # 交换机名称
+            "routing_key": "default",         # 路由键
         },
+        # 接口测试任务队列，处理接口自动化测试任务
         "interface_tasks": {
             "exchange": "interface_tasks",
             "routing_key": "interface_tasks",
         },
+        # UI测试任务队列，处理UI自动化测试任务
         "play_tasks": {
             "exchange": "play_tasks",
             "routing_key": "play_tasks",

@@ -11,7 +11,7 @@ from app.mapper.interface import InterfaceContentStepResultMapper
 from app.model.interface.interfaceResultModel import InterfaceCaseStepContentResult
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
-from croe._manager import ScriptManager,ScriptSecurityError
+from croe.a_manager import ScriptManager,ScriptSecurityError
 from croe.interface.types import InterfaceCaseContent, VARS
 from enums import ExtractTargetVariablesEnum
 from croe.interface.starter import APIStarter

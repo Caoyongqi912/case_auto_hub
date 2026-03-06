@@ -104,10 +104,11 @@ class StepBaseStrategy(ABC):
         content_result.content_result = result.success
         content_result.content_message = result.message
 
+        # 断言结果
         if result.assert_data:
-            # todo
-            ...
+            content_result.content_asserts = result.assert_data
 
+        # 变量提取
         if result.extract_data:
             content_result.extracts = result.extract_data
 

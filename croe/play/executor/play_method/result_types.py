@@ -24,7 +24,7 @@ class StepExecutionResult:
     success: bool
     """执行是否成功"""
 
-    content_target_result_id:Optional[int] = None
+    content_target_result_id: Optional[int] = None
     """其他模型id"""
 
     message: Optional[str] = None
@@ -33,7 +33,7 @@ class StepExecutionResult:
     error_type: Optional[ErrorType] = None
     """错误类型（仅当success为False时有值）"""
 
-    assert_data: Optional[Dict[str, Any]] = None
+    assert_data: Optional[List[Dict[str, Any]]] = None
     """执行产生的额外数据（如断言信息）"""
 
     extract_data: Optional[List[Dict[str, Any]]] = None
