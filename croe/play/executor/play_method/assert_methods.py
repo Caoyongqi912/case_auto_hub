@@ -6,15 +6,14 @@
 # @Software: PyCharm
 # @Desc:
 
-import re
-from typing import  Optional
-
+from typing import Optional
 from playwright.async_api import Locator, expect
 
-from utils import GenerateTools, log
+from croe.a_manager.assert_manager import AssertResult
+from utils import log
 from ._base_method import BaseMethods
 from croe.play.context import StepContext
-from .result_types import  create_assert_info, StepExecutionResult
+from .result_types import StepExecutionResult, create_success_result, create_error_result
 
 
 class AssertIsCheckedMethod(BaseMethods):
@@ -24,26 +23,31 @@ class AssertIsCheckedMethod(BaseMethods):
     method_name = "expect.to_be_checked"
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
-        assert_info = create_assert_info(
-            assert_name=context.step.name,
-            assert_opt="=",
-            assert_expect=True,
-            assert_actual=None,
+
+        assert_result = AssertResult(
+            assert_type=0,
+            assert_key="-",
             assert_result=False,
-            id=GenerateTools.getTime(3),
-            desc=context.step.description,
-            type="UI",
-            assert_script=context.step.method,
+            assert_actual=None,
+            assert_expect=True,
         )
         try:
             expect(locator).to_be_checked()
-            assert_info["assert_actual"] = True
-            assert_info["assert_result"] = True
-            return True, assert_info
+            assert_result.assert_actual = True
+            assert_result.assert_result = True
+            return create_success_result(
+                assert_data=assert_result,
+            )
         except Exception as e:
-            log.error(f"[AssertIsCheckedMethod] execute error: {e}")
-            assert_info["assert_actual"] = False
-            return False, assert_info
+            log.error(f"[AssertIsCheckedMethod] 断言失败: {e}")
+            assert_result.assert_actual = False
+            assert_result.assert_result = False
+            return create_error_result(
+                error_type="assertion_failed",
+                message=f"[AssertIsCheckedMethod] 断言失败: 期望元素被选中, 实际未被选中",
+                selector=context.method,
+                assert_data=assert_result,
+            )
 
 
 class AssertIsDisabledMethod(BaseMethods):
@@ -53,26 +57,31 @@ class AssertIsDisabledMethod(BaseMethods):
     method_name = "expect.to_be_disabled"
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
-        assert_info = create_assert_info(
-            assert_name=context.step.name,
-            assert_opt="=",
-            assert_expect=True,
-            assert_actual=None,
+
+        assert_result = AssertResult(
+            assert_type=0,
+            assert_key="-",
             assert_result=False,
-            id=GenerateTools.getTime(3),
-            desc=context.step.description,
-            type="UI",
-            assert_script=context.step.method,
+            assert_actual=None,
+            assert_expect=True,
         )
         try:
             expect(locator).to_be_disabled()
-            assert_info["assert_actual"] = True
-            assert_info["assert_result"] = True
-            return True, assert_info
+            assert_result.assert_actual = True
+            assert_result.assert_result = True
+            return create_success_result(
+                assert_data=assert_result,
+            )
         except Exception as e:
-            log.error(f"[AssertIsDisabledMethod] execute error: {e}")
-            assert_info["assert_actual"] = await get_error_value(e)
-            return False, assert_info
+            log.error(f"[AssertIsDisabledMethod] 断言失败: {e}")
+            assert_result.assert_actual = False
+            assert_result.assert_result = False
+            return create_error_result(
+                error_type="assertion_failed",
+                message=f"[AssertIsDisabledMethod] 断言失败: 期望元素被禁用, 实际未被禁用",
+                selector=context.method,
+                assert_data=assert_result,
+            )
 
 
 class AssertIsEditableMethod(BaseMethods):
@@ -82,26 +91,31 @@ class AssertIsEditableMethod(BaseMethods):
     method_name = "expect.to_be_editable"
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
-        assert_info = create_assert_info(
-            assert_name=context.step.name,
-            assert_opt="=",
-            assert_expect=True,
-            assert_actual=None,
+
+        assert_result = AssertResult(
+            assert_type=0,
+            assert_key="-",
             assert_result=False,
-            id=GenerateTools.getTime(3),
-            desc=context.step.description,
-            type="UI",
-            assert_script=context.step.method,
+            assert_actual=None,
+            assert_expect=True,
         )
         try:
             expect(locator).to_be_editable()
-            assert_info["assert_actual"] = True
-            assert_info["assert_result"] = True
-            return True, assert_info
+            assert_result.assert_actual = True
+            assert_result.assert_result = True
+            return create_success_result(
+                assert_data=assert_result,
+            )
         except Exception as e:
-            log.error(f"[AssertIsEditableMethod] execute error: {e}")
-            assert_info["assert_actual"] = await get_error_value(e)
-            return False, assert_info
+            log.error(f"[AssertIsEditableMethod] 断言失败: {e}")
+            assert_result.assert_actual = False
+            assert_result.assert_result = False
+            return create_error_result(
+                error_type="assertion_failed",
+                message=f"[AssertIsEditableMethod] 断言失败: 期望元素可编辑, 实际不可编辑",
+                selector=context.method,
+                assert_data=assert_result,
+            )
 
 
 class AssertIsEmptyMethod(BaseMethods):
@@ -111,26 +125,31 @@ class AssertIsEmptyMethod(BaseMethods):
     method_name = "expect.to_be_empty"
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
-        assert_info = create_assert_info(
-            assert_name=context.step.name,
-            assert_opt="=",
-            assert_expect=True,
-            assert_actual=None,
+
+        assert_result = AssertResult(
+            assert_type=0,
+            assert_key="-",
             assert_result=False,
-            id=GenerateTools.getTime(3),
-            desc=context.step.description,
-            type="UI",
-            assert_script=context.step.method,
+            assert_actual=None,
+            assert_expect=True,
         )
         try:
             expect(locator).to_be_empty()
-            assert_info["assert_actual"] = True
-            assert_info["assert_result"] = True
-            return True, assert_info
+            assert_result.assert_actual = True
+            assert_result.assert_result = True
+            return create_success_result(
+                assert_data=assert_result,
+            )
         except Exception as e:
-            log.error(f"[AssertIsEmptyMethod] execute error: {e}")
-            assert_info["assert_actual"] = await get_error_value(e)
-            return False, assert_info
+            log.error(f"[AssertIsEmptyMethod] 断言失败: {e}")
+            assert_result.assert_actual = False
+            assert_result.assert_result = False
+            return create_error_result(
+                error_type="assertion_failed",
+                message=f"[AssertIsEmptyMethod] 断言失败: 期望元素为空, 实际不为空",
+                selector=context.method,
+                assert_data=assert_result,
+            )
 
 
 class AssertIsEnabledMethod(BaseMethods):
@@ -140,26 +159,31 @@ class AssertIsEnabledMethod(BaseMethods):
     method_name = "expect.to_be_enabled"
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
-        assert_info = create_assert_info(
-            assert_name=context.step.name,
-            assert_opt="=",
-            assert_expect=True,
-            assert_actual=None,
+
+        assert_result = AssertResult(
+            assert_type=0,
+            assert_key="-",
             assert_result=False,
-            id=GenerateTools.getTime(3),
-            desc=context.step.description,
-            type="UI",
-            assert_script=context.step.method,
+            assert_actual=None,
+            assert_expect=True,
         )
         try:
             expect(locator).to_be_enabled()
-            assert_info["assert_actual"] = True
-            assert_info["assert_result"] = True
-            return True, assert_info
+            assert_result.assert_actual = True
+            assert_result.assert_result = True
+            return create_success_result(
+                assert_data=assert_result,
+            )
         except Exception as e:
-            log.error(f"[AssertIsEnabledMethod] execute error: {e}")
-            assert_info["assert_actual"] = await get_error_value(e)
-            return False, assert_info
+            log.error(f"[AssertIsEnabledMethod] 断言失败: {e}")
+            assert_result.assert_actual = False
+            assert_result.assert_result = False
+            return create_error_result(
+                error_type="assertion_failed",
+                message=f"[AssertIsEnabledMethod] 断言失败: 期望元素可用, 实际不可用",
+                selector=context.method,
+                assert_data=assert_result,
+            )
 
 
 class AssertIsFocusedMethod(BaseMethods):
@@ -169,26 +193,31 @@ class AssertIsFocusedMethod(BaseMethods):
     method_name = "expect.to_be_focused"
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
-        assert_info = create_assert_info(
-            assert_name=context.step.name,
-            assert_opt="=",
-            assert_expect=True,
-            assert_actual=None,
+
+        assert_result = AssertResult(
+            assert_type=0,
+            assert_key="-",
             assert_result=False,
-            id=GenerateTools.getTime(3),
-            desc=context.step.description,
-            type="UI",
-            assert_script=context.step.method,
+            assert_actual=None,
+            assert_expect=True,
         )
         try:
             expect(locator).to_be_focused()
-            assert_info["assert_actual"] = True
-            assert_info["assert_result"] = True
-            return True, assert_info
+            assert_result.assert_actual = True
+            assert_result.assert_result = True
+            return create_success_result(
+                assert_data=assert_result,
+            )
         except Exception as e:
-            log.error(f"[AssertIsFocusedMethod] execute error: {e}")
-            assert_info["assert_actual"] = await get_error_value(e)
-            return False, assert_info
+            log.error(f"[AssertIsFocusedMethod] 断言失败: {e}")
+            assert_result.assert_actual = False
+            assert_result.assert_result = False
+            return create_error_result(
+                error_type="assertion_failed",
+                message=f"[AssertIsFocusedMethod] 断言失败: 期望元素获得焦点, 实际未获得焦点",
+                selector=context.method,
+                assert_data=assert_result,
+            )
 
 
 class AssertIsHiddenMethod(BaseMethods):
@@ -198,26 +227,31 @@ class AssertIsHiddenMethod(BaseMethods):
     method_name = "expect.to_be_hidden"
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
-        assert_info = create_assert_info(
-            assert_name=context.step.name,
-            assert_opt="=",
-            assert_expect=True,
-            assert_actual=None,
+
+        assert_result = AssertResult(
+            assert_type=0,
+            assert_key="-",
             assert_result=False,
-            id=GenerateTools.getTime(3),
-            desc=context.step.description,
-            type="UI",
-            assert_script=context.step.method,
+            assert_actual=None,
+            assert_expect=True,
         )
         try:
             expect(locator).to_be_hidden()
-            assert_info["assert_actual"] = True
-            assert_info["assert_result"] = True
-            return True, assert_info
+            assert_result.assert_actual = True
+            assert_result.assert_result = True
+            return create_success_result(
+                assert_data=assert_result,
+            )
         except Exception as e:
-            log.error(f"[AssertIsHiddenMethod] execute error: {e}")
-            assert_info["assert_actual"] = await get_error_value(e)
-            return False, assert_info
+            log.error(f"[AssertIsHiddenMethod] 断言失败: {e}")
+            assert_result.assert_actual = False
+            assert_result.assert_result = False
+            return create_error_result(
+                error_type="assertion_failed",
+                message=f"[AssertIsHiddenMethod] 断言失败: 期望元素隐藏, 实际可见",
+                selector=context.method,
+                assert_data=assert_result,
+            )
 
 
 class AssertUrlTitle(BaseMethods):
@@ -228,53 +262,35 @@ class AssertUrlTitle(BaseMethods):
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
         expect_value = context.step.value.strip()
-        assert_info = create_assert_info(
-            assert_name=context.step.name,
-            assert_opt="=",
-            assert_expect=expect_value,
-            assert_actual=None,
+
+        assert_result = AssertResult(
+            assert_type=0,
+            assert_key="-",
             assert_result=False,
-            id=GenerateTools.getTime(3),
-            desc=context.step.description,
-            type="UI",
-            assert_script=context.step.method,
+            assert_actual=None,
+            assert_expect=expect_value,
         )
-        url_title = None
+        url_title = ""
         try:
             url_title = await context.page.title()
             actual_value = url_title.strip()
-            assert actual_value == expect_value
-            assert_info["assert_actual"] = actual_value
-            assert_info["assert_result"] = True
-            return True, assert_info
+            if actual_value != expect_value:
+                raise AssertionError(f"Expected title '{expect_value}', but got '{actual_value}'")
+            assert_result.assert_actual = actual_value
+            assert_result.assert_result = True
+            return create_success_result(
+                assert_data=assert_result,
+            )
         except Exception as e:
-            log.error(f"[AssertUrlTitle] execute error: {e}")
-            assert_info["assert_actual"] = url_title.strip() if url_title else None
-            return False, assert_info
-
-
-async def get_error_value(e: Exception):
-    """
-    Extract actual value from assertion error message
-    """
-    err = str(e)
-
-    # 尝试提取 Playwright 断言错误中的实际值
-    if "Actual value:" in err:
-        pattern = r"Actual value:\s*(.*?)\s*(?:Call log:|$)"
-        match = re.search(pattern, err, re.DOTALL)
-        if match:
-            return match.group(1).strip()
-
-    # 尝试提取其他格式的错误信息
-    if "Expected:" in err and "Received:" in err:
-        pattern = r"Received:\s*(.*?)(?:\n|$)"
-        match = re.search(pattern, err)
-        if match:
-            return match.group(1).strip()
-
-    # 返回完整错误信息而不是空字符串
-    return str(e)[:200]  # 限制长度避免过长
+            log.error(f"[AssertUrlTitle] 断言失败: {e}")
+            assert_result.assert_actual = url_title.strip() if url_title else None
+            assert_result.assert_result = False
+            return create_error_result(
+                error_type="assertion_failed",
+                message=f"[AssertUrlTitle] 断言失败: 期望 '{expect_value}', 实际 '{url_title.strip() if url_title else None}'",
+                selector=context.method,
+                assert_data=assert_result,
+            )
 
 
 __all__ = (

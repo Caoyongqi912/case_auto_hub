@@ -1,1 +1,221 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2026/1/21# @Author : cyq# @File : assert_manager# @Software: PyCharm# @Desc:import reimport httpxfrom typing import List, Mapping, Any, Tuple, Dict, Optionalfrom json import JSONDecodeErrorfrom jmespath.exceptions import LexerErrorfrom app.schema.interface import IAssertfrom croe.interface.types import InterfaceCaseContentfrom pydantic import BaseModelfrom enums.CaseEnum import ExtraEnum, AssertTargetEnumfrom utils import log, JsonExtractfrom utils.assertsUtil import MyAssertsfrom utils.transform import Transformclass ContentAssert(BaseModel):    assert_key: str    assert_value: str    assert_type: intclass AssertManager:    err = {        "actual": None,        "result": False    }    def __init__(self, response: Optional['httpx.Response'] = None, variables: Optional["Dict"] = None):        self.variables = variables        self.response = response    async def __call__(self, asserts_info: List[Mapping[str, Any]]):        """        """        if not asserts_info:            return []        asserts_result = []        for assertion in asserts_info:            _assert = IAssert(**assertion)            log.info(_assert.model_dump())            if _assert.assert_switch is False:                continue            _assert_result = await self.invoke(_assert)            asserts_result.append({**_assert.model_dump(), **_assert_result})        return asserts_result    async def assert_content_list(self, assert_list: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool]:        """        批量断言        """        assert_success = True        assert_result_list = []        for item in assert_list:            assert_content = ContentAssert(**item)            assert_result = await self.assert_content(assert_content)            assert_result_list.append(assert_result)            if assert_result["assert_result"] is False:                assert_success = False        return assert_result_list, assert_success    async def assert_content(self, content: ContentAssert) -> Dict[str, Any]:        """        步骤断言        """        _ = {            "assert_expect": content.assert_value,            "assert_result": False,            "assert_type": content.assert_type,            "assert_key": content.assert_key        }        if content.assert_key not in self.variables:            actual = None        else:            actual = self.variables[content.assert_key]        _["assert_actual"] = actual        try:            log.info(f"actual {type(actual)} {actual}")            log.info(f"expect {type(content.assert_value)} {content.assert_value}")            MyAsserts.option(assertOpt=content.assert_type,                             expect=content.assert_value,                             actual=actual)            _['assert_result'] = True            return _        except AssertionError as e:            log.error(e)            return _    async def invoke(self, assertInfo: IAssert):        """        断言执行        :param assertInfo 断言目标        """        # 变量转换        expect_value = await self.set_expect_value(assertInfo.assert_value)        assertInfo.assert_value = expect_value        match assertInfo.assert_target:            case AssertTargetEnum.StatusCode:  # 状态码断言                return await self.assert_status_code(assertInfo)            case AssertTargetEnum.ResponseText:  # 文本断言                return await self.assert_response_text(assertInfo)            case AssertTargetEnum.ResponseBody:  # body断言                return await self.assert_response_json(assertInfo)            case AssertTargetEnum.ResponseHeader:  # header断言                return await self.assert_response_header(assertInfo)    async def assert_status_code(self, assertInfo: IAssert):        """        响应吗 断言        """        return await self.__assert(assertInfo.assert_opt,                                   assertInfo.assert_value,                                   self.response.status_code)    async def assert_response_text(self, assertInfo: IAssert):        """        响应 文本断言        assertInfo 只支持re 正则        """        if assertInfo.assert_extract != ExtraEnum.RE or not assertInfo.assert_text:            log.error(f"断言方法 {assertInfo.assert_extract} 不能对响应文本进行断言 或 断言语法为空！")            return self.err        target = self.response.text        match = re.search(assertInfo.assert_text, target)        actual = match.group(1) if match else None        return self.__assert(assertInfo.assert_opt, assertInfo.assert_value, actual)    async def assert_response_json(self, assertInfo: IAssert):        """        响应 Json断言        assertInfo jsonpath jmespath        """        if assertInfo.assert_extract not in [ExtraEnum.JMESPATH, ExtraEnum.JSONPATH] or not assertInfo.assert_text:            log.error(f"assert_response_json {assertInfo.assert_extract} 不能对响应Json进行断言 或 断言语法为空！")            return self.err        try:            target = self.response.json()            actual = await self.__json_extract(target, assertInfo.assert_text, assertInfo.assert_extract)            return await self.__assert(assertInfo.assert_opt, assertInfo.assert_value, actual)        except Exception as e:            log.exception(e)            return self.err    async def assert_response_header(self, assertInfo: IAssert):        """        响应 Header断言        参数提取只支持 jsonpath jmespath        """        if assertInfo.assert_extract not in [ExtraEnum.JMESPATH, ExtraEnum.JSONPATH] or not assertInfo.assert_text:            log.error(f"assert_response_header {assertInfo.assert_extract} 不能对响应。Json进行断言 或 断言语法为空！")            return self.err        try:            target = dict(self.response.headers)            log.info(f"assert_response_header= {target}")            actual = await self.__json_extract(target, assertInfo.assert_text, assertInfo.assert_extract)            return await self.__assert(assertInfo.assert_opt, assertInfo.assert_value, actual)        except JSONDecodeError:            log.warning(f"响应 {self.response.text} 非JSON 、无法提取")            return self.err    @staticmethod    async def __assert(assert_opt: int, expect: Any, actual: Any):        _ = {            "actual": actual,            "result": False        }        try:            MyAsserts.option(assert_opt, expect, actual)            _['result'] = True            return _        except AssertionError as e:            log.error(e)            return _    @staticmethod    async def __json_extract(target: Any, assert_text: str, assert_extract: str):        actual = None        jp = JsonExtract(target, assert_text)        match assert_extract:            case ExtraEnum.JSONPATH:                try:                    actual = await jp.value()                except JSONDecodeError:                    log.warning(f"JSONPATH 提取失败")                    actual = None            case ExtraEnum.JMESPATH:                try:                    actual = jp.search()                except LexerError as e:                    log.warning(f"JMESPATH 提取失败 : {e}")                    actual = "非法JMESPATH语法 或提取变量失败"        return actual    async def set_expect_value(self, assert_value: str):        t = Transform(self.variables)        return await t.transform_target(assert_value)
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2026/1/21
+# @Author : cyq
+# @File : assert_manager
+# @Software: PyCharm
+# @Desc:
+from dataclasses import dataclass, asdict
+import re
+from tkinter import N
+
+import httpx
+
+from typing import List, Mapping, Any, Tuple, Dict, Optional
+from json import JSONDecodeError
+from jmespath.exceptions import LexerError
+from app.schema.interface import IAssert
+from croe.interface.types import InterfaceCaseContent
+from pydantic import BaseModel
+from enums.CaseEnum import ExtraEnum, AssertTargetEnum
+from utils import log, JsonExtract
+from utils.assertsUtil import MyAsserts
+from utils.transform import Transform
+
+
+class ContentAssert(BaseModel):
+    assert_key: str
+    assert_value: str
+    assert_type: int
+
+
+@dataclass
+class AssertResult:
+    assert_expect: Any  # 预期结果
+    assert_result: bool  # 断言结果
+    assert_type: int  # 断言类型
+    assert_key: str  # 变量名
+    assert_actual: Any = None  # 实际值
+
+
+class AssertManager:
+    err = {
+        "actual": None,
+        "result": False
+    }
+
+    def __init__(self, response: Optional['httpx.Response'] = None, variables: Optional["Dict"] = None):
+        self.variables = variables
+        self.response = response
+
+    async def __call__(self, asserts_info: List[Mapping[str, Any]]):
+        """
+
+        """
+        if not asserts_info:
+            return []
+
+        asserts_result = []
+        for assertion in asserts_info:
+
+            _assert = IAssert(**assertion)
+            log.info(_assert.model_dump())
+            if _assert.assert_switch is False:
+                continue
+            _assert_result = await self.invoke(_assert)
+            asserts_result.append({**_assert.model_dump(), **_assert_result})
+        return asserts_result
+
+    async def assert_content_list(self, assert_list: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], bool]:
+        """
+        批量断言
+        """
+        assert_success = True
+        assert_result_list = []
+        for item in assert_list:
+            assert_content = ContentAssert(**item)
+            assert_result = await self.assert_content(assert_content)
+            if not assert_result.assert_result:
+                assert_success = False
+            assert_result_list.append(asdict(assert_result))
+
+        return assert_result_list, assert_success
+
+    async def assert_content(self, content: ContentAssert) -> AssertResult:
+        """
+        步骤断言
+        """
+
+        assert_result = AssertResult(
+            assert_expect=content.assert_value,
+            assert_type=content.assert_type,
+            assert_key=content.assert_key,
+            assert_result=False
+        )
+        if content.assert_key not in self.variables:
+            actual = None
+        else:
+            actual = self.variables[content.assert_key]
+        assert_result.assert_actual = actual
+        try:
+            log.info(f"actual {type(actual)} {actual}")
+            log.info(f"expect {type(content.assert_value)} {content.assert_value}")
+            MyAsserts.option(assertOpt=content.assert_type,
+                             expect=content.assert_value,
+                             actual=actual)
+            assert_result.assert_result = True
+            return assert_result
+        except AssertionError as e:
+            log.error(e)
+            assert_result.assert_result = False
+            return assert_result
+
+    async def invoke(self, assertInfo: IAssert):
+        """
+        断言执行
+        :param assertInfo 断言目标
+        """
+        # 变量转换
+        expect_value = await self.set_expect_value(assertInfo.assert_value)
+        assertInfo.assert_value = expect_value
+        match assertInfo.assert_target:
+            case AssertTargetEnum.StatusCode:  # 状态码断言
+                return await self.assert_status_code(assertInfo)
+            case AssertTargetEnum.ResponseText:  # 文本断言
+                return await self.assert_response_text(assertInfo)
+            case AssertTargetEnum.ResponseBody:  # body断言
+                return await self.assert_response_json(assertInfo)
+            case AssertTargetEnum.ResponseHeader:  # header断言
+                return await self.assert_response_header(assertInfo)
+
+    async def assert_status_code(self, assertInfo: IAssert):
+        """
+        响应吗 断言
+        """
+        return await self.__assert(assertInfo.assert_opt,
+                                   assertInfo.assert_value,
+                                   self.response.status_code)
+
+    async def assert_response_text(self, assertInfo: IAssert):
+        """
+        响应 文本断言
+        assertInfo 只支持re 正则
+        """
+        if assertInfo.assert_extract != ExtraEnum.RE or not assertInfo.assert_text:
+            log.error(f"断言方法 {assertInfo.assert_extract} 不能对响应文本进行断言 或 断言语法为空！")
+            return self.err
+        target = self.response.text
+        match = re.search(assertInfo.assert_text, target)
+        actual = match.group(1) if match else None
+        return self.__assert(assertInfo.assert_opt, assertInfo.assert_value, actual)
+
+    async def assert_response_json(self, assertInfo: IAssert):
+        """
+        响应 Json断言
+        assertInfo jsonpath jmespath
+        """
+        if assertInfo.assert_extract not in [ExtraEnum.JMESPATH, ExtraEnum.JSONPATH] or not assertInfo.assert_text:
+            log.error(f"assert_response_json {assertInfo.assert_extract} 不能对响应Json进行断言 或 断言语法为空！")
+            return self.err
+        try:
+            target = self.response.json()
+            actual = await self.__json_extract(target, assertInfo.assert_text, assertInfo.assert_extract)
+            return await self.__assert(assertInfo.assert_opt, assertInfo.assert_value, actual)
+        except Exception as e:
+            log.exception(e)
+            return self.err
+
+    async def assert_response_header(self, assertInfo: IAssert):
+        """
+        响应 Header断言
+        参数提取只支持 jsonpath jmespath
+
+        """
+        if assertInfo.assert_extract not in [ExtraEnum.JMESPATH, ExtraEnum.JSONPATH] or not assertInfo.assert_text:
+            log.error(f"assert_response_header {assertInfo.assert_extract} 不能对响应。Json进行断言 或 断言语法为空！")
+            return self.err
+        try:
+            target = dict(self.response.headers)
+            log.info(f"assert_response_header= {target}")
+            actual = await self.__json_extract(target, assertInfo.assert_text, assertInfo.assert_extract)
+            return await self.__assert(assertInfo.assert_opt, assertInfo.assert_value, actual)
+        except JSONDecodeError:
+            log.warning(f"响应 {self.response.text} 非JSON 、无法提取")
+            return self.err
+
+    @staticmethod
+    async def __assert(assert_opt: int, expect: Any, actual: Any):
+        _ = {
+            "actual": actual,
+            "result": False
+        }
+        try:
+            MyAsserts.option(assert_opt, expect, actual)
+            _['result'] = True
+            return _
+        except AssertionError as e:
+            log.error(e)
+            return _
+
+    @staticmethod
+    async def __json_extract(target: Any, assert_text: str, assert_extract: str):
+        actual = None
+        jp = JsonExtract(target, assert_text)
+        match assert_extract:
+            case ExtraEnum.JSONPATH:
+                try:
+                    actual = await jp.value()
+                except JSONDecodeError:
+                    log.warning(f"JSONPATH 提取失败")
+                    actual = None
+            case ExtraEnum.JMESPATH:
+                try:
+                    actual = jp.search()
+                except LexerError as e:
+                    log.warning(f"JMESPATH 提取失败 : {e}")
+                    actual = "非法JMESPATH语法 或提取变量失败"
+        return actual
+
+    async def set_expect_value(self, assert_value: str):
+        t = Transform(self.variables)
+        return await t.transform_target(assert_value)
