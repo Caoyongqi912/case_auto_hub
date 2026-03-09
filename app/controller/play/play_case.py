@@ -27,6 +27,7 @@ from app.schema.play.playCaseSchema import ExecutePlayCase, AssociationPlayStepS
     AssociationPlayGroupSchema, AssociationInterfaceSchema
 from app.schema.play.playStepSchema import InsertCasePlayStepSchema, RemovePlayStepContentSchema, \
     CopyPlayCaseStepContentSchema, InsertPlayStepContentSchema
+from croe.play.play_runner import PlayRunner
 from croe.play.starter import UIStarter
 from utils import log
 
@@ -469,7 +470,6 @@ async def execute_back(info: ExecutePlayCase, sr: User = Depends(Authentication(
         执行成功响应
     """
     starter = UIStarter(sr)
-    from croe.play.play_runner import PlayRunner
     create_task(PlayRunner(starter).run_case(**info.model_dump()))
     return Response.success()
 
@@ -487,5 +487,5 @@ async def execute_io(info: ExecutePlayCase, sr: User = Depends(Authentication())
         执行成功响应
     """
     starter = UIStarter(sr)
-    # create_task(Player(starter).run_case(**info.model_dump()))
+    create_task(PlayRunner(starter).run_case(**info.model_dump()))
     return Response.success()

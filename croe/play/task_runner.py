@@ -105,7 +105,7 @@ class PlayTaskRunner:
                 case_success = await play_runner.execute_case(
                     play_case=play_case,
                     task_result=task_result,
-                    error_stop=True,
+                    error_continue=False,
                     case_result_writer=case_result_writer,
                     write_result_on_failure=is_last_attempt
                 )

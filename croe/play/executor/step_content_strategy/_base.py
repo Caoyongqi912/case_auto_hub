@@ -55,6 +55,12 @@ class StepBaseStrategy(ABC):
             content_result=content_result
         )
 
+        # 失败信息 写入 case result
+        if not result.success and not ignore:
+            await step_context.play_case_result_writer.set_error_step_info(content_result)
+
+
+
     async def write_child_result(
             self,
             parent_index: int,

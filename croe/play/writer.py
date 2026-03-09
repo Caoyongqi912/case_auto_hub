@@ -126,6 +126,15 @@ class PlayCaseResultWriter:
             log.warning("[PlayCaseResultWriter] No case result to write")
             return None
 
+    async def set_error_step_info(self, content_result: PlayStepContentResult):
+        """
+        设置错误步骤信息
+        """
+        self.play_case_result.ui_case_err_step = content_result.content_step
+        self.play_case_result.ui_case_err_step_title = content_result.content_name
+        self.play_case_result.ui_case_err_step_msg = content_result.content_message
+        self.play_case_result.ui_case_err_step_pic_path = content_result.content_screenshot_path
+
     async def init_result(self, play_case: PlayCase, vars_info: Dict[str, str] = None):
         """
         初始化

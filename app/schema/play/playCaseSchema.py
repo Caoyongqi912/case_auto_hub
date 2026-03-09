@@ -50,7 +50,7 @@ class GetPlayCaseByCaseId(BaseModel):
 class ExecutePlayCase(BaseModel):
     """执行play用例模型"""
     case_id: Union[int, str] = Field(..., description="用例ID")
-    error_stop: bool = Field(..., description="错误停止")
+    error_continue: bool = Field(..., description="错误停止")
 
 
 class PlayCaseBasicSchema(BaseModel):

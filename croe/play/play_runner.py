@@ -19,11 +19,11 @@ class PlayRunner:
         self.variable_manager = VariableManager()
         self.browser: Optional[BrowserManager] = None
 
-    async def run_case(self, case_id: int, error_stop: bool = True):
+    async def run_case(self, case_id: int, error_continue: bool = False):
         """
 
         :param case_id:
-        :param error_stop:
+        :param error_continue: 错误继续
         :return:
         """
         try:
@@ -39,21 +39,22 @@ class PlayRunner:
             log.info(f"init case_result_writer = {case_result_writer}")
 
             # 执行用例
-            await self.execute_case(play_case=play_case, case_result_writer=case_result_writer, error_stop=error_stop)
+            await self.execute_case(play_case=play_case, case_result_writer=case_result_writer,
+                                    error_continue=error_continue)
         except Exception as e:
             log.exception(e)
             raise e
 
     async def execute_case(self, play_case: PlayCase, case_result_writer: PlayCaseResultWriter,
                            task_result: PlayTaskResult = None,
-                           error_stop: bool = True,
+                           error_continue: bool = False,
                            write_result_on_failure: bool = True) -> bool:
         """
 
         :param play_case:
         :param case_result_writer:
         :param task_result:
-        :param error_stop:
+        :param error_continue: 错误继续 默认False
         :param write_result_on_failure: 失败时是否写入结果（重试场景下设为False）
         :return: bool - 用例执行是否成功
         """
@@ -91,10 +92,7 @@ class PlayRunner:
                     await self.starter.send(f"✍️✍️  执行步骤 {index} ： 调试禁用 跳过执行")
                     continue
 
-                # 如果 case_success 已经是 False 且需要错误停止，则跳过后续步骤
-                if not case_success and error_stop:
-                    await self.starter.send(f"⏭️⏭️  跳过步骤 {index} ： 遇到错误已停止")
-                    continue
+
 
                 # 步骤 执行
                 play_content_context = StepContentContext(
@@ -104,13 +102,14 @@ class PlayRunner:
                     variable_manager=self.variable_manager,
                     starter=self.starter,
                     play_step_result_writer=content_writer,
+                    play_case_result_writer=case_result_writer
                 )
                 play_strategy = get_step_strategy(step_content.content_type)
                 play_step_success = await play_strategy.execute(play_content_context)
                 case_success &= play_step_success
 
                 # 如果是失败 error_step true
-                if not case_success and error_stop:
+                if not case_success and not error_continue:
                     break
 
         except Exception as e:
