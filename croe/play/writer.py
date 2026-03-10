@@ -147,7 +147,7 @@ class PlayCaseResultWriter:
             vars_list=vars_list,
         )
 
-    async def write_result(self, SUCCESS=bool):
+    async def write_result(self, SUCCESS: bool):
         """
         写入最终结果
         """

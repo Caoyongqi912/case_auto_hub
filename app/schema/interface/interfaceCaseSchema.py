@@ -247,8 +247,8 @@ class UpdateCaseContentStepSchema(BaseModel):
     content_name: Optional[str] = Field(None, description="内容名称")
     enable: Optional[bool] = Field(None, description="是否启用")
     api_wait_time: Optional[int] = Field(None, description="API等待时间")
-    api_script_text: Optional[str] = Field(None, description="API脚本文本")
-    api_assert_list: Optional[List[UpdateCaseContentAssert]] = Field(None, description="API断言列表")
+    script_text: Optional[str] = Field(None, description="API脚本文本")
+    assert_list: Optional[List[UpdateCaseContentAssert]] = Field(None, description="API断言列表")
 
 
 class AddCaseContentStepSchema(BaseModel):
@@ -257,5 +257,5 @@ class AddCaseContentStepSchema(BaseModel):
     content_type: int = Field(..., description="内容类型")
     enable: Optional[bool] = Field(None, description="是否启用")
     api_wait_time: Optional[int] = Field(None, description="API等待时间")
-    api_script_text: Optional[str] = Field(None, description="API脚本文本")
-    api_assert_list: Optional[List[UpdateCaseContentAssert]] = Field(None, description="API断言列表")
+    script_text: Optional[str] = Field(None, description="API脚本文本")
+    assert_list: Optional[List[UpdateCaseContentAssert]] = Field(None, description="API断言列表")

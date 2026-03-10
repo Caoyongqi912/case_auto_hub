@@ -18,6 +18,7 @@ class InsertPlayGroupSchema(BaseModel):
 class EditPlayStepSchema(BaseModel):
     """编辑play步骤模型"""
     id: int = Field(..., description="ID")
+    name: Optional[str] = Field(None, description="名称")
     description: Optional[str] = Field(None, description="描述")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
@@ -52,12 +53,12 @@ class ReOrderPlayStepsSchema(BaseModel):
     group_id: int = Field(..., description="组ID")
     step_list: List[int] = Field(..., description="步骤ID列表")
 
+
 class AssociationPlayGroupStepSchema(BaseModel):
     """case 关联 公共 step"""
     quote: bool = Field(..., description="是否引用")
     group_id: int = Field(..., description="用例ID")
     play_step_id_list: List[int] = Field(..., description="步骤Id")
-
 
 
 __all__ = [

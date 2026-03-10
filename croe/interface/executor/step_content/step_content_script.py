@@ -11,10 +11,11 @@ from app.mapper.interface import InterfaceContentStepResultMapper
 from app.model.interface.interfaceResultModel import InterfaceCaseStepContentResult
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
-from croe.a_manager import ScriptManager,ScriptSecurityError
+from croe.a_manager import ScriptManager, ScriptSecurityError
 from croe.interface.types import InterfaceCaseContent, VARS
 from enums import ExtractTargetVariablesEnum
 from croe.interface.starter import APIStarter
+from utils import log
 
 
 class APIScriptContentStrategy(StepBaseStrategy):
@@ -23,12 +24,18 @@ class APIScriptContentStrategy(StepBaseStrategy):
         """
         执行脚本
         """
-        script = step_context.content.api_script_text
-        _extracted_vars = None
+        script = step_context.content.script_text
+        script_vars = None
         if script:
             try:
                 script_manger = ScriptManager()
                 _extracted_vars = script_manger.execute(script)
+                log.debug(_extracted_vars)
+                script_vars = [{
+                    ExtractTargetVariablesEnum.KEY: k,
+                    ExtractTargetVariablesEnum.VALUE: v,
+                    ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.StepScript
+                } for k, v in _extracted_vars.items()]
                 await step_context.variable_manager.add_vars(_extracted_vars)
                 await step_context.starter.send(f"🫳🫳  脚本变量 = {json.dumps(_extracted_vars, ensure_ascii=False)}")
             except ScriptSecurityError as e:
@@ -41,11 +48,7 @@ class APIScriptContentStrategy(StepBaseStrategy):
             interface_task_result_id=step_context.task_result_id,
             step_content=step_context.content,
             starter=step_context.starter,
-            script_vars=[{
-                ExtractTargetVariablesEnum.KEY: k,
-                ExtractTargetVariablesEnum.VALUE: v,
-                ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.StepScript
-            } for k, v in _extracted_vars.items()],
+            script_vars=script_vars,
         )
         return True
 

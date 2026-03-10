@@ -465,8 +465,8 @@ class InterfaceCaseStepContentMapper(Mapper[InterfaceCaseStepContent]):
                           user: User,
                           content_type: CaseStepContentType,
                           api_wait_time: Optional[int] = None,
-                          api_script_text: Optional[str] = None,
-                          api_assert_list: Optional[List] = None,
+                          script_text: Optional[str] = None,
+                          assert_list: Optional[List] = None,
                           is_common_api: int = 1):
         """
         添加步骤
@@ -482,8 +482,8 @@ class InterfaceCaseStepContentMapper(Mapper[InterfaceCaseStepContent]):
             f"add_content "
             f"content_type = {content_type} "
             f"api_wait_time = {api_wait_time}"
-            f"api_script_text = {api_script_text}"
-            f"api_assert_list = {api_assert_list}"
+            f"script_text = {script_text}"
+            f"assert_list = {assert_list}"
         )
 
         async with async_session() as session:
@@ -494,11 +494,11 @@ class InterfaceCaseStepContentMapper(Mapper[InterfaceCaseStepContent]):
                 content: InterfaceCaseStepContent = InterfaceCaseStepContent(
                     content_type=content_type,
                     api_wait_time=api_wait_time,
-                    api_script_text=api_script_text,
+                    script_text=script_text,
                     creator=user.id,
                     creatorName=user.username,
                     is_common_api=is_common_api,
-                    api_assert_list=api_assert_list
+                    assert_list=assert_list
                 )
 
                 last_index = await LastIndexHelper.get_case_step_last_index(case_id, session)
