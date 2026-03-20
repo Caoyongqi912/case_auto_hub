@@ -24,7 +24,7 @@ def get_step_strategy(step_type: int):
         case PlayStepContentType.STEP_PLAY_SCRIPT:
             return PlayScriptContentStrategy()
         case PlayStepContentType.STEP_PLAY_CONDITION:
-            pass
+            return PlayConditionContentStrategy()
         case PlayStepContentType.STEP_PLAY_ASSERT:
             return PlayAssertContentStrategy()
         case PlayStepContentType.STEP_PLAY_DB:

@@ -10,7 +10,7 @@ from sqlalchemy.orm import relationship
 
 from app.model.basic import base
 
-__all__ = [ "PlayCaseStepContentAssociation", "PlayTaskCasesAssociation","PlayGroupStepAssociation"]
+__all__ = [ "PlayCaseStepContentAssociation", "PlayTaskCasesAssociation","PlayGroupStepAssociation","ConditionStepAssociation"]
 
 
 
@@ -58,3 +58,18 @@ class PlayGroupStepAssociation(base):
 
     def __repr__(self):
         return f"<PlayGroupStepAssociation(group_id={self.group_id}, play_step={self.play_step_id}, step_order={self.step_order}) />"
+
+
+class ConditionStepAssociation(base):
+    """
+    条件与步骤内容的关联表
+    一个条件可以关联多个子步骤内容(支持所有类型)
+    """
+    __tablename__ = "condition_step_association"
+
+    condition_id = Column(INTEGER, ForeignKey("play_condition.id", ondelete="CASCADE"), primary_key=True)
+    step_content_id = Column(INTEGER, ForeignKey("play_step_content.id", ondelete="CASCADE"), primary_key=True)
+    step_order = Column(INTEGER, default=0, comment="步骤执行顺序")
+
+    def __repr__(self):
+        return f"<ConditionStepAssociation(condition_id={self.condition_id}, step_content_id={self.step_content_id}, step_order={self.step_order}) />"
