@@ -10,9 +10,10 @@ import datetime
 from app.mapper.play.playConditionMapper import PlayConditionMapper
 from croe.play.context import StepContentContext
 from croe.play.executor.step_content_strategy._base import StepBaseStrategy
-from croe.interface.manager.condition_manager import ConditionManager
+from croe.a_manager import ConditionManager
 from croe.play.executor.play_method.result_types import StepExecutionResult
 from croe.play.executor import get_step_strategy
+from utils import GenerateTools
 
 
 class PlayConditionContentStrategy(StepBaseStrategy):
@@ -42,14 +43,14 @@ class PlayConditionContentStrategy(StepBaseStrategy):
             step_context.starter
         )
 
-        condition_result = StepExecutionResult(
+        condition_container_result = StepExecutionResult(
             success=True,
             message=f"条件判断: {condition.condition_key} {condition_data.get('operator')} {condition.condition_value} -> {'通过' if condition_passed else '未通过'}",
             assert_data=condition_data
         )
 
         await self.write_result(
-            result=condition_result,
+            result=condition_container_result,
             start_time=start_time,
             step_context=step_context
         )
@@ -87,10 +88,16 @@ class PlayConditionContentStrategy(StepBaseStrategy):
                     await step_context.starter.send(f"❌ 子步骤执行失败,停止执行")
                     break
 
+            end_time = datetime.datetime.now()
+            use_time = GenerateTools.timeDiff(start_time, end_time)
+
             await step_context.play_step_result_writer.update_content_result(
                 step_index=step_context.index,
                 success=all_success
             )
+
+            await step_context.starter.send(f"📦 条件步骤执行完成，结果: {'成功' if all_success else '失败'}")
+            await step_context.starter.send(f"📦 用时: {use_time}")
 
             return all_success
         else:
