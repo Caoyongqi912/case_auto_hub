@@ -10,7 +10,7 @@ from asyncio import create_task
 from fastapi import APIRouter, Depends
 
 from app.controller import Authentication
-from app.mapper.play import PlayCaseVariablesMapper
+from app.mapper.play import PlayCaseVariablesMapper, PlayConditionMapper
 from app.model.base import User
 from app.response import Response
 from app.schema.play import (
@@ -26,7 +26,8 @@ from app.mapper.play.playCaseMapper import PlayCaseMapper, PlayCaseResultMapper,
 from app.schema.play.playCaseSchema import ExecutePlayCase, AssociationPlayStepSchema, EditPlayStepContentSchema, \
     AssociationPlayGroupSchema, AssociationInterfaceSchema
 from app.schema.play.playStepSchema import InsertCasePlayStepSchema, RemovePlayStepContentSchema, \
-    CopyPlayCaseStepContentSchema, InsertPlayStepContentSchema
+    CopyPlayCaseStepContentSchema, InsertPlayStepContentSchema, UpdatePlayConditionStepSchema, \
+    InsertPlayConditionStepSchema
 from croe.play.play_runner import PlayRunner
 from croe.play.starter import UIStarter
 from utils import log
@@ -242,6 +243,29 @@ async def insert_content(content: InsertPlayStepContentSchema, user: User = Depe
     return Response.success()
 
 
+
+# ======================condition
+
+@router.post("/update_condition", description="插入条件")
+async def insert_condition(condition: UpdatePlayConditionStepSchema, user: User = Depends(Authentication())):
+    """
+    插入步骤条件
+
+    Args:
+        condition: 步骤条件插入信息
+        user: 当前登录用户
+
+    Returns:
+        插入成功响应
+    """
+    condition = await PlayConditionMapper.update_by_id(updateUser=user, **condition.model_dump(exclude_none=True))
+    return Response.success(condition)
+
+
+
+
+
+
 @router.post("/edit_content", description="修改步骤")
 async def update_content(content: EditPlayStepContentSchema, user: User = Depends(Authentication())):
     """
@@ -306,10 +330,14 @@ async def copy_case(case: GetPlayCaseByCaseId, cr: User = Depends(Authentication
         复制后的用例信息
     """
     # todo
-    case = await PlayCaseMapper.copy_case(
-        caseId=case.caseId, cr=cr)
+    # case = await PlayCaseMapper.copy_case(
+    #     caseId=case.caseId, cr=cr)
 
     return Response.success(case)
+
+
+
+
 
 
 # =====================================  RESUlT ===========================================================

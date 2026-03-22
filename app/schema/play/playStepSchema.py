@@ -121,12 +121,6 @@ class PlayStepBasicField(BaseModel):
 #     project_id: int = Field(..., description="项目ID")
 
 
-class InsertPlayConditionStepSchema(PlayStepBasicField):
-    """插入play条件步骤模型"""
-    stepId: int = Field(..., description="步骤ID")
-    name: str = Field(..., description="名称")
-    description: str = Field(..., description="描述")
-
 
 class ReorderPlayConditionStepsSchema(BaseModel):
     """重排序play条件步骤模型"""
@@ -136,6 +130,18 @@ class ReorderPlayConditionStepsSchema(BaseModel):
 class UpdatePlayStepSchema(PlayStepBasicField):
     """更新play步骤模型"""
     id: int = Field(..., description="步骤ID")
+
+class UpdatePlayConditionStepSchema(BaseModel):
+    """更新play条件步骤模型"""
+    id: int = Field(..., description="步骤ID")
+    condition_key: Optional[ str] = Field(None, description="条件key")
+    condition_value: Optional[ str] = Field(None, description="条件value")
+    condition_operator: Optional[ int] = Field(None, description="条件操作符")
+
+class InsertPlayConditionStepSchema(BaseModel):
+    """插入判断步骤"""
+    condition_id: int = Field(..., description="条件ID")
+    step_condition_ids: List[int] = Field(..., description="步骤条件ID列表")
 
 
 class InsertPlayStepContentSchema(BaseModel):

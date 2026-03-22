@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
 from app.model import async_session
+from app.model.base import User
 from app.model.playUI.playCondition import PlayCondition
 from app.model.playUI.playAssociation import ConditionStepAssociation
 from app.model.playUI.playStepContent import PlayStepContent
@@ -20,6 +21,17 @@ from app.model.playUI.playStepContent import PlayStepContent
 class PlayConditionMapper(Mapper[PlayCondition]):
     """UI条件判断Mapper"""
     __model__ = PlayCondition
+
+
+    @classmethod
+    async def init_empty(cls,user:User,session:AsyncSession):
+        """
+        初始化空的条件判断
+        :param user: 用户
+        :param session: 会话对象
+        :return: 条件判断实例
+        """
+        return await cls.save(creator_user=user, session=session)
 
     @classmethod
     async def get_condition_step_contents(cls, condition_id: int) -> List[PlayStepContent]:

@@ -8,10 +8,6 @@
 import asyncio
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Sequence
-
-from sqlalchemy.testing.config import ident
-from sympy.strategies.branch import condition
-
 from app.mapper import Mapper
 from app.model import async_session
 from app.model.base import User
@@ -22,6 +18,7 @@ from app.mapper.play.playStepMapper import PlayStepV2Mapper
 from croe.play.starter import UIStarter
 from enums.CaseEnum import Status, PlayStepContentType
 from utils import log
+from .playConditionMapper import PlayConditionMapper
 from .playStepGroupMapper import PlayStepGroupMapper
 from ..interface import InterfaceResultMapper, InterfaceMapper
 from ..project.dbConfigMapper import CaseContentDBExecuteMapper
@@ -144,7 +141,7 @@ class PlayCaseMapper(Mapper[PlayCase]):
                         session, case_id, interface_content.id, last_index + 1
                     )
                     play_case.step_num += 1
-        except Exception as e:
+        except Exception:
             raise
 
     @classmethod
@@ -413,7 +410,7 @@ class PlayCaseMapper(Mapper[PlayCase]):
                                 )
                             )
                         )
-                        existing_ids = {id[0] for id in existing_associations.all()}
+                        existing_ids = {ident[0] for ident in existing_associations.all()}
 
                         if len(existing_ids) != len(content_id_list):
                             invalid_ids = set(content_id_list) - existing_ids
@@ -699,7 +696,7 @@ class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
             async with async_session() as session:
                 await PlayCaseVariablesMapper._check_key(key, caseId, session)
                 return await super().update_by_id(updateUser=updateUser, session=session, **kwargs)
-        except Exception as e:
+        except Exception:
             raise
 
     @staticmethod
@@ -830,7 +827,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                 async with session.begin():
                     delete_sql = delete(cls.__model__).where(and_(
                         cls.__model__.ui_case_Id == case_id,
-                        cls.__model__.task_result_id == None
+                        cls.__model__.task_result_id is None
                     ))
                     await session.execute(delete_sql)
         except Exception as e:
@@ -977,6 +974,10 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
                                                                           session=session)
                         content.content_name = "DB操作"
                         content.target_id = _db.id
+                    case PlayStepContentType.STEP_PLAY_CONDITION:
+                        content.content_name = "条件判断"
+                        condition = await PlayConditionMapper.init_empty(user=user, session=session)
+                        content.target_id = condition.id
 
                 last_index = await CommonHelper.get_case_step_last_index(case_id, session)
                 await cls.add_flush_expunge(session, content)

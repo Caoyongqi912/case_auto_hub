@@ -12,7 +12,7 @@ from croe.play.context import StepContentContext
 from croe.play.executor.step_content_strategy._base import StepBaseStrategy
 from croe.a_manager import ConditionManager
 from croe.play.executor.play_method.result_types import StepExecutionResult
-from croe.play.executor import get_step_strategy
+
 from utils import GenerateTools
 
 
@@ -78,7 +78,7 @@ class PlayConditionContentStrategy(StepBaseStrategy):
                     variable_manager=step_context.variable_manager,
                     play_step_result_writer=step_context.play_step_result_writer,
                 )
-
+                from croe.play.executor import get_step_strategy
                 strategy = get_step_strategy(child_step_content.content_type)
                 step_start_time = datetime.datetime.now()
                 success = await strategy.execute(child_step_context)
