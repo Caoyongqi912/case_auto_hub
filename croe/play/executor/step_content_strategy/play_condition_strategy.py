@@ -7,13 +7,15 @@
 # @Desc:
 import datetime
 
+from app.mapper.play import PlayStepV2Mapper
 from app.mapper.play.playConditionMapper import PlayConditionMapper
-from croe.play.context import StepContentContext
+from app.model.playUI.playStepContent import PlayStepContent
+from croe.play.context import StepContentContext, StepContext
 from croe.play.executor.step_content_strategy._base import StepBaseStrategy
 from croe.a_manager import ConditionManager
 from croe.play.executor.play_method.result_types import StepExecutionResult
 
-from utils import GenerateTools
+from utils import GenerateTools, log
 
 
 class PlayConditionContentStrategy(StepBaseStrategy):
@@ -27,6 +29,7 @@ class PlayConditionContentStrategy(StepBaseStrategy):
         :param step_context: 步骤上下文
         :return: 执行是否成功
         """
+        log.debug(f"context =  {step_context}")
         start_time = datetime.datetime.now()
 
         condition = await PlayConditionMapper.get_by_id(
@@ -46,7 +49,7 @@ class PlayConditionContentStrategy(StepBaseStrategy):
         condition_container_result = StepExecutionResult(
             success=True,
             message=f"条件判断: {condition.condition_key} {condition_data.get('operator')} {condition.condition_value} -> {'通过' if condition_passed else '未通过'}",
-            assert_data=condition_data
+            # assert_data=condition_data
         )
 
         await self.write_result(
@@ -68,9 +71,9 @@ class PlayConditionContentStrategy(StepBaseStrategy):
 
             all_success = True
             for i, child_step_content in enumerate(child_step_contents, start=1):
-                await step_context.starter.send(f"✍️ 执行条件子步骤 {i}: {child_step_content.content_name}")
 
-                child_step_context = StepContentContext(
+                await step_context.starter.send(f"✍️ 执行条件子步骤 {i}: {child_step_content}")
+                condition_step_context = StepContentContext(
                     index=i,
                     play_step_content=child_step_content,
                     page_manager=step_context.page_manager,
@@ -78,27 +81,41 @@ class PlayConditionContentStrategy(StepBaseStrategy):
                     variable_manager=step_context.variable_manager,
                     play_step_result_writer=step_context.play_step_result_writer,
                 )
-                from croe.play.executor import get_step_strategy
-                strategy = get_step_strategy(child_step_content.content_type)
-                step_start_time = datetime.datetime.now()
-                success = await strategy.execute(child_step_context)
+                step = await PlayStepV2Mapper.get_by_id(ident=child_step_content.target_id)
 
-                if not success:
+                # 创建子步骤上下文
+                condition_child_step_context = StepContext(
+                    step=step,
+                    page_manager=step_context.page_manager,
+                    starter=step_context.starter,
+                    variable_manager=step_context.variable_manager
+                )
+
+                step_start_time = datetime.datetime.now()
+                result = await self.play_executor.execute(condition_child_step_context)
+                await self.write_child_result(
+                    parent_index=step_context.index,
+                    result=result,
+                    start_time=step_start_time,
+                    step_context=condition_step_context
+                )
+
+                if not result:
                     all_success = False
                     await step_context.starter.send(f"❌ 子步骤执行失败,停止执行")
                     break
-
             end_time = datetime.datetime.now()
             use_time = GenerateTools.timeDiff(start_time, end_time)
 
+            # 更新结果
             await step_context.play_step_result_writer.update_content_result(
                 step_index=step_context.index,
                 success=all_success
             )
 
+
             await step_context.starter.send(f"📦 条件步骤执行完成，结果: {'成功' if all_success else '失败'}")
             await step_context.starter.send(f"📦 用时: {use_time}")
-
             return all_success
         else:
             await step_context.starter.send("⏭️ 条件判断未通过,跳过子步骤")

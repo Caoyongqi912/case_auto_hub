@@ -11,7 +11,6 @@ from typing import TypeVar, List, Type, Any, Optional, Generic, Dict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, text, delete
-from sqlalchemy.sql.functions import count
 
 from app.exception import NotFind, CommonError
 from app.model import async_session, BaseModel
@@ -118,7 +117,10 @@ class Mapper(Generic[M]):
     @classmethod
     async def copy_one(cls, target_id: int | M, session: AsyncSession, user: User = None) -> M:
         """复制模型实例"""
-        old_one = await cls.get_by_id(target_id, session)
+        if isinstance(target_id, M):
+            old_one = target_id
+        else:
+            old_one = await cls.get_by_id(target_id, session)
         new_one = cls.__model__(**old_one.copy_map())
         if user:
             new_one.creator = user.id
@@ -134,7 +136,22 @@ class Mapper(Generic[M]):
         :param desc: 错误描述
         :return: 模型实例
         """
-        return await cls._get_by_field('id', ident, session, True, desc)
+        try:
+            if session is None:
+                async with async_session() as session:
+                    instance = await session.get(cls.__model__, ident)
+            else:
+                instance = await session.get(cls.__model__, ident)
+
+            if not instance:
+                error_msg = f"数据{desc}不存在或已经删除，id: {ident}" if desc else f"数据不存在，id: {ident}"
+                raise NotFind(error_msg)
+            return instance
+        except NotFind:
+            raise
+        except Exception as e:
+            log.error(f"获取{cls.__name__}对象失败，id: {ident}, 错误: {e}")
+            raise
 
     @classmethod
     async def get_by_uid(cls, uid: str, session: AsyncSession = None, raise_error: bool = True) -> M:
@@ -163,16 +180,16 @@ class Mapper(Generic[M]):
 
             kwargs = set_updater(updateUser, **kwargs)
 
-            if not session:
+            if session is None:
                 async with async_session() as session:
-                    target = await cls.get_by_id(ident, session)
-                    await cls.update_cls(target, session, **kwargs)
-                    await session.commit()
+                    async with session.begin():
+                        target = await cls.get_by_id(ident, session)
+                        return await cls.update_cls(target, session, **kwargs)
             else:
                 target = await cls.get_by_id(ident, session)
                 await cls.update_cls(target, session, **kwargs)
                 await session.commit()
-            return target
+                return target
         except Exception as e:
             log.exception(e)
             raise
@@ -241,16 +258,18 @@ class Mapper(Generic[M]):
             if model:
                 await session.delete(model)
                 await session.flush()
+                await session.commit()
         except Exception as e:
+            await session.rollback()
             raise e
 
     @classmethod
-    async def get_by(cls, session: AsyncSession = None, **kwargs) -> M:
+    async def get_by(cls, session: AsyncSession = None, **kwargs) -> Optional[M]:
         """
         通过字段获取对象
         :param session: 可选的会话对象
         :param kwargs: 查询条件
-        :return: 模型实例
+        :return: 模型实例或None
         """
         sql = select(cls.__model__).filter_by(**kwargs)
         try:
@@ -274,7 +293,7 @@ class Mapper(Generic[M]):
             raise e
 
     @classmethod
-    async def query_by(cls, session: AsyncSession = None, **kwargs):
+    async def query_by(cls, session: AsyncSession = None, **kwargs) -> List[M]:
         """
         通过字段查询（AND条件）
         :param kwargs: 查询条件
@@ -294,7 +313,7 @@ class Mapper(Generic[M]):
             raise e
 
     @classmethod
-    async def query_by_in_clause(cls, target: str, list_: List[Any], session: AsyncSession = None):
+    async def query_by_in_clause(cls, target: str, list_: List[Any], session: AsyncSession = None) -> List[M]:
         """
         根据指定字段和值列表查询数据（IN子句）
         :param target: 模型中的字段名
@@ -484,7 +503,7 @@ class Mapper(Generic[M]):
         """统计记录数"""
         try:
             async with async_session() as session:
-                sql = select(count()).select_from(cls.__model__)
+                sql = select(func.count()).select_from(cls.__model__)
                 state = await session.execute(sql)
                 return state.scalar()
         except Exception:

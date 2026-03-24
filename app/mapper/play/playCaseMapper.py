@@ -374,7 +374,7 @@ class PlayCaseMapper(Mapper[PlayCase]):
             raise
 
     @classmethod
-    async def reorder_content_step(cls, case_id: int, content_id_list: [int]):
+    async def reorder_content_step(cls, case_id: int, content_id_list: List[int]):
         """
         重新排序用例中的步骤
         
@@ -748,6 +748,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                 [
                     {"result": step_result, "children": []},
                     {"result": group_result, "children": [child1, child2, ...]},
+                    {"result": condition_result, "children": [child1, child2, ...]},
                     ...
                 ]
         """
@@ -760,7 +761,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                     PlayStepContentResult.play_case_result_id == case_result.id
                 ).order_by(PlayStepContentResult.content_step, PlayStepContentResult.id)
                 all_results = (await session.scalars(stmt)).all()
-
+                log.debug(f"all_results: {all_results}")
                 # 构建嵌套结构
                 return await cls._build_nested_results(all_results, session)
         except Exception as e:
@@ -813,12 +814,11 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
     async def clear_case_result(cls, case_id: int):
         """
         清空用例调试历史
-        
+
         Args:
             case_id: 用例ID
-            
+
         Notes:
-            - 删除失败结果中的本地附件
             - 删除用例的调试历史记录
             - 使用事务确保操作的原子性
         """
@@ -827,7 +827,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                 async with session.begin():
                     delete_sql = delete(cls.__model__).where(and_(
                         cls.__model__.ui_case_Id == case_id,
-                        cls.__model__.task_result_id is None
+                        cls.__model__.task_result_id.is_(None)
                     ))
                     await session.execute(delete_sql)
         except Exception as e:
@@ -942,7 +942,9 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
     @classmethod
     async def add_content(cls, case_id: int, user: User, content_type: PlayStepContentType,
                           enable: bool = False,
-                          is_common: bool = False):
+                          is_common: bool = False,
+                          target_id: int = None,
+                          ):
         """
         添加步骤内容
         :param case_id: 用例ID
@@ -950,6 +952,7 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
         :param content_type: 步骤类型
         :param is_common: 是否公共步骤
         :param enable: 使用禁用
+        :param target_id: 使用禁用
         :return: 添加后的步骤内容对象
         """
 
@@ -965,6 +968,8 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
                     enable=enable,
                     creatorName=user.username,
                 )
+                if target_id:
+                    content.target_id = target_id
                 match content_type:
                     case PlayStepContentType.STEP_PLAY_SCRIPT:
                         content.content_name = "脚本"
@@ -1090,5 +1095,9 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
                     await session.delete(step)
                 except NotFind:
                     pass
+            case PlayStepContentType.STEP_PLAY_GROUP:
+                pass
+            # todo
+            # ..
 
         await session.delete(content)

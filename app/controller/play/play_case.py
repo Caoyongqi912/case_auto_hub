@@ -24,10 +24,11 @@ from app.schema.play import (
 )
 from app.mapper.play.playCaseMapper import PlayCaseMapper, PlayCaseResultMapper, PlayStepContentMapper
 from app.schema.play.playCaseSchema import ExecutePlayCase, AssociationPlayStepSchema, EditPlayStepContentSchema, \
-    AssociationPlayGroupSchema, AssociationInterfaceSchema
+    AssociationPlayGroupSchema, AssociationInterfaceSchema, AssociationPlayConditionStepSchema
 from app.schema.play.playStepSchema import InsertCasePlayStepSchema, RemovePlayStepContentSchema, \
     CopyPlayCaseStepContentSchema, InsertPlayStepContentSchema, UpdatePlayConditionStepSchema, \
-    InsertPlayConditionStepSchema
+    InsertPlayConditionStepSchema, InsertCasePlayStepConditionContentSchema, RemoveCasePlayStepConditionContentSchema, \
+    ReorderCasePlayStepConditionContentSchema
 from croe.play.play_runner import PlayRunner
 from croe.play.starter import UIStarter
 from utils import log
@@ -243,14 +244,17 @@ async def insert_content(content: InsertPlayStepContentSchema, user: User = Depe
     return Response.success()
 
 
-
 # ======================condition
+@router.get("/condition", description="条件信息")
+async def condition(condition_id: int, _: User = Depends(Authentication())):
+    condition_info = await PlayConditionMapper.get_by_id(condition_id)
+    return Response.success(condition_info)
 
-@router.post("/update_condition", description="插入条件")
+
+@router.post("/updateCondition", description="插入条件")
 async def insert_condition(condition: UpdatePlayConditionStepSchema, user: User = Depends(Authentication())):
     """
     插入步骤条件
-
     Args:
         condition: 步骤条件插入信息
         user: 当前登录用户
@@ -262,8 +266,53 @@ async def insert_condition(condition: UpdatePlayConditionStepSchema, user: User 
     return Response.success(condition)
 
 
+@router.post("/choiceConditionStep", description="选择步骤")
+async def choice_condition_step(condition_step: AssociationPlayConditionStepSchema,
+                                user: User = Depends(Authentication())):
+    """
+    选择
+    """
+    await PlayConditionMapper.choice_common_steps(**condition_step.model_dump(exclude_none=True), user=user)
+    return Response.success()
 
 
+@router.post("/insertConditionStep", description="添加步骤")
+async def insert_condition_step(condition_step: InsertCasePlayStepConditionContentSchema,
+                                user: User = Depends(Authentication())):
+    """
+    插入步骤
+    """
+    await PlayConditionMapper.insert_content_step(
+        user=user,
+        **condition_step.model_dump(exclude_none=True),
+    )
+    return Response.success()
+
+
+@router.post("/removeConditionStep", description="移除步骤")
+async def remove_condition_step(remove_content: RemoveCasePlayStepConditionContentSchema,
+                                _: User = Depends(Authentication())):
+    await PlayConditionMapper.remove_content(
+        **remove_content.model_dump(exclude_none=True),
+    )
+
+    return Response.success()
+
+
+@router.post("/reorderPlayConditionStep", description="排序步骤")
+async def reorder_condition_step(reorder_content: ReorderCasePlayStepConditionContentSchema,
+                                 _: User = Depends(Authentication())):
+    await PlayConditionMapper.reorder_content(
+        **reorder_content.model_dump(exclude_none=True),
+    )
+
+    return Response.success()
+
+
+@router.get("/queryConditionContentSteps", description="查询子步骤")
+async def query_content_steps(condition_id: int, _: User = Depends(Authentication())):
+    datas = await PlayConditionMapper.get_condition_step_contents(condition_id=condition_id)
+    return Response.success(datas)
 
 
 @router.post("/edit_content", description="修改步骤")
@@ -334,10 +383,6 @@ async def copy_case(case: GetPlayCaseByCaseId, cr: User = Depends(Authentication
     #     caseId=case.caseId, cr=cr)
 
     return Response.success(case)
-
-
-
-
 
 
 # =====================================  RESUlT ===========================================================

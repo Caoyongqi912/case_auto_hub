@@ -30,6 +30,12 @@ class AssociationPlayStepSchema(BaseModel):
     play_step_id_list: List[int] = Field(..., description="步骤Id")
 
 
+class AssociationPlayConditionStepSchema(BaseModel):
+    """case 关联 公共 step"""
+    quote: bool = Field(..., description="是否引用")
+    condition_id: int = Field(..., description="条件用例")
+    play_step_id_list: List[int] = Field(..., description="步骤Id")
+
 class AssociationPlayGroupSchema(BaseModel):
     """case 关联 公共 step"""
     case_id: int = Field(..., description="用例ID")

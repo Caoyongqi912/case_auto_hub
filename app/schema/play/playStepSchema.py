@@ -29,8 +29,22 @@ class InsertPlayStepSchema(BaseModel):
 
 
 class InsertCasePlayStepSchema(InsertPlayStepSchema):
-    case_id: int
+    case_id: int = Field(..., description='caseId')
 
+
+class InsertCasePlayStepConditionContentSchema(InsertCasePlayStepSchema):
+    content_id: int = Field(..., description="步骤id")
+    module_id: Optional[int] = Field(None, description="模块ID")
+    project_id: Optional[int] = Field(None, description="项目ID")
+
+
+class RemoveCasePlayStepConditionContentSchema(BaseModel):
+    condition_id: int = Field(..., description='conditionId')
+    content_id: int = Field(..., description='contentId')
+
+class ReorderCasePlayStepConditionContentSchema(BaseModel):
+    condition_id: int = Field(..., description='conditionId')
+    content_child_list_id: List[int] = Field(..., description='content_child_list_id')
 
 class EditPlayStepSchema(BaseModel):
     id: int = Field(..., description="步骤ID")
@@ -121,7 +135,6 @@ class PlayStepBasicField(BaseModel):
 #     project_id: int = Field(..., description="项目ID")
 
 
-
 class ReorderPlayConditionStepsSchema(BaseModel):
     """重排序play条件步骤模型"""
     stepIds: List[int] = Field(..., description="步骤ID列表")
@@ -131,16 +144,18 @@ class UpdatePlayStepSchema(PlayStepBasicField):
     """更新play步骤模型"""
     id: int = Field(..., description="步骤ID")
 
+
 class UpdatePlayConditionStepSchema(BaseModel):
     """更新play条件步骤模型"""
     id: int = Field(..., description="步骤ID")
-    condition_key: Optional[ str] = Field(None, description="条件key")
-    condition_value: Optional[ str] = Field(None, description="条件value")
-    condition_operator: Optional[ int] = Field(None, description="条件操作符")
+    condition_key: Optional[str] = Field(None, description="条件key")
+    condition_value: Optional[str] = Field(None, description="条件value")
+    condition_operator: Optional[int] = Field(None, description="条件操作符")
+
 
 class InsertPlayConditionStepSchema(BaseModel):
-    """插入判断步骤"""
-    condition_id: int = Field(..., description="条件ID")
+    """插入判断公共步骤"""
+    content_id: int = Field(..., description="content id")
     step_condition_ids: List[int] = Field(..., description="步骤条件ID列表")
 
 
