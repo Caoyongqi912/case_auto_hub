@@ -106,13 +106,13 @@ class QueryTestCaseSchemaByField(BaseModel):
 
 class CopyCase(BaseModel):
     """复制用例模型"""
-    case_id: int = Field(..., description="用例ID")
+    caseId: int = Field(..., description="用例ID")
     requirement_id: Optional[int] = Field(None, description="需求ID")
 
 
 class RemoveCaseSchema(BaseModel):
     """删除用例模型"""
-    case_id: int = Field(..., description="用例ID")
+    caseId: int = Field(..., description="用例ID")
     requirement_id: Optional[int] = Field(None, description="需求ID")
 
 
@@ -139,7 +139,7 @@ class RemoveCaseStep(BaseModel):
 
 class AddDefaultCaseStep(BaseModel):
     """添加默认用例步骤模型"""
-    case_id: int = Field(..., description="用例ID")
+    caseId: int = Field(..., description="用例ID")
 
 
 class UpdateTestCaseStep(BaseModel):
@@ -152,12 +152,12 @@ class UpdateTestCaseStep(BaseModel):
 
 class SetCasesStatusSchema(BaseModel):
     """设置多个用例状态模型"""
-    case_ids: List[int] = Field(..., description="用例ID列表")
+    caseIds: List[int] = Field(..., description="用例ID列表")
     status: int = Field(..., description="状态值")
 
 
 class SetCasesCommonSchema(BaseModel):
     """设置多个用例为公共用例模型"""
-    case_ids: List[int] = Field(..., description="用例ID列表")
+    caseIds: List[int] = Field(..., description="用例ID列表")
     module_id: int = Field(..., description="模块ID")
     project_id: int = Field(..., description="项目ID")
