@@ -7,7 +7,7 @@
 # @Desc: Mapper基础类，提供通用的数据库操作方法
 import json
 from math import ceil
-from typing import TypeVar, List, Type, Any, Optional, Generic, Dict
+from typing import TypeVar, List, Type, Any, Optional, Generic, Dict, Union
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, text, delete
@@ -115,12 +115,12 @@ class Mapper(Generic[M]):
             raise e
 
     @classmethod
-    async def copy_one(cls, target_id: int | M, session: AsyncSession, user: User = None) -> M:
+    async def copy_one(cls, target: Union[int,BaseModel], session: AsyncSession, user: User = None) -> M:
         """复制模型实例"""
-        if isinstance(target_id, M):
-            old_one = target_id
+        if isinstance(target, BaseModel):
+            old_one = target
         else:
-            old_one = await cls.get_by_id(target_id, session)
+            old_one = await cls.get_by_id(target, session)
         new_one = cls.__model__(**old_one.copy_map())
         if user:
             new_one.creator = user.id

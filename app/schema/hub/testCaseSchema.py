@@ -94,6 +94,11 @@ class AddDefaultCaseSchema(QueryTestCaseSchemaByReq):
     pass
 
 
+class AddNextCaseSchema(BaseModel):
+    """添加默认用例模型"""
+    current_case_id: int = Field(..., description="当前caseID")
+
+
 class QueryTestCaseSchemaByField(BaseModel):
     """根据字段查询测试用例模型"""
     requirement_id: int = Field(..., description="需求ID")
@@ -118,7 +123,7 @@ class RemoveCaseSchema(BaseModel):
 
 class CopyCaseStep(BaseModel):
     """复制用例步骤模型"""
-    step_id: int = Field(..., description="步骤ID")
+    stepId: int = Field(..., description="步骤ID")
 
 
 class ReorderCase(BaseModel):
@@ -129,12 +134,12 @@ class ReorderCase(BaseModel):
 
 class ReorderCaseStep(BaseModel):
     """重排序用例步骤模型"""
-    step_ids: List[int] = Field(..., description="步骤ID列表")
+    stepIds: List[int] = Field(..., description="步骤ID列表")
 
 
 class RemoveCaseStep(BaseModel):
     """删除用例步骤模型"""
-    step_id: int = Field(..., description="步骤ID")
+    stepId: int = Field(..., description="步骤ID")
 
 
 class AddDefaultCaseStep(BaseModel):
@@ -152,12 +157,18 @@ class UpdateTestCaseStep(BaseModel):
 
 class SetCasesStatusSchema(BaseModel):
     """设置多个用例状态模型"""
-    caseIds: List[int] = Field(..., description="用例ID列表")
+    case_ids: List[int] = Field(..., description="用例ID列表")
     status: int = Field(..., description="状态值")
+
+
+class SetCasesReviewSchema(BaseModel):
+    """设置多个用例状态评审"""
+    case_ids: List[int] = Field(..., description="用例ID列表")
+    is_review: bool = Field(..., description="状态值")
 
 
 class SetCasesCommonSchema(BaseModel):
     """设置多个用例为公共用例模型"""
-    caseIds: List[int] = Field(..., description="用例ID列表")
+    case_ids: List[int] = Field(..., description="用例ID列表")
     module_id: int = Field(..., description="模块ID")
     project_id: int = Field(..., description="项目ID")
