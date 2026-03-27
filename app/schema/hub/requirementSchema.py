@@ -63,9 +63,9 @@ class GetRequirementsSchema(BaseModel):
 
 class PageRequirementsSchema(PageSchema):
     """需求分页查询模型"""
-    module_type: int = Field(ModuleEnum.CASE, description="模块类型")
+    module_type: int = Field(ModuleEnum.REQUIREMENT, description="模块类型")
     requirement_name: Optional[str] = Field(None, description="需求名称")
     requirement_level: Optional[str] = Field(None, description="需求级别")
     process: Optional[int] = Field(None, description="需求进度")
     module_id: Optional[int] = Field(None, description="模块ID")
-    project_id: Optional[int] = Field(None, description="项目ID")
+    project_id: Optional[int] = Field(None, description="项目ID")
