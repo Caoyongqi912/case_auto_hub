@@ -5,7 +5,9 @@
 # @File : test_case
 # @Software: PyCharm
 # @Desc: 测试用例管理路由
-from fastapi import APIRouter, Depends, UploadFile
+from typing import Optional
+
+from fastapi import APIRouter, Depends, UploadFile, Form, File
 from fastapi.responses import FileResponse
 
 from app.mapper.caseHub.testcaseMapper import TestCaseMapper, TestCaseStepMapper, CaseDynamicMapper
@@ -222,9 +224,18 @@ async def set_test_case_result(data: UpdateTestCaseStatusSchema, user: User = De
 
 
 @router.post("/upload", description="批量导入用例")
-async def upload_cases(file: UploadFile, user: User = Depends(Authentication())):
+async def upload_cases(
+        project_id: int = Form(..., description="项目ID"),
+        module_id: int = Form(..., description="模块ID"),
+        file: UploadFile = File(..., description="Excel文件"),
+        requirement_id:Optional[int] = Form(None,description="所属需求"),
+        user: User = Depends(Authentication())
+):
     """
     从Excel文件批量导入测试用例
+    :param project_id: 项目ID
+    :param module_id: 模块ID
+    :param requirement_id: 需求
     :param file: 上传的Excel文件
     :param user: 认证用户
     :return: 导入结果信息
@@ -233,16 +244,15 @@ async def upload_cases(file: UploadFile, user: User = Depends(Authentication()))
     data, messages = await AsyncFilesReader().async_read_excel_for_case(file)
     if messages:
         return Response.error(msg=f"导入失败，请检查数据格式：{''.join(messages)}")
-
+    log.debug(data)
     await TestCaseMapper.insert_upload_case(
         cases=data,
-        project_id=1,
-        module_id=17,
-        requirement_id=1,
+        project_id=project_id,
+        module_id=module_id,
+        requirement_id=requirement_id,
         user=user
     )
-    msg = f"成功导入数据{len(data)}条"
-    return Response.success(msg=msg)
+    return Response.success()
 
 
 @router.get("/downloadCaseDemo", description="下载用例导入模板")

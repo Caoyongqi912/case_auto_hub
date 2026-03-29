@@ -275,8 +275,8 @@ class TestCaseMapper(Mapper[TestCase]):
             cases: List[Dict[str, Any]],
             project_id: int,
             module_id: int,
-            requirement_id: Optional[int],
             user: User,
+            requirement_id: Optional[int] = None,
     ):
         """
         从Excel批量导入用例
@@ -788,27 +788,27 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
             raise
 
     @classmethod
-    async def add_default_step(cls, case_id: int, user: User):
+    async def add_default_step(cls, caseId: int, user: User):
         """
         为用例添加一条默认空步骤
 
-        :param case_id: 用例ID
+        :param caseId: 用例ID
         :param user: 操作用户
         """
         try:
             async with async_session() as session:
-                last_order = await cls.get_last_order(case_id=case_id, session=session)
+                last_order = await cls.get_last_order(case_id=caseId, session=session)
 
                 session.add(
                     cls.__model__(
-                        test_case_id=case_id,
+                        test_case_id=caseId,
                         order=last_order + 1,
                         creator=user.id,
                         creatorName=user.username
                     )
                 )
                 await session.commit()
-        except Exception as e:
+        except Exception:
             raise
 
     @classmethod
