@@ -38,7 +38,7 @@ class TestCaseMind(BaseModel):
 
     mind_node = Column(JSON, nullable=False, comment="脑图信息")
 
-    requirement_id = Column(Integer, ForeignKey("requirement.id", ondelete='cascade'), nullable=False, primary_key=True,)
+    requirement_id = Column(Integer, ForeignKey("requirement.id", ondelete='cascade'), nullable=False)
     # **关键外键**
     module_id = Column(Integer, ForeignKey('module.id'), nullable=False, comment="所属模块")
     project_id = Column(Integer, ForeignKey('project.id'), nullable=False, comment="所属项目")

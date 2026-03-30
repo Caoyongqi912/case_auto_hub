@@ -463,18 +463,20 @@ class Mapper(Generic[M]):
         :return: 条件列表
         """
         conditions = []
+        model = cls.__model__
         for k, v in kwargs.items():
+            field = getattr(model, k)
             if v is None:
-                conditions.append(getattr(cls.__model__, k) is None)
+                conditions.append(field.is_(None))
                 continue
             if isinstance(v, (tuple, list)):
-                conditions.append(and_(getattr(cls.__model__, k) >= v[0], getattr(cls.__model__, k) <= v[1]))
+                conditions.append(and_(field >= v[0], field <= v[1]))
                 continue
             if isinstance(v, str):
-                conditions.append(getattr(cls.__model__, k).like(f"%{v}%"))
+                conditions.append(field.like(f"%{v}%"))
                 continue
             if isinstance(v, (int, float, bool)):
-                conditions.append(getattr(cls.__model__, k) == v)
+                conditions.append(field == v)
                 continue
         return conditions
 

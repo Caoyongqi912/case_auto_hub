@@ -18,7 +18,7 @@ async def insert_case(data: InsertMindCaseSchema, user: User = Depends(Authentic
     return Response.success(data)
 
 
-@router.post("/update", description="添加用例")
+@router.post("/update", description="修改用例")
 async def update_case(data: UpdateMindCaseSchema, user: User = Depends(Authentication())):
     data = await MindCaseMapper.update_by_id(
         updateUser=user,

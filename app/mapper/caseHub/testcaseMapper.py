@@ -264,7 +264,7 @@ class TestCaseMapper(Mapper[TestCase]):
                     await session.execute(
                         update(cls.__model__)
                         .where(cls.__model__.id.in_(case_ids))
-                        .values(reis_review=is_review)
+                        .values(is_review=is_review)
                     )
         except Exception as e:
             raise
@@ -277,6 +277,7 @@ class TestCaseMapper(Mapper[TestCase]):
             module_id: int,
             user: User,
             requirement_id: Optional[int] = None,
+            is_common:bool = True,
     ):
         """
         从Excel批量导入用例
@@ -316,10 +317,12 @@ class TestCaseMapper(Mapper[TestCase]):
                             "case_status": 0,
                             "creator": user.id,
                             "creatorName": user.username,
+                            "is_common":is_common,
+
                         })
 
                         case_objects.append(cls.__model__(**case_data))
-
+                        log.debug(f"case_objects {case_objects}")
                         steps = _parse_steps(action, expected_result)
                         for step_index, step_data in enumerate(steps):
                             step_data.update({
@@ -370,16 +373,16 @@ class TestCaseMapper(Mapper[TestCase]):
         return step_data
 
     @classmethod
-    async def remove_case(cls, case_id: int, requirement_id: Optional[int]):
+    async def remove_case(cls, caseId: int, requirement_id: Optional[int]):
         """
         删除测试用例
 
-        :param case_id: 用例ID
+        :param caseId: 用例ID
         :param requirement_id: 需求ID（可选，用于更新需求用例数量）
         """
         try:
             async with async_session() as session:
-                case_obj: TestCase = await cls.get_by_id(ident=case_id, session=session)
+                case_obj: TestCase = await cls.get_by_id(ident=caseId, session=session)
 
                 if case_obj.is_common and requirement_id:
                     req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
@@ -389,13 +392,13 @@ class TestCaseMapper(Mapper[TestCase]):
                         delete(RequirementCaseAssociation).where(
                             and_(
                                 RequirementCaseAssociation.requirement_id == requirement_id,
-                                RequirementCaseAssociation.case_id == case_id
+                                RequirementCaseAssociation.case_id == caseId
                             )
                         )
                     )
                 else:
                     await session.execute(
-                        delete(cls.__model__).where(cls.__model__.id == case_id)
+                        delete(cls.__model__).where(cls.__model__.id == caseId)
                     )
 
                 await session.commit()
@@ -434,14 +437,21 @@ class TestCaseMapper(Mapper[TestCase]):
         try:
             async with async_session() as session:
                 conditions = await cls.search_conditions(**kwargs)
-                cases = await session.scalars(
-                    select(TestCase)
-                    .join(RequirementCaseAssociation, RequirementCaseAssociation.case_id == TestCase.id)
+
+                # 先从关联表获取排序后的 case_id 列表
+                ordered_case_ids = (
+                    select(RequirementCaseAssociation.case_id)
                     .where(RequirementCaseAssociation.requirement_id == requirement_id)
-                    .where(and_(*conditions))
                     .order_by(RequirementCaseAssociation.order)
                 )
-                return cases.all()
+                query = (
+                    select(TestCase)
+                    .where(TestCase.id.in_(ordered_case_ids))
+                    .where(and_(*conditions))
+                )
+                result = await session.scalars(query)
+                return result.all()
+
         except Exception as e:
             raise
 
@@ -554,18 +564,18 @@ class TestCaseMapper(Mapper[TestCase]):
             raise
 
     @classmethod
-    async def copy_case(cls, case_id: int, user: User, requirement_id: Optional[int]):
+    async def copy_case(cls, caseId: int, user: User, requirement_id: Optional[int]):
         """
         复制用例及其步骤到指定需求
 
-        :param case_id: 被复制的源用例ID
+        :param caseId: 被复制的源用例ID
         :param user: 操作用户
         :param requirement_id: 目标需求ID（可选）
         """
         try:
             async with async_session() as session:
                 async with session.begin():
-                    source_case: TestCase = await cls.get_by_id(ident=case_id, session=session)
+                    source_case: TestCase = await cls.get_by_id(ident=caseId, session=session)
                     source_steps: Sequence[TestCaseStep] = await TestCaseStepMapper.query_steps_by_case_id(
                         case_id=source_case.id,
                         session=session

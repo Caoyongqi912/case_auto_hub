@@ -229,6 +229,7 @@ async def upload_cases(
         module_id: int = Form(..., description="模块ID"),
         file: UploadFile = File(..., description="Excel文件"),
         requirement_id:Optional[int] = Form(None,description="所属需求"),
+        is_common:bool = Form(True,description="是否公共"),
         user: User = Depends(Authentication())
 ):
     """
@@ -237,6 +238,7 @@ async def upload_cases(
     :param module_id: 模块ID
     :param requirement_id: 需求
     :param file: 上传的Excel文件
+    :param is_common: 公共
     :param user: 认证用户
     :return: 导入结果信息
     """
@@ -250,7 +252,8 @@ async def upload_cases(
         project_id=project_id,
         module_id=module_id,
         requirement_id=requirement_id,
-        user=user
+        user=user,
+        is_common=is_common
     )
     return Response.success()
 
