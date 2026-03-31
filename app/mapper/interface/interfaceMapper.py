@@ -167,7 +167,7 @@ class InterfaceMapper(Mapper[InterfaceModel]):
         :return: 更新后的API实例
         """
         async with async_session() as session:
-            api = await cls.update_by_id(session=session, updateUser=user, **kwargs)
+            api = await cls.update_by_id(session=session, update_user=user, **kwargs)
             log.info(f'update_interface {api}')
 
             from .interfaceCaseMapper import InterfaceCaseStepContentMapper

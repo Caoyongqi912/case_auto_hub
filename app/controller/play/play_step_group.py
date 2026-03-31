@@ -63,7 +63,7 @@ async def update_group(group: EditPlayStepSchema, user: User = Depends(Authentic
     group = await PlayStepGroupMapper.update_by_id(**group.model_dump(
         exclude_unset=True,
         exclude_none=True
-    ), updateUser=user)
+    ), update_user=user)
     return Response.success(group)
 
 

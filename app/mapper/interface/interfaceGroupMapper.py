@@ -62,7 +62,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
     async def update_group(cls, user: User, **kwargs):
         """更新组"""
         async with async_session() as session:
-            group = await cls.update_by_id(session=session, updateUser=user, **kwargs)
+            group = await cls.update_by_id(session=session, update_user=user, **kwargs)
             log.info(f'update_group {group}')
             from .interfaceCaseMapper import InterfaceCaseStepContentMapper
             content = await InterfaceCaseStepContentMapper.get_by(

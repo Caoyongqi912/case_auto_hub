@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer
+from sqlalchemy import Column, String, Integer, Index
 
 from app.model import BaseModel
 
@@ -11,6 +11,11 @@ class Module(BaseModel):
     project_id = Column(Integer, comment="项目id")
     module_type = Column(Integer, comment="模块类型")
 
+    # 在 Module 模型中添加
+    __table_args__ = (
+        Index('idx_parent_id', 'parent_id'),
+        Index('idx_module_type', 'module_type'),
+    )
     @property
     def map(self):
         return {

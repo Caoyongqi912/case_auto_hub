@@ -9,90 +9,16 @@ from typing import List, Dict, Any, Optional, Sequence
 
 from sqlalchemy import select, insert, update, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.mapper.caseHub.requirementMapper import RequirementMapper
+
 from app.mapper import Mapper, set_creator
+from app.mapper.caseHub.requirementMapper import RequirementMapper
+from app.mapper.caseHub.testCaseStepMapper import TestCaseStepMapper
+from app.mapper.caseHub.caseDynamicMapper import CaseDynamicMapper
 from app.model import async_session
 from app.model.base import User
-from app.model.caseHub.caseHUB import TestCase, TestCaseStep, CaseStepDynamic
+from app.model.caseHub.caseHUB import TestCase, TestCaseStep
 from app.model.caseHub.association import RequirementCaseAssociation
 from utils import log
-
-IGNORE_KEYS = {"id", "uid", "create_time", "update_time", "creator", "creatorName", "updater", "updaterName"}
-
-KEY_MAP = {
-    "action": "操作步骤",
-    "expected_result": "预期结果",
-    "case_name": "用例名称",
-    "case_level": "用例等级",
-    "case_type": "用例类型",
-    "case_tag": "用例标签",
-    "case_setup": "前置条件",
-    "case_status": "用例状态",
-    "case_mark": "用例描述",
-    "is_review": "是否审核",
-}
-
-VALUE_MAPPINGS = {
-    "case_type": {1: "冒烟", 2: "普通"},
-    "case_status": {1: "成功", 2: "失败", 0: "待执行"},
-    "is_review": {True: "已评审", False: "未评审"}
-}
-
-
-def _transform_value(field_key: str, value: Any) -> str:
-    """
-    根据字段类型转换值的显示格式
-
-    :param field_key: 字段名
-    :param value: 字段值
-    :return: 可读的字符串表示
-    """
-    if value is None:
-        return "空"
-
-    if field_key in VALUE_MAPPINGS and value in VALUE_MAPPINGS[field_key]:
-        return VALUE_MAPPINGS[field_key][value]
-
-    if isinstance(value, list):
-        return "、".join(str(v) for v in value) if value else "空"
-
-    if isinstance(value, bool):
-        return "是" if value else "否"
-
-    return str(value)
-
-
-def diff_dict(old_case: Dict[str, Any], new_case: Dict[str, Any]) -> Optional[str]:
-    """
-    比较两个字典的差异，生成变更描述
-
-    :param old_case: 变更前的用例数据
-    :param new_case: 变更后的用例数据
-    :return: 变更描述字符串，如果无变更则返回None
-    """
-    all_keys = set(old_case.keys()) | set(new_case.keys())
-    relevant_keys = all_keys - IGNORE_KEYS
-    diff_args = []
-
-    for key in relevant_keys:
-        old_value = old_case.get(key)
-        new_value = new_case.get(key)
-
-        if old_value == new_value:
-            continue
-
-        field_name = KEY_MAP.get(key, key)
-        old_display = _transform_value(key, old_value)
-        new_display = _transform_value(key, new_value)
-
-        if old_value is None:
-            diff_args.append(f"{field_name} 新增 {new_display}")
-        elif new_value is None:
-            diff_args.append(f"{field_name} 从 {old_display} 变更为 空")
-        else:
-            diff_args.append(f"{field_name} 从 {old_display} 变更为 {new_display}")
-
-    return "\n".join(diff_args) if diff_args else None
 
 
 async def get_last_index(session: AsyncSession, requirement_id: int) -> int:
@@ -221,10 +147,11 @@ class TestCaseMapper(Mapper[TestCase]):
         try:
             async with async_session() as session:
                 async with session.begin():
-                    for case_id in case_ids:
-                        case_obj: TestCase = await cls.get_by_id(ident=case_id, session=session)
+                    cases = await cls.query_by_in_clause(target="id", list_=case_ids, session=session)
+
+                    for case_obj in cases:
                         await CaseDynamicMapper.update_dynamic(
-                            case_id=case_id,
+                            case_id=case_obj.id,
                             old_case={"case_status": case_obj.case_status},
                             new_case={"case_status": status},
                             session=session,
@@ -237,6 +164,7 @@ class TestCaseMapper(Mapper[TestCase]):
                         .values(case_status=status)
                     )
         except Exception as e:
+            log.error(f"update_cases_status error: case_ids={case_ids}, status={status}, error={e}")
             raise
 
     @classmethod
@@ -251,10 +179,11 @@ class TestCaseMapper(Mapper[TestCase]):
         try:
             async with async_session() as session:
                 async with session.begin():
-                    for case_id in case_ids:
-                        case_obj: TestCase = await cls.get_by_id(ident=case_id, session=session)
+                    cases = await cls.query_by_in_clause(target="id", list_=case_ids, session=session)
+
+                    for case_obj in cases:
                         await CaseDynamicMapper.update_dynamic(
-                            case_id=case_id,
+                            case_id=case_obj.id,
                             old_case={"is_review": case_obj.is_review},
                             new_case={"is_review": is_review},
                             session=session,
@@ -267,6 +196,7 @@ class TestCaseMapper(Mapper[TestCase]):
                         .values(is_review=is_review)
                     )
         except Exception as e:
+            log.error(f"update_cases_review error: case_ids={case_ids}, is_review={is_review}, error={e}")
             raise
 
     @classmethod
@@ -277,7 +207,7 @@ class TestCaseMapper(Mapper[TestCase]):
             module_id: int,
             user: User,
             requirement_id: Optional[int] = None,
-            is_common:bool = True,
+            is_common: bool = True,
     ):
         """
         从Excel批量导入用例
@@ -293,6 +223,7 @@ class TestCaseMapper(Mapper[TestCase]):
         :param module_id: 模块ID
         :param requirement_id: 需求ID（可选）
         :param user: 操作用户
+        :param is_common: 公共
         """
         if not cases:
             return
@@ -317,7 +248,7 @@ class TestCaseMapper(Mapper[TestCase]):
                             "case_status": 0,
                             "creator": user.id,
                             "creatorName": user.username,
-                            "is_common":is_common,
+                            "is_common": is_common,
 
                         })
 
@@ -363,6 +294,7 @@ class TestCaseMapper(Mapper[TestCase]):
                         req.case_number += len(case_objects)
 
         except Exception as e:
+            log.error(f"insert_upload_case error: {e}")
             raise
 
     @staticmethod
@@ -403,6 +335,7 @@ class TestCaseMapper(Mapper[TestCase]):
 
                 await session.commit()
         except Exception as e:
+            log.error(f"remove_case error: caseId={caseId}, requirement_id={requirement_id}, error={e}")
             raise
 
     @classmethod
@@ -423,6 +356,7 @@ class TestCaseMapper(Mapper[TestCase]):
                 )
                 return cases.all()
         except Exception as e:
+            log.error(f"query_by_req error: requirement_id={requirement_id}, error={e}")
             raise
 
     @classmethod
@@ -438,7 +372,6 @@ class TestCaseMapper(Mapper[TestCase]):
             async with async_session() as session:
                 conditions = await cls.search_conditions(**kwargs)
 
-                # 先从关联表获取排序后的 case_id 列表
                 ordered_case_ids = (
                     select(RequirementCaseAssociation.case_id)
                     .where(RequirementCaseAssociation.requirement_id == requirement_id)
@@ -453,6 +386,7 @@ class TestCaseMapper(Mapper[TestCase]):
                 return result.all()
 
         except Exception as e:
+            log.error(f"query_case_by_field error: requirement_id={requirement_id}, kwargs={kwargs}, error={e}")
             raise
 
     @classmethod
@@ -472,6 +406,7 @@ class TestCaseMapper(Mapper[TestCase]):
                 )
                 return set(tags.all())
         except Exception as e:
+            log.error(f"query_tags error: requirement_id={requirement_id}, error={e}")
             raise
 
     @classmethod
@@ -515,6 +450,7 @@ class TestCaseMapper(Mapper[TestCase]):
 
                     return case_obj
         except Exception as e:
+            log.error(f"save_case error: kwargs={kwargs}, error={e}")
             raise
 
     @classmethod
@@ -542,26 +478,19 @@ class TestCaseMapper(Mapper[TestCase]):
                         session=session
                     )
         except Exception as e:
+            log.error(f"update_case error: kwargs={kwargs}, error={e}")
             raise
 
     @classmethod
-    async def query_sub_steps(cls, case_id: int):
+    async def query_sub_steps(cls, case_id: int, session: AsyncSession = None) -> Sequence[TestCaseStep]:
         """
         查询用例的所有步骤
 
         :param case_id: 用例ID
+        :param session: 可选的数据库会话
         :return: 步骤列表
         """
-        try:
-            async with async_session() as session:
-                steps = await session.scalars(
-                    select(TestCaseStep)
-                    .where(TestCaseStep.test_case_id == case_id)
-                    .order_by(TestCaseStep.order)
-                )
-                return steps.all()
-        except Exception as e:
-            raise
+        return await TestCaseStepMapper.query_sub_steps(case_id, session)
 
     @classmethod
     async def copy_case(cls, caseId: int, user: User, requirement_id: Optional[int]):
@@ -576,7 +505,7 @@ class TestCaseMapper(Mapper[TestCase]):
             async with async_session() as session:
                 async with session.begin():
                     source_case: TestCase = await cls.get_by_id(ident=caseId, session=session)
-                    source_steps: Sequence[TestCaseStep] = await TestCaseStepMapper.query_steps_by_case_id(
+                    source_steps: Sequence[TestCaseStep] = await TestCaseStepMapper.query_sub_steps(
                         case_id=source_case.id,
                         session=session
                     )
@@ -627,6 +556,7 @@ class TestCaseMapper(Mapper[TestCase]):
                         session=session
                     )
         except Exception as e:
+            log.error(f"copy_case error: caseId={caseId}, requirement_id={requirement_id}, error={e}")
             raise
 
     @classmethod
@@ -652,7 +582,8 @@ class TestCaseMapper(Mapper[TestCase]):
 
                     req.case_number += 1
                     await cls.add_flush_expunge(session=session, model=new_case)
-        except Exception:
+        except Exception as e:
+            log.error(f"add_next_case error: requirement_id={requirement_id}, case_id={case_id}, error={e}")
             raise
 
     @classmethod
@@ -702,250 +633,5 @@ class TestCaseMapper(Mapper[TestCase]):
                         )
                     )
         except Exception as e:
+            log.error(f"add_default_case error: requirement_id={requirement_id}, error={e}")
             raise
-
-
-class TestCaseStepMapper(Mapper[TestCaseStep]):
-    __model__ = TestCaseStep
-
-    @classmethod
-    async def update_step(cls, user: User, id: int, **kwargs):
-        """
-        更新用例步骤，并记录变更动态
-
-        :param user: 操作用户
-        :param id: 步骤ID
-        :param kwargs: 更新字段
-        """
-        log.info(f"更新步骤 {id}")
-        log.debug(f"更新参数 {kwargs}")
-
-        try:
-            async with async_session() as session:
-                async with session.begin():
-                    step = await cls.get_by_id(ident=id, session=session)
-                    before_info = {
-                        "action": step.action,
-                        "expected_result": step.expected_result
-                    }
-
-                    new_step = await cls.update_cls(step, session, **kwargs)
-                    after_info = {
-                        "action": new_step.action,
-                        "expected_result": new_step.expected_result
-                    }
-
-                    await CaseDynamicMapper.update_dynamic(
-                        cr=user,
-                        case_id=new_step.test_case_id,
-                        old_case=before_info,
-                        new_case=after_info,
-                        session=session
-                    )
-        except Exception:
-            raise
-
-    @classmethod
-    async def reorder_steps(cls, step_ids: List[int]):
-        """
-        批量重排序用例步骤
-
-        :param step_ids: 步骤ID列表（新的排序顺序）
-        """
-        try:
-            async with async_session() as session:
-                async with session.begin():
-                    for index, step_id in enumerate(step_ids, start=1):
-                        await session.execute(
-                            update(TestCaseStep)
-                            .where(TestCaseStep.id == step_id)
-                            .values(order=index)
-                        )
-        except Exception as e:
-            raise
-
-    @classmethod
-    async def copy_step(cls, step_id: int, user: User):
-        """
-        复制指定步骤
-
-        :param step_id: 被复制的步骤ID
-        :param user: 操作用户
-        """
-        try:
-            async with async_session() as session:
-                async with session.begin():
-                    step: TestCaseStep = await cls.get_by_id(ident=step_id, session=session)
-
-                    await session.execute(
-                        update(TestCaseStep)
-                        .where(
-                            and_(
-                                TestCaseStep.test_case_id == step.test_case_id,
-                                TestCaseStep.order > step.order
-                            )
-                        )
-                        .values(order=TestCaseStep.order + 1)
-                    )
-
-                    new_step_data = step.copy_map()
-                    new_step_data["creator"] = user.id
-                    new_step_data["creatorName"] = user.username
-                    new_step_data["order"] = step.order + 1
-
-                    await cls.save(session=session, **new_step_data)
-        except Exception as e:
-            raise
-
-    @classmethod
-    async def add_default_step(cls, caseId: int, user: User):
-        """
-        为用例添加一条默认空步骤
-
-        :param caseId: 用例ID
-        :param user: 操作用户
-        """
-        try:
-            async with async_session() as session:
-                last_order = await cls.get_last_order(case_id=caseId, session=session)
-
-                session.add(
-                    cls.__model__(
-                        test_case_id=caseId,
-                        order=last_order + 1,
-                        creator=user.id,
-                        creatorName=user.username
-                    )
-                )
-                await session.commit()
-        except Exception:
-            raise
-
-    @classmethod
-    async def save_steps(cls, case_id: int, steps: List[Dict[str, Any]], session: AsyncSession, user: User):
-        """
-        批量保存用例步骤
-
-        :param case_id: 用例ID
-        :param steps: 步骤数据列表
-        :param session: 数据库会话
-        :param user: 操作用户
-        """
-        try:
-            for index, step_data in enumerate(steps):
-                step_data["test_case_id"] = case_id
-                step_data["order"] = index
-                step_data["creator"] = user.id
-                step_data["creatorName"] = user.username
-                await cls.save(session=session, **step_data)
-        except Exception as e:
-            raise
-
-    @classmethod
-    async def query_steps_by_case_id(cls, case_id: int, session: AsyncSession) -> Sequence[TestCaseStep]:
-        """
-        查询用例的所有步骤
-
-        :param case_id: 用例ID
-        :param session: 数据库会话
-        :return: 步骤列表
-        """
-        try:
-            steps = await session.scalars(
-                select(TestCaseStep)
-                .where(TestCaseStep.test_case_id == case_id)
-                .order_by(TestCaseStep.order)
-            )
-            return steps.all()
-        except Exception as e:
-            raise
-
-    @staticmethod
-    async def get_last_order(case_id: int, session: AsyncSession) -> int:
-        """
-        获取用例的最大步骤排序号
-
-        :param case_id: 用例ID
-        :param session: 数据库会话
-        :return: 最大排序号，不存在则返回0
-        """
-        stmt = (
-            select(TestCaseStep.order)
-            .where(TestCaseStep.test_case_id == case_id)
-            .order_by(TestCaseStep.order.desc())
-            .limit(1)
-        )
-        result = await session.execute(stmt)
-        return result.scalar() or 0
-
-
-class CaseDynamicMapper(Mapper[CaseStepDynamic]):
-    __model__ = CaseStepDynamic
-
-    @classmethod
-    async def query_dynamic(cls, case_id: int):
-        """
-        获取用例的变更动态记录
-
-        :param case_id: 用例ID
-        :return: 动态记录列表
-        """
-        try:
-            async with async_session() as session:
-                dynamics = await session.scalars(
-                    select(CaseStepDynamic)
-                    .where(CaseStepDynamic.test_case_id == case_id)
-                    .order_by(CaseStepDynamic.create_time.asc())
-                )
-                return dynamics.all()
-        except Exception as e:
-            raise
-
-    @classmethod
-    async def new_dynamic(cls, cr: User, test_case: TestCase, session: AsyncSession):
-        """
-        记录用例创建动态
-
-        :param cr: 创建者用户
-        :param test_case: 创建的用例对象
-        :param session: 数据库会话
-        """
-        await cls.save(
-            session=session,
-            description=f"{cr.username} 创建了测试用例。 {test_case.case_name}",
-            test_case_id=test_case.id,
-            creator=cr.id,
-            creatorName=cr.username
-        )
-
-    @classmethod
-    async def update_dynamic(
-            cls,
-            cr: User,
-            case_id: int,
-            old_case: Dict[str, Any],
-            new_case: Dict[str, Any],
-            session: AsyncSession
-    ):
-        """
-        记录用例更新动态
-
-        :param cr: 更新者用户
-        :param case_id: 用例ID
-        :param old_case: 更新前数据
-        :param new_case: 更新后数据
-        :param session: 数据库会话
-        """
-        diff_info = diff_dict(old_case, new_case)
-        if not diff_info:
-            return
-
-        session.add(
-            CaseStepDynamic(
-                description=f"{cr.username} 更新了测试用例 :{diff_info}",
-                test_case_id=case_id,
-                creator=cr.id,
-                creatorName=cr.username
-            )
-        )
-        await session.flush()

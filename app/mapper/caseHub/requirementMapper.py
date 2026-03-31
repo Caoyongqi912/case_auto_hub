@@ -6,7 +6,7 @@
 # @Software: PyCharm
 # @Desc:
 
-from typing import Any
+from typing import Any, List
 
 from app.mapper import Mapper
 from app.model import async_session
@@ -35,10 +35,8 @@ class RequirementMapper(Mapper[Requirement]):
                 reqInfo['maintainerInfo'] = maintainer.userInfo
 
             if req.develops:
-                dev_ids = req.develops if isinstance(req.develops, list) else [req.develops]
-                for dev_id in dev_ids:
-                    dev = await UserMapper.get_by_id(ident=dev_id, session=session)
-                    if dev:
-                        reqInfo['developsInfo'].append(dev.userInfo)
+                dev_ids: List[int] = req.develops if isinstance(req.develops, list) else [req.develops]
+                devs = await UserMapper.query_by_in_clause(target="id", list_=dev_ids, session=session)
+                reqInfo['developsInfo'] = [dev.userInfo for dev in devs]
 
             return reqInfo

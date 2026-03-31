@@ -21,7 +21,7 @@ async def insert_module(partInfo: InsertModuleSchema, creator: User = Depends(Au
 @router.post("/update", description='编辑')
 async def update_module(partInfo: UpdateModuleSchema, ur: User = Depends(Authentication(isAdmin=True))):
     await ModuleMapper.update_by_id(
-        updateUser=ur,
+        update_user=ur,
         **partInfo.model_dump()
     )
     return Response.success()

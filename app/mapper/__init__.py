@@ -6,11 +6,12 @@
 # @Software: PyCharm
 # @Desc: Mapper基础类，提供通用的数据库操作方法
 import json
+from contextlib import asynccontextmanager
 from math import ceil
-from typing import TypeVar, List, Type, Any, Optional, Generic, Dict, Union
+from typing import TypeVar, List, Type, Any, Optional, Generic, Dict, Union, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, text, delete
+from sqlalchemy import select, func, and_, or_, text, delete, update
 
 from app.exception import NotFind, CommonError
 from app.model import async_session, BaseModel
@@ -18,11 +19,11 @@ from app.model.base import User
 from utils import log
 
 
-def pages(total, pageSize) -> int:
+def calc_total_pages(total: int, page_size: int) -> int:
     """计算总页数"""
     if total == 0 or total is None:
         return 0
-    return ceil(total / pageSize)
+    return ceil(total / page_size)
 
 
 def set_creator(user: User, **kwargs):
@@ -74,9 +75,10 @@ class Mapper(Generic[M]):
         :param desc: 错误描述
         :return: 模型实例
         """
+        model = cls.__model__
         try:
-            field = getattr(cls.__model__, field_name)
-            stmt = select(cls.__model__).where(field == value)
+            field = getattr(model, field_name)
+            stmt = select(model).where(field == value)
             result = await cls._execute_query(stmt, session)
             instance = result.scalar_one_or_none()
 
@@ -112,7 +114,7 @@ class Mapper(Generic[M]):
             return await cls._manage_session(session, model)
         except Exception as e:
             log.error(f"保存{cls.__name__}失败: {e}")
-            raise e
+            raise
 
     @classmethod
     async def copy_one(cls, target: Union[int,BaseModel], session: AsyncSession, user: User = None) -> M:
@@ -136,12 +138,13 @@ class Mapper(Generic[M]):
         :param desc: 错误描述
         :return: 模型实例
         """
+        model = cls.__model__
         try:
             if session is None:
                 async with async_session() as session:
-                    instance = await session.get(cls.__model__, ident)
+                    instance = await session.get(model, ident)
             else:
-                instance = await session.get(cls.__model__, ident)
+                instance = await session.get(model, ident)
 
             if not instance:
                 error_msg = f"数据{desc}不存在或已经删除，id: {ident}" if desc else f"数据不存在，id: {ident}"
@@ -165,11 +168,11 @@ class Mapper(Generic[M]):
         return await cls._get_by_field('uid', uid, session, raise_error)
 
     @classmethod
-    async def update_by_id(cls, session: AsyncSession = None, updateUser: User = None, **kwargs) -> M:
+    async def update_by_id(cls, session: AsyncSession = None, update_user: User = None, **kwargs) -> M:
         """
         通过id更新
         :param session: 可选的会话对象
-        :param updateUser: 更新人
+        :param update_user: 更新人
         :param kwargs: 更新字段（必须包含id）
         :return: 更新后的模型实例
         """
@@ -178,7 +181,7 @@ class Mapper(Generic[M]):
             if ident is None:
                 raise ValueError("id parameter is required")
 
-            kwargs = set_updater(updateUser, **kwargs)
+            kwargs = set_updater(update_user, **kwargs)
 
             if session is None:
                 async with async_session() as session:
@@ -195,14 +198,14 @@ class Mapper(Generic[M]):
             raise
 
     @classmethod
-    async def update_by_uid(cls, updateUser: User = None, **kwargs):
+    async def update_by_uid(cls, update_user: User = None, **kwargs):
         """
         通过uid更新
-        :param updateUser: 更新人
+        :param update_user: 更新人
         :param kwargs: 更新字段（必须包含uid）
         :return: 更新后的模型实例
         """
-        kwargs = set_updater(updateUser, **kwargs)
+        kwargs = set_updater(update_user, **kwargs)
 
         try:
             async with async_session() as session:
@@ -211,7 +214,8 @@ class Mapper(Generic[M]):
                     target = await cls.get_by_uid(uid, session)
                     return await cls.update_cls(target, session, **kwargs)
         except Exception as e:
-            raise e
+            log.error(f"update_by_uid error: {e}")
+            raise
 
     @classmethod
     async def delete_by_uid(cls, uid: str):
@@ -219,12 +223,14 @@ class Mapper(Generic[M]):
         通过uid删除
         :param uid: uid
         """
+        model = cls.__model__
         try:
             async with async_session() as session:
-                await session.execute(delete(cls.__model__).where(cls.__model__.uid == uid))
+                await session.execute(delete(model).where(model.uid == uid))
                 await session.commit()
         except Exception as e:
-            raise e
+            log.exception(e)
+            raise
 
     @classmethod
     async def delete_by_id(cls, ident: int, session: AsyncSession = None):
@@ -233,7 +239,8 @@ class Mapper(Generic[M]):
         :param ident: id
         :param session: 可选的会话对象
         """
-        stmt = delete(cls.__model__).where(cls.__model__.id == ident)
+        model = cls.__model__
+        stmt = delete(model).where(model.id == ident)
         try:
             if session:
                 await session.execute(stmt)
@@ -260,8 +267,8 @@ class Mapper(Generic[M]):
                 await session.flush()
                 await session.commit()
         except Exception as e:
-            await session.rollback()
-            raise e
+            log.error(f"delete_by error: {e}")
+            raise
 
     @classmethod
     async def get_by(cls, session: AsyncSession = None, **kwargs) -> Optional[M]:
@@ -271,7 +278,8 @@ class Mapper(Generic[M]):
         :param kwargs: 查询条件
         :return: 模型实例或None
         """
-        sql = select(cls.__model__).filter_by(**kwargs)
+        model = cls.__model__
+        sql = select(model).filter_by(**kwargs)
         try:
             if session is None:
                 async with async_session() as session:
@@ -280,17 +288,18 @@ class Mapper(Generic[M]):
                 result = await session.scalars(sql)
             return result.first()
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def query_all(cls) -> List[M]:
         """查询所有数据"""
+        model = cls.__model__
         try:
             async with async_session() as session:
-                query = await session.scalars(select(cls.__model__))
+                query = await session.scalars(select(model))
                 return query.all()
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def query_by(cls, session: AsyncSession = None, **kwargs) -> List[M]:
@@ -300,20 +309,21 @@ class Mapper(Generic[M]):
         :param session:
         :return: 查询结果列表
         """
+        model = cls.__model__
         try:
             if session:
                 query = await session.scalars(
-                    select(cls.__model__).filter_by(**kwargs).order_by(cls.__model__.create_time))
+                    select(model).filter_by(**kwargs).order_by(model.create_time))
             else:
                 async with async_session() as session:
                     query = await session.scalars(
-                        select(cls.__model__).filter_by(**kwargs).order_by(cls.__model__.create_time))
+                        select(model).filter_by(**kwargs).order_by(model.create_time))
             return query.all()
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
-    async def query_by_in_clause(cls, target: str, list_: List[Any], session: AsyncSession = None) -> List[M]:
+    async def query_by_in_clause(cls, target: str, list_: List[Any], session: AsyncSession = None) -> Sequence[M]:
         """
         根据指定字段和值列表查询数据（IN子句）
         :param target: 模型中的字段名
@@ -321,10 +331,11 @@ class Mapper(Generic[M]):
         :param session: 可选的会话对象
         :return: 查询结果列表
         """
-        if not hasattr(cls.__model__, target):
+        model = cls.__model__
+        if not hasattr(model, target):
             raise CommonError("Invalid field name")
 
-        stmt = select(cls.__model__).where(getattr(cls.__model__, target).in_(list_))
+        stmt = select(model).where(getattr(model, target).in_(list_))
         try:
             if session:
                 query = await session.scalars(stmt)
@@ -334,18 +345,35 @@ class Mapper(Generic[M]):
                     query = await session.scalars(stmt)
                     return query.all()
         except Exception as e:
-            raise e
+            raise
 
     @staticmethod
-    async def flush_expunge(session: AsyncSession, model: M):
+    async def flush_expunge(session: AsyncSession, model: M, add: bool = False, refresh: bool = True) -> M:
         """
         刷新会话并分离模型
         :param session: 会话对象
         :param model: 模型实例
+        :param add: 是否添加到会话
+        :param refresh: 是否刷新模型
+        :return: 模型实例
         """
+        if add:
+            session.add(model)
         await session.flush()
-        await session.refresh(model)
+        if refresh:
+            await session.refresh(model)
         session.expunge(model)
+        return model
+
+    @staticmethod
+    async def add_flush_expunge(session: AsyncSession, model: M) -> M:
+        """
+        添加模型到会话，刷新并分离
+        :param session: 会话对象
+        :param model: 模型实例
+        :return: 模型实例
+        """
+        return await Mapper.flush_expunge(session, model, add=True, refresh=False)
 
     @classmethod
     async def page_query(cls, current: int, pageSize: int, **kwargs):
@@ -356,13 +384,14 @@ class Mapper(Generic[M]):
         :param kwargs: 查询条件和排序
         :return: 分页结果
         """
+        model = cls.__model__
         try:
             async with async_session() as session:
                 conditions = await cls.search_conditions(**kwargs)
-                base_query = select(cls.__model__).filter(and_(*conditions))
+                base_query = select(model).filter(and_(*conditions))
                 base_query = await cls.sorted_search(base_query, kwargs.pop("sort", None))
 
-                total_query = select(func.count()).select_from(cls.__model__).filter(*conditions)
+                total_query = select(func.count()).select_from(model).filter(*conditions)
                 total = (await session.execute(total_query)).scalar()
 
                 paginated_query = base_query.offset((current - 1) * pageSize).limit(pageSize)
@@ -371,34 +400,21 @@ class Mapper(Generic[M]):
 
                 return await cls.map_page_data(data, total, pageSize, current)
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
-    async def get_creator(cls, creatorId: int, session: AsyncSession) -> User:
+    async def get_creator(cls, creator_id: int, session: AsyncSession) -> User:
         """
         获取创建人信息
-        :param creatorId: 创建人ID
+        :param creator_id: 创建人ID
         :param session: 会话对象
         :return: 用户对象
         """
-        exe = await session.execute(select(User).where(User.id == creatorId))
+        exe = await session.execute(select(User).where(User.id == creator_id))
         user = exe.scalar()
         if not user:
             raise NotFind("创建人信息不存在")
         return user
-
-    @staticmethod
-    async def add_flush_expunge(session: AsyncSession, model: M) -> M:
-        """
-        添加模型到会话，刷新并分离
-        :param session: 会话对象
-        :param model: 模型实例
-        :return: 模型实例
-        """
-        session.add(model)
-        await session.flush()
-        session.expunge(model)
-        return model
 
     @classmethod
     async def update_cls(cls, target: M, session: AsyncSession, **kw):
@@ -409,8 +425,9 @@ class Mapper(Generic[M]):
         :param kw: 更新字段
         :return: 更新后的模型实例
         """
+        model = cls.__model__
         try:
-            valid_columns = set(cls.__model__.__table__.columns.keys())
+            valid_columns = set(model.__table__.columns.keys())
             update_fields = {k: v for k, v in kw.items() if k in valid_columns}
 
             for field, value in update_fields.items():
@@ -420,7 +437,7 @@ class Mapper(Generic[M]):
             session.expunge(target)
             return target
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def sorted_search(cls, base_query, sortInfo: str | Dict = None):
@@ -430,6 +447,7 @@ class Mapper(Generic[M]):
         :param sortInfo: 排序信息，支持JSON字符串或字典
         :return: 排序后的查询
         """
+        model = cls.__model__
         sort = None
         try:
             if isinstance(sortInfo, str):
@@ -443,12 +461,13 @@ class Mapper(Generic[M]):
 
         if sort:
             for k, v in sort.items():
+                field = getattr(model, k)
                 if v == "descend":
-                    base_query = base_query.order_by(getattr(cls.__model__, k).desc())
+                    base_query = base_query.order_by(field.desc())
                 else:
-                    base_query = base_query.order_by(getattr(cls.__model__, k).asc())
+                    base_query = base_query.order_by(field.asc())
         else:
-            base_query = base_query.order_by(cls.__model__.create_time.desc())
+            base_query = base_query.order_by(model.create_time.desc())
         return base_query
 
     @classmethod
@@ -456,56 +475,94 @@ class Mapper(Generic[M]):
         """
         构建查询条件
         支持的条件类型:
-            - 范围查询: 使用列表或元组 [min, max]
-            - 模糊查询: 字符串自动添加 % 通配符
-            - 精确匹配: 数字、布尔值、None
+            - 精确匹配: field=value
+            - 范围查询: field=[min, max]
+            - 模糊查询: field="value" (自动添加 % 通配符)
+            - None 判断: field=None
+            - IN 查询: field__in=[1, 2, 3]
+            - NOT IN 查询: field__not_in=[1, 2, 3]
+            - 不等于: field__ne=value
+            - 大于: field__gt=value
+            - 大于等于: field__gte=value
+            - 小于: field__lt=value
+            - 小于等于: field__lte=value
+            - LIKE 查询: field__like="%value%"
+            - IS NOT NULL: field__is_not_null=True
         :param kwargs: 查询条件
         :return: 条件列表
         """
         conditions = []
         model = cls.__model__
-        for k, v in kwargs.items():
-            field = getattr(model, k)
-            if v is None:
-                conditions.append(field.is_(None))
-                continue
-            if isinstance(v, (tuple, list)):
-                conditions.append(and_(field >= v[0], field <= v[1]))
-                continue
-            if isinstance(v, str):
-                conditions.append(field.like(f"%{v}%"))
-                continue
-            if isinstance(v, (int, float, bool)):
-                conditions.append(field == v)
-                continue
+
+        for key, value in kwargs.items():
+            if "__" in key:
+                field_name, operator = key.rsplit("__", 1)
+                field = getattr(model, field_name)
+
+                if operator == "in":
+                    conditions.append(field.in_(value))
+                elif operator == "not_in":
+                    conditions.append(field.not_in(value))
+                elif operator == "ne":
+                    conditions.append(field != value)
+                elif operator == "gt":
+                    conditions.append(field > value)
+                elif operator == "gte":
+                    conditions.append(field >= value)
+                elif operator == "lt":
+                    conditions.append(field < value)
+                elif operator == "lte":
+                    conditions.append(field <= value)
+                elif operator == "like":
+                    conditions.append(field.like(value))
+                elif operator == "ilike":
+                    conditions.append(field.ilike(value))
+                elif operator == "is_not_null":
+                    if value:
+                        conditions.append(field.is_not(None))
+                elif operator == "is_null":
+                    if value:
+                        conditions.append(field.is_(None))
+            else:
+                field = getattr(model, key)
+                if value is None:
+                    conditions.append(field.is_(None))
+                elif isinstance(value, (tuple, list)) and len(value) == 2:
+                    conditions.append(and_(field >= value[0], field <= value[1]))
+                elif isinstance(value, str):
+                    conditions.append(field.like(f"%{value}%"))
+                elif isinstance(value, (int, float, bool)):
+                    conditions.append(field == value)
+
         return conditions
 
     @classmethod
-    async def map_page_data(cls, data: List, totalNum: int, pageSize: int, current: int):
+    async def map_page_data(cls, data: Sequence, total_num: int, page_size: int, current: int):
         """
         构建分页数据
         :param data: 数据列表
-        :param totalNum: 总记录数
-        :param pageSize: 每页大小
+        :param total_num: 总记录数
+        :param page_size: 每页大小
         :param current: 当前页码
         :return: 分页结果字典
         """
         return {
             "items": data,
             "pageInfo": {
-                "total": totalNum,
-                "pages": pages(totalNum, pageSize),
+                "total": total_num,
+                "pages": calc_total_pages(total_num, page_size),
                 "page": current,
-                "limit": pageSize
+                "limit": page_size
             }
         }
 
     @classmethod
     async def count_(cls) -> int:
         """统计记录数"""
+        model = cls.__model__
         try:
             async with async_session() as session:
-                sql = select(func.count()).select_from(cls.__model__)
+                sql = select(func.count()).select_from(model)
                 state = await session.execute(sql)
                 return state.scalar()
         except Exception:
@@ -528,38 +585,64 @@ class Mapper(Generic[M]):
             return []
 
     @classmethod
-    async def page_by_module(cls, current: int, pageSize: int, module_type: int,
-                             module_id: int = None, **kwargs):
+    async def page_by_module(
+        cls,
+        current: int,
+        pageSize: int,
+        module_type: int,
+        module_id: int = None,
+        filter_field: str = "module_id",
+        session: AsyncSession = None,
+        **kwargs
+    ):
         """
-        按模块分页查询
+        按模块分页查询（支持树形模块结构）
+
         :param current: 当前页码
         :param pageSize: 每页大小
         :param module_type: 模块类型
-        :param module_id: 模块ID
-        :param kwargs: 其他查询条件
-        :return: 分页结果
+        :param module_id: 模块ID（为空时查询全部）
+        :param filter_field: 过滤字段名，默认 module_id
+        :param session: 外部传入的数据库会话
+        :param kwargs: 其他查询条件（支持 sort 排序参数）
+        :return: 分页结果字典 {"items": [], "pageInfo": {...}}
         """
-        attr = "module_id"
+        from app.mapper.project.moduleMapper import get_subtree_ids
+
+        model = cls.__model__
+        sort_info = kwargs.pop("sort", None)
+        offset = (current - 1) * pageSize
+
+        async def _execute_query(sess: AsyncSession):
+            subtree_ids = await get_subtree_ids(sess, module_id, module_type) if module_id else None
+
+            filter_column = getattr(model, filter_field)
+            conditions = await cls.search_conditions(**kwargs)
+
+            base_query = select(model)
+            if subtree_ids:
+                base_query = base_query.filter(filter_column.in_(subtree_ids))
+            base_query = base_query.filter(and_(*conditions))
+            base_query = await cls.sorted_search(base_query, sort_info)
+
+            count_query = select(func.count()).select_from(model)
+            if subtree_ids:
+                count_query = count_query.filter(filter_column.in_(subtree_ids))
+            count_query = count_query.filter(and_(*conditions))
+
+            total = (await sess.execute(count_query)).scalar()
+            data_query = base_query.offset(offset).limit(pageSize)
+            data = (await sess.execute(data_query)).scalars().all()
+
+            return await cls.map_page_data(data, total, pageSize, current)
+
         try:
-            async with async_session() as session:
-                from app.mapper.project.moduleMapper import get_subtree_ids
-                subtree_ids = await get_subtree_ids(session, module_id, module_type)
-
-                base_query = select(cls.__model__).filter(getattr(cls.__model__, attr).in_(subtree_ids))
-                conditions = await cls.search_conditions(**kwargs)
-                base_query = base_query.filter(and_(*conditions))
-                base_query = await cls.sorted_search(base_query, kwargs.pop("sort", None))
-
-                total_query = select(func.count()).select_from(cls.__model__).filter(
-                    getattr(cls.__model__, attr).in_(subtree_ids), *conditions)
-                total = (await session.execute(total_query)).scalar()
-
-                paginated_query = base_query.offset((current - 1) * pageSize).limit(pageSize)
-                data = (await session.execute(paginated_query)).scalars().all()
-
-                return await cls.map_page_data(data, total, pageSize, current)
+            if session:
+                return await _execute_query(session)
+            async with async_session() as sess:
+                return await _execute_query(sess)
         except Exception as e:
-            log.error(e)
+            log.error(f"page_by_module error: module_id={module_id}, error={e}")
             return []
 
     @classmethod
@@ -575,3 +658,107 @@ class Mapper(Generic[M]):
                 async with new_session.begin():
                     return await cls.add_flush_expunge(new_session, model)
         return await cls.add_flush_expunge(session, model)
+
+    @classmethod
+    async def bulk_insert(cls, items: List[Dict[str, Any]], session: AsyncSession = None) -> int:
+        """
+        批量插入数据
+        :param items: 数据字典列表
+        :param session: 可选的会话对象
+        :return: 插入的记录数
+        """
+        if not items:
+            return 0
+
+        model = cls.__model__
+        try:
+            if session:
+                session.add_all([model(**item) for item in items])
+                await session.flush()
+                return len(items)
+            else:
+                async with async_session() as session:
+                    session.add_all([model(**item) for item in items])
+                    await session.commit()
+                    return len(items)
+        except Exception as e:
+            log.error(f"bulk_insert error: {e}")
+            raise
+
+    @classmethod
+    async def bulk_update(cls, updates: List[Dict[str, Any]], id_field: str = "id", session: AsyncSession = None) -> int:
+        """
+        批量更新数据
+        :param updates: 更新数据列表，每项需包含 id_field 指定的字段
+        :param id_field: 用于定位记录的字段名
+        :param session: 可选的会话对象
+        :return: 更新的记录数
+        """
+        if not updates:
+            return 0
+
+        model = cls.__model__
+        count = 0
+        try:
+            if session:
+                for item in updates:
+                    ident = item.pop(id_field, None)
+                    if ident is None:
+                        continue
+                    stmt = update(model).where(getattr(model, id_field) == ident).values(**item)
+                    await session.execute(stmt)
+                    count += 1
+                await session.flush()
+                return count
+            else:
+                async with async_session() as session:
+                    for item in updates:
+                        ident = item.pop(id_field, None)
+                        if ident is None:
+                            continue
+                        stmt = update(model).where(getattr(model, id_field) == ident).values(**item)
+                        await session.execute(stmt)
+                        count += 1
+                    await session.commit()
+                    return count
+        except Exception as e:
+            log.error(f"bulk_update error: {e}")
+            raise
+
+    @classmethod
+    async def bulk_delete(cls, ids: List[int], session: AsyncSession = None) -> int:
+        """
+        批量删除数据
+        :param ids: 要删除的ID列表
+        :param session: 可选的会话对象
+        :return: 删除的记录数
+        """
+        if not ids:
+            return 0
+
+        model = cls.__model__
+        stmt = delete(model).where(model.id.in_(ids))
+        try:
+            if session:
+                result = await session.execute(stmt)
+                await session.flush()
+                return result.rowcount
+            else:
+                async with async_session() as session:
+                    result = await session.execute(stmt)
+                    await session.commit()
+                    return result.rowcount
+        except Exception as e:
+            log.error(f"bulk_delete error: {e}")
+            raise
+
+    @classmethod
+    @asynccontextmanager
+    async def transaction(cls):
+        """
+        事务上下文管理器
+        :yield: 数据库会话
+        """
+        async with async_session() as session:
+            async with session.begin():
+                yield session

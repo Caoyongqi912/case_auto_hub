@@ -691,11 +691,11 @@ class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
         caseId = kwargs.get("play_case_id")
         key = kwargs.get("key")
         if not key:
-            return await super().update_by_id(updateUser=updateUser, **kwargs)
+            return await super().update_by_id(update_user=updateUser, **kwargs)
         try:
             async with async_session() as session:
                 await PlayCaseVariablesMapper._check_key(key, caseId, session)
-                return await super().update_by_id(updateUser=updateUser, session=session, **kwargs)
+                return await super().update_by_id(update_user=updateUser, session=session, **kwargs)
         except Exception:
             raise
 

@@ -71,7 +71,7 @@ async def update_step(stepInfo: EditPlayStepSchema, user: User = Depends(Authent
     """
     log.info(stepInfo)
     step = await PlayStepV2Mapper.update_step(
-        updateUser=user,
+        update_user=user,
         **stepInfo.model_dump(
             exclude_none=True,
             exclude_unset=True

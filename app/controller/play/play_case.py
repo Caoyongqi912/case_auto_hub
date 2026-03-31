@@ -81,7 +81,7 @@ async def update_case(case: EditPlayCaseBasicSchema, ur: User = Depends(Authenti
         更新后的用例信息
     """
     case = await PlayCaseMapper.update_by_id(
-        updateUser=ur,
+        update_user=ur,
         **case.model_dump(exclude_none=True, exclude_unset=True))
     return Response.success(case)
 
@@ -262,7 +262,7 @@ async def insert_condition(condition: UpdatePlayConditionStepSchema, user: User 
     Returns:
         插入成功响应
     """
-    condition = await PlayConditionMapper.update_by_id(updateUser=user, **condition.model_dump(exclude_none=True))
+    condition = await PlayConditionMapper.update_by_id(update_user=user, **condition.model_dump(exclude_none=True))
     return Response.success(condition)
 
 
@@ -330,7 +330,7 @@ async def update_content(content: EditPlayStepContentSchema, user: User = Depend
     data = await PlayStepContentMapper.update_by_id(**content.model_dump(
         exclude_none=True,
         exclude_unset=True
-    ), updateUser=user)
+    ), update_user=user)
     return Response.success(data)
 
 
@@ -492,7 +492,7 @@ async def update_variable(var: EditPlayCaseVariableSchema, _: User = Depends(Aut
         更新成功响应
     """
     await PlayCaseVariablesMapper.update_by_id(**var.model_dump(exclude_none=True),
-                                               updateUser=_)
+                                               update_user=_)
     return Response.success()
 
 

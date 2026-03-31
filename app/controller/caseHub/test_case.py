@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, UploadFile, Form, File
 from fastapi.responses import FileResponse
 
-from app.mapper.caseHub.testcaseMapper import TestCaseMapper, TestCaseStepMapper, CaseDynamicMapper
+from app.mapper.caseHub import TestCaseMapper, TestCaseStepMapper, CaseDynamicMapper
 from app.schema.hub.testCaseSchema import (
     AddTestCaseSchema, PageTestCaseSchema, AddDefaultCaseSchema, AddNextCaseSchema,
     UpdateTestCaseSchema, QueryTestCaseSchemaByField, RemoveCaseSchema, RemoveCaseStep,
@@ -46,8 +46,8 @@ async def page_cases(data: PageTestCaseSchema, _: User = Depends(Authentication(
     :param _: 认证用户
     :return: 用例分页数据
     """
-    log.info(data.model_dump(exclude_none=True))
-    result = await TestCaseMapper.page_by_module(**data.model_dump(exclude_none=True))
+    log.info(data.model_dump(exclude_none=True,exclude_unset=True))
+    result = await TestCaseMapper.page_by_module(**data.model_dump(exclude_none=True,exclude_unset=True))
     return Response.success(result)
 
 

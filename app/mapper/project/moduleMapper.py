@@ -33,19 +33,19 @@ async def list2Tree(datas: List[Module]):
 
 
 
-async def get_subtree_ids(session: AsyncSession, moduleId: int,module_type:int):
+async def get_subtree_ids(session: AsyncSession, module_id: int,module_type:int):
     """
     递归查询某个 Module 节点及其所有子节点的 ID。
 
     :param session: 异步数据库会话
-    :param moduleId: 起始节点的 ID
-    :param module_type: 起始节点的 ID
+    :param module_id: 起始节点的 ID
+    :param module_type: 模块类型
     :return: 所有子节点的 ID 列表
     """
     try:
         # 基础查询：选择起始节点
         base_query = select(Module.id).where(and_(
-            Module.id == moduleId,
+            Module.id == module_id,
             Module.module_type == module_type
         ))
         # 递归 CTE：查询所有子节点
