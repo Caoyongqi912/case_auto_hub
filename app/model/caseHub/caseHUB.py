@@ -48,14 +48,10 @@ class TestCase(BaseModel):
     __tablename__ = "test_case"
 
     case_name = Column(String(500), nullable=False, comment="用例步骤名称")
-    case_level = Column(String(5), nullable=False, comment="用例步骤等级 P1 P2 P0")
-    case_type = Column(Integer, default=1, comment="用例步骤类型 1'普通' | 2'冒烟' | 3 回归")
     case_tag = Column(String(100), nullable=True, comment="用例步骤标签")
     case_setup = Column(String(500), nullable=True, comment="用例步骤前置条件")
-    case_status = Column(Integer, default=1, comment="用例步骤状态  0 | 1 | 2; // 0:未开始 1:通过 2:失败")
     case_mark = Column(String(500), nullable=True, comment="用例步骤备注")
 
-    is_review = Column(Boolean, default=False, comment="是否审核")
     is_common = Column(Boolean, default=False, comment="用例库")
     # **关键外键**
     module_id = Column(Integer, ForeignKey('module.id'), nullable=False, comment="所属模块")
@@ -63,9 +59,6 @@ class TestCase(BaseModel):
 
     async def set_default(self, user: User):
         self.case_name = "测试用例"
-        self.case_level = "P2"
-        self.case_type = 1
-        self.case_status = 0
         self.creator = user.id
         self.creatorName = user.username
 

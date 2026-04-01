@@ -37,6 +37,7 @@ class AddRequirementsSchema(BaseModel):
     maintainer: Optional[int] = Field(None, description="维护人员ID")
     module_id: int = Field(..., description="模块ID")
     project_id: int = Field(..., description="项目ID")
+    case_ids: Optional[list[int]] = Field(None, description="关联用例")
 
 
 class UpdateRequirementsSchema(BaseModel):
@@ -49,6 +50,15 @@ class UpdateRequirementsSchema(BaseModel):
     maintainer: Optional[int] = Field(None, description="维护人员ID")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
+
+
+class UpdateRequirementCaseSchema(BaseModel):
+    case_id: int = Field(..., description="用例ID")
+    requirement_id:int = Field(...,description="需求")
+    case_status: Optional[int] = Field(None, description="用例状态")
+    is_review: Optional[bool] = Field(None, description="时否评审")
+    case_level:Optional[str] = Field(None,description="用例等级")
+    case_type:Optional[int] = Field(None,description="用例类型")
 
 
 class RemoveRequirementsSchema(BaseModel):

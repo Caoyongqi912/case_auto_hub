@@ -38,7 +38,7 @@ async def insert_case(data: AddTestCaseSchema, user: User = Depends(Authenticati
     return Response.success(result)
 
 
-@router.post("/dataPage", description="分页查询用例列表")
+@router.post("/page", description="分页查询用例列表")
 async def page_cases(data: PageTestCaseSchema, _: User = Depends(Authentication())):
     """
     根据模块ID分页查询测试用例列表
@@ -74,6 +74,8 @@ async def update_case(data: UpdateTestCaseSchema, user: User = Depends(Authentic
     log.info(data)
     await TestCaseMapper.update_case(ur=user, **data.model_dump(exclude_unset=True, exclude_none=True))
     return Response.success()
+
+
 
 
 @router.get("/queryByField", description="根据条件查询用例列表")
@@ -180,7 +182,7 @@ async def query_sub_steps(caseId: int, _: User = Depends(Authentication())):
     :param _: 认证用户
     :return: 步骤列表
     """
-    steps = await TestCaseMapper.query_sub_steps(caseId)
+    steps =  await TestCaseStepMapper.query_sub_steps(caseId)
     return Response.success(steps)
 
 
@@ -285,7 +287,7 @@ async def batch_update_status(data: SetCasesStatusSchema, user: User = Depends(A
     return Response.success()
 
 
-@router.post("/updateReview", description="批量更新用例状态")
+@router.post("/updateReview", description="批量更新用例评审")
 async def batch_update_status(data: SetCasesReviewSchema, user: User = Depends(Authentication())):
     """
     批量更新多个用例的状态

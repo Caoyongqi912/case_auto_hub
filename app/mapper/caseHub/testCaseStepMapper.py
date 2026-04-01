@@ -35,27 +35,26 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
         log.debug(f"更新参数 {kwargs}")
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    step = await cls.get_by_id(ident=id, session=session)
-                    before_info = {
-                        "action": step.action,
-                        "expected_result": step.expected_result
-                    }
+            async with cls.transaction() as session:
+                step = await cls.get_by_id(ident=id, session=session)
+                before_info = {
+                    "action": step.action,
+                    "expected_result": step.expected_result
+                }
 
-                    new_step = await cls.update_cls(step, session, **kwargs)
-                    after_info = {
-                        "action": new_step.action,
-                        "expected_result": new_step.expected_result
-                    }
+                new_step = await cls.update_cls(step, session, **kwargs)
+                after_info = {
+                    "action": new_step.action,
+                    "expected_result": new_step.expected_result
+                }
 
-                    await CaseDynamicMapper.update_dynamic(
-                        cr=user,
-                        case_id=new_step.test_case_id,
-                        old_case=before_info,
-                        new_case=after_info,
-                        session=session
-                    )
+                await CaseDynamicMapper.update_dynamic(
+                    cr=user,
+                    case_id=new_step.test_case_id,
+                    old_case=before_info,
+                    new_case=after_info,
+                    session=session
+                )
         except Exception as e:
             log.error(f"update_step error: id={id}, error={e}")
             raise
@@ -70,17 +69,16 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
         from sqlalchemy import case
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    case_stmt = case(
-                        *[(TestCaseStep.id == step_id, index) for index, step_id in enumerate(step_ids, start=1)],
-                        else_=0
-                    )
-                    await session.execute(
-                        update(TestCaseStep)
-                        .where(TestCaseStep.id.in_(step_ids))
-                        .values(order=case_stmt)
-                    )
+            async with cls.transaction() as session:
+                case_stmt = case(
+                    *[(TestCaseStep.id == step_id, index) for index, step_id in enumerate(step_ids, start=1)],
+                    else_=0
+                )
+                await session.execute(
+                    update(TestCaseStep)
+                    .where(TestCaseStep.id.in_(step_ids))
+                    .values(order=case_stmt)
+                )
         except Exception as e:
             log.error(f"reorder_steps error: step_ids={step_ids}, error={e}")
             raise
@@ -94,27 +92,26 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
         :param user: 操作用户
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    step: TestCaseStep = await cls.get_by_id(ident=step_id, session=session)
+            async with cls.transaction() as session:
+                step: TestCaseStep = await cls.get_by_id(ident=step_id, session=session)
 
-                    await session.execute(
-                        update(TestCaseStep)
-                        .where(
-                            and_(
-                                TestCaseStep.test_case_id == step.test_case_id,
-                                TestCaseStep.order > step.order
-                            )
+                await session.execute(
+                    update(TestCaseStep)
+                    .where(
+                        and_(
+                            TestCaseStep.test_case_id == step.test_case_id,
+                            TestCaseStep.order > step.order
                         )
-                        .values(order=TestCaseStep.order + 1)
                     )
+                    .values(order=TestCaseStep.order + 1)
+                )
 
-                    new_step_data = step.copy_map()
-                    new_step_data["creator"] = user.id
-                    new_step_data["creatorName"] = user.username
-                    new_step_data["order"] = step.order + 1
+                new_step_data = step.copy_map()
+                new_step_data["creator"] = user.id
+                new_step_data["creatorName"] = user.username
+                new_step_data["order"] = step.order + 1
 
-                    await cls.save(session=session, **new_step_data)
+                await cls.save(session=session, **new_step_data)
         except Exception as e:
             log.error(f"copy_step error: step_id={step_id}, error={e}")
             raise

@@ -118,19 +118,16 @@ class TestCaseMapper(Mapper[TestCase]):
         :param module_id: 目标模块ID
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    await session.execute(
-                        update(cls.__model__)
-                        .where(cls.__model__.id.in_(case_ids))
-                        .values(
-                            is_common=True,
-                            project_id=project_id,
-                            module_id=module_id,
-                            case_status=0,
-                            is_review=True,
-                        )
+            async with cls.transaction() as session:
+                await session.execute(
+                    update(cls.__model__)
+                    .where(cls.__model__.id.in_(case_ids))
+                    .values(
+                        is_common=True,
+                        project_id=project_id,
+                        module_id=module_id,
                     )
+                )
         except Exception as e:
             log.error(e)
             raise
@@ -145,24 +142,25 @@ class TestCaseMapper(Mapper[TestCase]):
         :param user: 操作用户
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    cases = await cls.query_by_in_clause(target="id", list_=case_ids, session=session)
+            async with cls.transaction() as session:
 
-                    for case_obj in cases:
-                        await CaseDynamicMapper.update_dynamic(
-                            case_id=case_obj.id,
-                            old_case={"case_status": case_obj.case_status},
-                            new_case={"case_status": status},
-                            session=session,
-                            cr=user
-                        )
-
-                    await session.execute(
-                        update(cls.__model__)
-                        .where(cls.__model__.id.in_(case_ids))
-                        .values(case_status=status)
+                stmt = select(RequirementCaseAssociation).where(
+                    getattr(RequirementCaseAssociation, "case_id").in_(case_ids))
+                ass = await session.scalars(stmt)
+                for ass_obj in ass:
+                    await CaseDynamicMapper.update_dynamic(
+                        case_id=ass_obj.case_id,
+                        old_case={"case_status": ass_obj.case_status},
+                        new_case={"case_status": status},
+                        session=session,
+                        cr=user
                     )
+
+                await session.execute(
+                    update(RequirementCaseAssociation)
+                    .where(RequirementCaseAssociation.case_id.in_(case_ids))
+                    .values(case_status=status)
+                )
         except Exception as e:
             log.error(f"update_cases_status error: case_ids={case_ids}, status={status}, error={e}")
             raise
@@ -177,24 +175,23 @@ class TestCaseMapper(Mapper[TestCase]):
         :param user: 操作用户
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    cases = await cls.query_by_in_clause(target="id", list_=case_ids, session=session)
-
-                    for case_obj in cases:
-                        await CaseDynamicMapper.update_dynamic(
-                            case_id=case_obj.id,
-                            old_case={"is_review": case_obj.is_review},
-                            new_case={"is_review": is_review},
-                            session=session,
-                            cr=user
-                        )
-
-                    await session.execute(
-                        update(cls.__model__)
-                        .where(cls.__model__.id.in_(case_ids))
-                        .values(is_review=is_review)
+            async with cls.transaction() as session:
+                stmt = select(RequirementCaseAssociation).where(
+                    getattr(RequirementCaseAssociation, "case_id").in_(case_ids))
+                ass = await session.scalars(stmt)
+                for ass_obj in ass:
+                    await CaseDynamicMapper.update_dynamic(
+                        case_id=ass_obj.case_id,
+                        old_case={"is_review": ass.is_review},
+                        new_case={"is_review": is_review},
+                        session=session,
+                        cr=user
                     )
+                await session.execute(
+                    update(RequirementCaseAssociation)
+                    .where(RequirementCaseAssociation.case_id.in_(case_ids))
+                    .values(is_review=is_review)
+                )
         except Exception as e:
             log.error(f"update_cases_review error: case_ids={case_ids}, is_review={is_review}, error={e}")
             raise
@@ -230,68 +227,65 @@ class TestCaseMapper(Mapper[TestCase]):
 
         log.info(f"开始导入用例，共 {len(cases)} 条")
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    case_objects = []
-                    all_steps = []
-                    requirement_associations = []
-                    last_order = await get_last_index(session, requirement_id) if requirement_id else 0
+            async with cls.transaction() as session:
+                case_objects = []
+                all_steps = []
+                requirement_associations = []
+                last_order = await get_last_index(session, requirement_id) if requirement_id else 0
 
-                    for case_index, case_data in enumerate(cases):
-                        action = case_data.pop("action", None)
-                        expected_result = case_data.pop("expected_result", None)
+                for case_index, case_data in enumerate(cases):
+                    action = case_data.pop("action", None)
+                    expected_result = case_data.pop("expected_result", None)
 
-                        case_data.update({
-                            "project_id": project_id,
-                            "module_id": module_id,
-                            "case_type": 2,
-                            "case_status": 0,
+                    case_data.update({
+                        "project_id": project_id,
+                        "module_id": module_id,
+                        "creator": user.id,
+                        "creatorName": user.username,
+                        "is_common": is_common,
+
+                    })
+
+                    case_objects.append(cls.__model__(**case_data))
+                    log.debug(f"case_objects {case_objects}")
+                    steps = _parse_steps(action, expected_result)
+                    for step_index, step_data in enumerate(steps):
+                        step_data.update({
+                            "test_case_index": case_index,
+                            "order": step_index,
                             "creator": user.id,
                             "creatorName": user.username,
-                            "is_common": is_common,
-
                         })
+                        all_steps.append(step_data)
 
-                        case_objects.append(cls.__model__(**case_data))
-                        log.debug(f"case_objects {case_objects}")
-                        steps = _parse_steps(action, expected_result)
-                        for step_index, step_data in enumerate(steps):
-                            step_data.update({
-                                "test_case_index": case_index,
-                                "order": step_index,
-                                "creator": user.id,
-                                "creatorName": user.username,
-                            })
-                            all_steps.append(step_data)
-
-                        if requirement_id:
-                            last_order += 1
-                            requirement_associations.append(
-                                RequirementCaseAssociation(
-                                    requirement_id=requirement_id,
-                                    case_id=case_index,
-                                    order=last_order
-                                )
+                    if requirement_id:
+                        last_order += 1
+                        requirement_associations.append(
+                            RequirementCaseAssociation(
+                                requirement_id=requirement_id,
+                                case_id=case_index,
+                                order=last_order
                             )
+                        )
 
-                    session.add_all(case_objects)
-                    await session.flush()
+                session.add_all(case_objects)
+                await session.flush()
 
-                    case_id_map = {i: case_obj.id for i, case_obj in enumerate(case_objects)}
+                case_id_map = {i: case_obj.id for i, case_obj in enumerate(case_objects)}
 
-                    step_objects = [
-                        TestCaseStepMapper.__model__(**cls._map_step_id(step_data, case_id_map))
-                        for step_data in all_steps
-                    ]
-                    session.add_all(step_objects)
+                step_objects = [
+                    TestCaseStepMapper.__model__(**cls._map_step_id(step_data, case_id_map))
+                    for step_data in all_steps
+                ]
+                session.add_all(step_objects)
 
-                    if requirement_associations:
-                        for assoc in requirement_associations:
-                            assoc.case_id = case_id_map[assoc.case_id]
-                        session.add_all(requirement_associations)
+                if requirement_associations:
+                    for assoc in requirement_associations:
+                        assoc.case_id = case_id_map[assoc.case_id]
+                    session.add_all(requirement_associations)
 
-                        req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
-                        req.case_number += len(case_objects)
+                    req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
+                    req.case_number += len(case_objects)
 
         except Exception as e:
             log.error(f"insert_upload_case error: {e}")
@@ -313,7 +307,7 @@ class TestCaseMapper(Mapper[TestCase]):
         :param requirement_id: 需求ID（可选，用于更新需求用例数量）
         """
         try:
-            async with async_session() as session:
+            async with cls.transaction() as session:
                 case_obj: TestCase = await cls.get_by_id(ident=caseId, session=session)
 
                 if case_obj.is_common and requirement_id:
@@ -332,31 +326,8 @@ class TestCaseMapper(Mapper[TestCase]):
                     await session.execute(
                         delete(cls.__model__).where(cls.__model__.id == caseId)
                     )
-
-                await session.commit()
         except Exception as e:
             log.error(f"remove_case error: caseId={caseId}, requirement_id={requirement_id}, error={e}")
-            raise
-
-    @classmethod
-    async def query_by_req(cls, requirement_id: int):
-        """
-        根据需求ID查询所有关联用例
-
-        :param requirement_id: 需求ID
-        :return: 用例列表
-        """
-        try:
-            async with async_session() as session:
-                cases = await session.scalars(
-                    select(TestCase)
-                    .join(RequirementCaseAssociation, RequirementCaseAssociation.case_id == TestCase.id)
-                    .where(RequirementCaseAssociation.requirement_id == requirement_id)
-                    .order_by(RequirementCaseAssociation.order)
-                )
-                return cases.all()
-        except Exception as e:
-            log.error(f"query_by_req error: requirement_id={requirement_id}, error={e}")
             raise
 
     @classmethod
@@ -366,24 +337,34 @@ class TestCaseMapper(Mapper[TestCase]):
 
         :param requirement_id: 需求ID
         :param kwargs: 过滤条件
-        :return: 符合条件的用例列表
+        :return: 符合条件的用例列表（包含关联表的 is_review 和 case_status）
         """
         try:
             async with async_session() as session:
                 conditions = await cls.search_conditions(**kwargs)
 
-                ordered_case_ids = (
-                    select(RequirementCaseAssociation.case_id)
+                query = (
+                    select(TestCase,
+                           RequirementCaseAssociation.is_review,
+                           RequirementCaseAssociation.case_status,
+                           RequirementCaseAssociation.case_type,
+                           RequirementCaseAssociation.case_level)
+                    .join(RequirementCaseAssociation, RequirementCaseAssociation.case_id == TestCase.id)
                     .where(RequirementCaseAssociation.requirement_id == requirement_id)
+                    .where(and_(*conditions))
                     .order_by(RequirementCaseAssociation.order)
                 )
-                query = (
-                    select(TestCase)
-                    .where(TestCase.id.in_(ordered_case_ids))
-                    .where(and_(*conditions))
-                )
-                result = await session.scalars(query)
-                return result.all()
+                result = await session.execute(query)
+
+                rows = result.all()
+                return [
+                    {"is_review": row[1],
+                     "case_status": row[2],
+                     "case_type": row[3],
+                     "case_level": row[4],
+                     **(row[0].to_dict())}
+                    for row in rows
+                ]
 
         except Exception as e:
             log.error(f"query_case_by_field error: requirement_id={requirement_id}, kwargs={kwargs}, error={e}")
@@ -423,32 +404,31 @@ class TestCaseMapper(Mapper[TestCase]):
         kwargs = set_creator(cr, **kwargs)
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    case_obj: TestCase = await cls.save(session=session, **kwargs)
+            async with cls.transaction() as session:
+                case_obj: TestCase = await cls.save(session=session, **kwargs)
 
-                    if case_sub_steps:
-                        await TestCaseStepMapper.save_steps(
-                            case_id=case_obj.id,
-                            steps=case_sub_steps,
-                            user=cr,
-                            session=session
-                        )
-
-                    if requirement_id:
-                        await insert_requirement_case(
-                            session=session,
-                            requirement_id=requirement_id,
-                            case_id=case_obj.id
-                        )
-
-                    await CaseDynamicMapper.new_dynamic(
-                        cr=cr,
-                        test_case=case_obj,
+                if case_sub_steps:
+                    await TestCaseStepMapper.save_steps(
+                        case_id=case_obj.id,
+                        steps=case_sub_steps,
+                        user=cr,
                         session=session
                     )
 
-                    return case_obj
+                if requirement_id:
+                    await insert_requirement_case(
+                        session=session,
+                        requirement_id=requirement_id,
+                        case_id=case_obj.id
+                    )
+
+                await CaseDynamicMapper.new_dynamic(
+                    cr=cr,
+                    test_case=case_obj,
+                    session=session
+                )
+
+                return case_obj
         except Exception as e:
             log.error(f"save_case error: kwargs={kwargs}, error={e}")
             raise
@@ -464,33 +444,21 @@ class TestCaseMapper(Mapper[TestCase]):
         log.info(f"更新用例参数: {kwargs}")
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    case_obj = await cls.get_by_id(ident=kwargs.get("id"), session=session)
-                    old_data = case_obj.map
-                    new_case = await cls.update_cls(case_obj, session, **kwargs)
+            async with cls.transaction() as session:
+                case_obj = await cls.get_by_id(ident=kwargs.get("id"), session=session)
+                old_data = case_obj.map
+                new_case = await cls.update_cls(case_obj, session, **kwargs)
 
-                    await CaseDynamicMapper.update_dynamic(
-                        cr=ur,
-                        case_id=case_obj.id,
-                        old_case=old_data,
-                        new_case=new_case.map,
-                        session=session
-                    )
+                await CaseDynamicMapper.update_dynamic(
+                    cr=ur,
+                    case_id=case_obj.id,
+                    old_case=old_data,
+                    new_case=new_case.map,
+                    session=session
+                )
         except Exception as e:
             log.error(f"update_case error: kwargs={kwargs}, error={e}")
             raise
-
-    @classmethod
-    async def query_sub_steps(cls, case_id: int, session: AsyncSession = None) -> Sequence[TestCaseStep]:
-        """
-        查询用例的所有步骤
-
-        :param case_id: 用例ID
-        :param session: 可选的数据库会话
-        :return: 步骤列表
-        """
-        return await TestCaseStepMapper.query_sub_steps(case_id, session)
 
     @classmethod
     async def copy_case(cls, caseId: int, user: User, requirement_id: Optional[int]):
@@ -502,59 +470,57 @@ class TestCaseMapper(Mapper[TestCase]):
         :param requirement_id: 目标需求ID（可选）
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    source_case: TestCase = await cls.get_by_id(ident=caseId, session=session)
-                    source_steps: Sequence[TestCaseStep] = await TestCaseStepMapper.query_sub_steps(
-                        case_id=source_case.id,
-                        session=session
-                    )
+            async with cls.transaction() as session:
+                source_case: TestCase = await cls.get_by_id(ident=caseId, session=session)
+                source_steps: Sequence[TestCaseStep] = await TestCaseStepMapper.query_sub_steps(
+                    case_id=source_case.id,
+                    session=session
+                )
 
-                    new_case_data = source_case.copy_map()
-                    new_case_data["case_name"] += " - 副本"
-                    new_case_data["case_status"] = 0
-                    new_case_data["creator"] = user.id
-                    new_case_data["creatorName"] = user.username
+                new_case_data = source_case.copy_map()
+                new_case_data["case_name"] += " - 副本"
+                new_case_data["creator"] = user.id
+                new_case_data["creatorName"] = user.username
 
-                    new_case_obj = await cls.save(session=session, **new_case_data)
+                new_case_obj = await cls.save(session=session, **new_case_data)
 
-                    for step in source_steps:
-                        new_step_data = step.copy_map()
-                        new_step_data["test_case_id"] = new_case_obj.id
-                        new_step_data["creator"] = user.id
-                        new_step_data["creatorName"] = user.username
-                        await TestCaseStepMapper.save(session=session, **new_step_data)
+                for step in source_steps:
+                    new_step_data = step.copy_map()
+                    new_step_data["test_case_id"] = new_case_obj.id
+                    new_step_data["creator"] = user.id
+                    new_step_data["creatorName"] = user.username
+                    await TestCaseStepMapper.save(session=session, **new_step_data)
 
-                    if requirement_id:
-                        req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
-                        req.case_number += 1
+                if requirement_id:
+                    req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
+                    req.case_number += 1
 
-                        source_order = await get_case_index(session, requirement_id, source_case.id)
+                    source_order = await get_case_index(session, requirement_id, source_case.id)
 
-                        await session.execute(
-                            update(RequirementCaseAssociation)
-                            .where(
-                                and_(
-                                    RequirementCaseAssociation.requirement_id == requirement_id,
-                                    RequirementCaseAssociation.order > source_order
-                                )
-                            )
-                            .values(order=RequirementCaseAssociation.order + 1)
-                        )
-
-                        await session.execute(
-                            insert(RequirementCaseAssociation).values(
-                                requirement_id=requirement_id,
-                                case_id=new_case_obj.id,
-                                order=source_order + 1
+                    await session.execute(
+                        update(RequirementCaseAssociation)
+                        .where(
+                            and_(
+                                RequirementCaseAssociation.requirement_id == requirement_id,
+                                RequirementCaseAssociation.order > source_order
                             )
                         )
-
-                    await CaseDynamicMapper.new_dynamic(
-                        cr=user,
-                        test_case=new_case_obj,
-                        session=session
+                        .values(order=RequirementCaseAssociation.order + 1)
                     )
+
+                    await session.execute(
+                        insert(RequirementCaseAssociation).values(
+                            requirement_id=requirement_id,
+                            case_id=new_case_obj.id,
+                            order=source_order + 1
+                        )
+                    )
+
+                await CaseDynamicMapper.new_dynamic(
+                    cr=user,
+                    test_case=new_case_obj,
+                    session=session
+                )
         except Exception as e:
             log.error(f"copy_case error: caseId={caseId}, requirement_id={requirement_id}, error={e}")
             raise
@@ -569,19 +535,18 @@ class TestCaseMapper(Mapper[TestCase]):
         :param user: 操作用户
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
-                    current_case = await cls.get_by_id(ident=case_id, session=session)
+            async with cls.transaction() as session:
+                req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
+                current_case = await cls.get_by_id(ident=case_id, session=session)
 
-                    new_case = await cls._copy_case_data(
-                        source=current_case,
-                        user=user,
-                        session=session
-                    )
+                new_case = await cls._copy_case_data(
+                    source=current_case,
+                    user=user,
+                    session=session
+                )
 
-                    req.case_number += 1
-                    await cls.add_flush_expunge(session=session, model=new_case)
+                req.case_number += 1
+                await cls.add_flush_expunge(session=session, model=new_case)
         except Exception as e:
             log.error(f"add_next_case error: requirement_id={requirement_id}, case_id={case_id}, error={e}")
             raise
@@ -598,7 +563,6 @@ class TestCaseMapper(Mapper[TestCase]):
         """
         new_data = source.copy_map()
         new_data["case_name"] += " - 副本"
-        new_data["case_status"] = 0
         new_data["creator"] = user.id
         new_data["creatorName"] = user.username
         return await cls.save(session=session, **new_data)
@@ -612,26 +576,25 @@ class TestCaseMapper(Mapper[TestCase]):
         :param user: 操作用户
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
-                    req.case_number += 1
+            async with cls.transaction() as session:
+                req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
+                req.case_number += 1
 
-                    new_case = TestCase()
-                    await new_case.set_default(user)
-                    new_case.module_id = req.module_id
-                    new_case.project_id = req.project_id
+                new_case = TestCase()
+                await new_case.set_default(user)
+                new_case.module_id = req.module_id
+                new_case.project_id = req.project_id
 
-                    await cls.add_flush_expunge(session=session, model=new_case)
+                await cls.add_flush_expunge(session=session, model=new_case)
 
-                    last_order = await get_last_index(session, requirement_id)
-                    await session.execute(
-                        insert(RequirementCaseAssociation).values(
-                            requirement_id=requirement_id,
-                            case_id=new_case.id,
-                            order=last_order + 1
-                        )
+                last_order = await get_last_index(session, requirement_id)
+                await session.execute(
+                    insert(RequirementCaseAssociation).values(
+                        requirement_id=requirement_id,
+                        case_id=new_case.id,
+                        order=last_order + 1
                     )
+                )
         except Exception as e:
             log.error(f"add_default_case error: requirement_id={requirement_id}, error={e}")
             raise
