@@ -393,6 +393,17 @@ python run.py
 ![同步执行](resource/runBySync.gif)
 ![异步执行](resource/runByAsync.gif)
 
+
+展示业务步骤的详细执行结果。
+
+![业务步骤详情](resource/caseContentResult.png)
+
+### 📝 业务步骤日志
+
+展示业务步骤的详细执行日志。
+
+![业务步骤日志](resource/caseContentLog.png)
+
 ### 📅 Task接口任务
 
 任务可关联多个API用例，支持定时任务执行和结果推送。
@@ -411,35 +422,36 @@ python run.py
 
 ![UI自动化](resource/ui_detail.gif)
 
-### 📋 用例管理
-
-用例管理功能，支持增删改查、复制、拖拽等。(初步版本、会重构)
-
-![用例管理](resource/casehub.gif)
 
 ### 🧠 脑图功能
 
-集成脑图功能用于测试用例编写（开发中）。
+集成脑图功能用于测试用例编写。
 
 ![脑图](resource/mind.png)
 
 ### 📊 业务步骤详情结果
 
-展示业务步骤的详细执行结果。
-
-![业务步骤详情](resource/caseContentResult.png)
-
-### 📝 业务步骤日志
-
-展示业务步骤的详细执行日志。
-
-![业务步骤日志](resource/caseContentLog.png)
 
 ### ⏰ Job管理
 
 任务与定时任务分离，支持任务池管理。
 
 ![Job管理](resource/job.png)
+
+
+
+## 📋 用例&需求管理
+
+添加需求-管理测试用例
+
+### 需求表
+![用例需求管理](resource/reqTable.png)
+
+### 需求用例
+![需求用例](resource/reqCase.png)
+
+### 用例详情
+![用例详情](resource/text_case.png)
 
 ---
 
@@ -588,6 +600,11 @@ Smtp_port = 578
 - 优化前端代码、接口修改操作优化
 - 添加DB链接测试接口
 
+
+
+### 2026-04-02
+- 前端代码通过AI 样式重构设计
+- 用例管理重构优化
 ---
 
 ## 🤝 贡献指南
