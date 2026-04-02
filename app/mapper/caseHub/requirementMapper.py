@@ -84,6 +84,54 @@ class RequirementMapper(Mapper[Requirement]):
             raise
 
     @classmethod
+    async def update_cases_review(cls, requirement_id: int, case_ids: List[int], user: User,
+                                  is_review: bool,
+                                  ):
+        """
+        批量修改评审状态
+        """
+        try:
+            async with cls.transaction() as session:
+                stmt = update(RequirementCaseAssociation).where(
+                    and_(
+                        RequirementCaseAssociation.requirement_id == requirement_id,
+                        RequirementCaseAssociation.case_id.in_(case_ids),
+                    )
+                ).values(
+                    {
+                        "is_review": is_review,
+                    }
+                )
+                await session.execute(stmt)
+        except Exception as e:
+            log.error(e)
+            raise
+
+    @classmethod
+    async def batch_update_status(cls, requirement_id: int, case_ids: List[int], user: User,
+                                  case_status: int,
+                                  ):
+        """
+        批量修改用例状态
+        """
+        try:
+            async with cls.transaction() as session:
+                stmt = update(RequirementCaseAssociation).where(
+                    and_(
+                        RequirementCaseAssociation.requirement_id == requirement_id,
+                        RequirementCaseAssociation.case_id.in_(case_ids),
+                    )
+                ).values(
+                    {
+                        "case_status": case_status,
+                    }
+                )
+                await session.execute(stmt)
+        except Exception as e:
+            log.error(e)
+            raise
+
+    @classmethod
     async def insert_requirement(cls, user: User, case_ids: Optional[List[int]] = None, **kwargs) -> Requirement:
         """
         插入需求
@@ -141,5 +189,3 @@ class RequirementMapper(Mapper[Requirement]):
                 reqInfo['developsInfo'] = [dev.userInfo for dev in devs]
 
             return reqInfo
-
-

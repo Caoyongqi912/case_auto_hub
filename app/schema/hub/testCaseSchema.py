@@ -155,16 +155,7 @@ class UpdateTestCaseStep(BaseModel):
     order: Optional[int] = Field(None, description="排序序号")
 
 
-class SetCasesStatusSchema(BaseModel):
-    """设置多个用例状态模型"""
-    case_ids: List[int] = Field(..., description="用例ID列表")
-    status: int = Field(..., description="状态值")
 
-
-class SetCasesReviewSchema(BaseModel):
-    """设置多个用例状态评审"""
-    case_ids: List[int] = Field(..., description="用例ID列表")
-    is_review: bool = Field(..., description="状态值")
 
 
 class SetCasesCommonSchema(BaseModel):

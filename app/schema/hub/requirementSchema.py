@@ -79,3 +79,17 @@ class PageRequirementsSchema(PageSchema):
     process: Optional[int] = Field(None, description="需求进度")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
+
+
+class SetCasesStatusSchema(BaseModel):
+    """设置多个用例状态模型"""
+    requirement_id: int = Field(...,description="需求ID")
+    case_ids: List[int] = Field(..., description="用例ID列表")
+    case_status: int = Field(..., description="状态值")
+
+
+class SetCasesReviewSchema(BaseModel):
+    """设置多个用例状态评审"""
+    requirement_id: int = Field(...,description="需求ID")
+    case_ids: List[int] = Field(..., description="用例ID列表")
+    is_review: bool = Field(..., description="状态值")

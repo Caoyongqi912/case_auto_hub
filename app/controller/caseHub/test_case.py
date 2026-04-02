@@ -12,10 +12,10 @@ from fastapi.responses import FileResponse
 
 from app.mapper.caseHub import TestCaseMapper, TestCaseStepMapper, CaseDynamicMapper
 from app.schema.hub.testCaseSchema import (
-    AddTestCaseSchema, PageTestCaseSchema, AddDefaultCaseSchema, AddNextCaseSchema,
+    AddTestCaseSchema, PageTestCaseSchema, AddDefaultCaseSchema,
     UpdateTestCaseSchema, QueryTestCaseSchemaByField, RemoveCaseSchema, RemoveCaseStep,
     CopyCase, CopyCaseStep, AddDefaultCaseStep, UpdateTestCaseStep, ReorderCaseStep,
-    UpdateTestCaseStatusSchema, SetCasesStatusSchema, SetCasesCommonSchema, SetCasesReviewSchema
+    UpdateTestCaseStatusSchema, SetCasesCommonSchema
 )
 from app.controller import Authentication
 from app.model.base import User
@@ -275,28 +275,6 @@ async def download_case_template(_: User = Depends(Authentication())):
     )
 
 
-@router.post("/updateStatus", description="批量更新用例状态")
-async def batch_update_status(data: SetCasesStatusSchema, user: User = Depends(Authentication())):
-    """
-    批量更新多个用例的状态
-    :param data: 用例ID列表及目标状态
-    :param user: 认证用户
-    :return: 操作结果
-    """
-    await TestCaseMapper.update_cases_status(user=user, **data.model_dump())
-    return Response.success()
-
-
-@router.post("/updateReview", description="批量更新用例评审")
-async def batch_update_status(data: SetCasesReviewSchema, user: User = Depends(Authentication())):
-    """
-    批量更新多个用例的状态
-    :param data: 用例ID列表及目标状态
-    :param user: 认证用户
-    :return: 操作结果
-    """
-    await TestCaseMapper.update_cases_review(user=user, **data.model_dump())
-    return Response.success()
 
 
 @router.post("/updateCommon", description="批量设置公共用例")

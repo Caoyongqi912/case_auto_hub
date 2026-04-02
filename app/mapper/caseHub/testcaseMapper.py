@@ -264,7 +264,10 @@ class TestCaseMapper(Mapper[TestCase]):
                             RequirementCaseAssociation(
                                 requirement_id=requirement_id,
                                 case_id=case_index,
-                                order=last_order
+                                order=last_order,
+                                is_review=False,
+                                case_type=case_data.get("case_type", None),
+                                case_status=case_data.get("case_status", None),
                             )
                         )
 

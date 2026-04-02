@@ -25,7 +25,7 @@ class AsyncFilesReader:
         file_content = await file.read()
         file_bytes = BytesIO(file_content)
         loop = asyncio.get_event_loop()
-        return await self.tph.run_in_exe(loop, self.__read, file_bytes)
+        return self.tph.run_in_exe(loop, self.__read, file_bytes)
 
     @staticmethod
     def __read(file: BytesIO) -> tuple[List[Dict[str, Any]], List[str]]:
