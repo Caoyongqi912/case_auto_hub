@@ -131,8 +131,7 @@ class CaseDynamicMapper(Mapper[CaseStepDynamic]):
             session=session,
             description=f"{cr.username} 创建了测试用例。 {test_case.case_name}",
             test_case_id=test_case.id,
-            creator=cr.id,
-            creatorName=cr.username
+            creator_user=cr,
         )
 
     @classmethod

@@ -231,7 +231,6 @@ class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
         """
         关联条件
         """
-        from .interfaceMapper import InterfaceConditionMapper
 
         async with async_session() as session:
             async with session.begin():
