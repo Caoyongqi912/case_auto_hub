@@ -6,23 +6,45 @@
 # @Software: PyCharm
 # @Desc: 用例 Mapper - 处理用例及其步骤内容的管理
 
-from typing import List, Sequence, Dict, Any
+import asyncio
+from typing import List, Sequence, Dict, Callable
 
 from sqlalchemy import select, insert, delete, update
+from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
 from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
 from app.model import async_session
-from app.model.interfaceAPIModel.associationModel import InterfaceCaseStepContentAssociation
 from app.mapper import Mapper
 from app.model.base import User
-from app.model.interfaceAPIModel.contents import InterfaceCaseContents
+from app.model.interfaceAPIModel import contents
+from app.model.interfaceAPIModel.contents import (
+    InterfaceCaseContents,
+    APIStepContent,
+    ConditionStepContent,
+    LoopStepContent,
+    GroupStepContent,
+    DBStepContent,
+    WhileStepContent,
+)
 from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.mapper.interfaceApi.interfaceCaseContentMapper import InterfaceCaseContentMapper
 from enums.CaseEnum import CaseStepContentType
 from utils import log
+
+
+
+
+
+STEP_DELETE_STRATEGIES: Dict[CaseStepContentType, Callable[[int, AsyncSession], bool]] = {
+    CaseStepContentType.STEP_API: InterfaceMapper.remove_self_interface,
+    CaseStepContentType.STEP_API_CONDITION: InterfaceConditionMapper.delete_condition,
+    CaseStepContentType.STEP_LOOP: InterfaceLoopMapper.delete_loop,
+}
+
+
 
 
 class InterfaceCaseMapper(Mapper[InterfaceCase]):
@@ -278,80 +300,22 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
         try:
             async with cls.transaction() as session:
-                # 构建批量更新数据
-                update_values = []
-                for index, step_id in enumerate(content_step_order, start=1):
-                    update_values.append({
+                update_values = [
+                    {
                         "interface_case_content_id": step_id,
                         "interface_case_id": case_id,
                         "step_order": index
-                    })
-
-                # 批量更新
-                if update_values:
-                    await session.execute(
-                        update(InterfaceCaseStepContentAssociation),
-                        update_values
-                    )
+                    }
+                    for index, step_id in enumerate(content_step_order, start=1)
+                ]
+                await session.execute(
+                    update(InterfaceCaseStepContentAssociation),
+                    update_values
+                )
         except Exception as e:
             log.error(f"reorder_steps error: {e}")
             raise
 
-    @classmethod
-    async def remove_step(cls, case_id: int, content_id: int) -> None:
-        """
-        移除用例步骤
-
-        根据步骤类型执行不同的删除逻辑：
-        - 私有 API：删除关联的接口
-        - 条件步骤：删除关联的条件
-        - 其他步骤：仅删除步骤内容
-
-        Args:
-            case_id: 用例 ID
-            content_id: 步骤内容 ID
-        """
-        try:
-            async with cls.transaction() as session:
-                case = await cls.get_by_id(session=session, ident=case_id)
-
-
-                content = await InterfaceCaseContentMapper.get_by_id(
-                    ident=content_id, session=session
-                )
-
-                log.info(f"delete content type={content.content_type}")
-
-                # 根据类型执行不同的删除逻辑
-                if content.content_type == CaseStepContentType.STEP_API:
-                    # 私有 API 需要删除接口
-                    interface = await InterfaceMapper.get_by_id(
-                        ident=content.target_id, session=session
-                    )
-                    if interface and not interface.is_common:
-                        await session.delete(interface)
-
-
-                elif content.content_type == CaseStepContentType.STEP_API_CONDITION:
-                    # 条件步骤需要删除条件
-                    condition = await InterfaceConditionMapper.get_by_id(
-                        ident=content.target_id, session=session
-                    )
-                    if condition:
-                        await session.delete(condition)
-
-                elif content.content_type == CaseStepContentType.STEP_LOOP:
-                    # 循环步骤需要删除循环
-                    loop = await InterfaceLoopMapper.get_by_id(
-                        ident=content.target_id, session=session
-                    )
-                    if loop:
-                        await session.delete(loop)
-                if case.case_api_num > 0:
-                    case.case_api_num -= 1
-        except Exception as e:
-            log.error(f"remove_step error: {e}")
-            raise
 
     @classmethod
     async def copy_step(cls, case_id: int, content_id: int, user: User)->None:
@@ -382,6 +346,8 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         except Exception as e:
             log.error(f"copy_step error: {e}")
             raise
+    
+    
     @classmethod
     async def copy_case(cls, case_id: int, user: User) -> None:
         """
@@ -407,22 +373,36 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 await cls.add_flush_expunge(session, new_case)
 
                 contents = await cls.query_steps(case_id=case_id, session=session)
-                for content in contents:
+
+                # 按原顺序串行复制（或并发后保持顺序）
+                new_contents = []
+                for content in contents:  # ✅ 串行，保持顺序
                     new_content = await InterfaceCaseContentMapper.copy_content(
-                        content_id=content.id,
-                        user=user,
-                        session=session
+                        content=content,
+                        session=session,
+                        user=user
                     )
-                    last_index = await cls._get_last_step_order(new_case.id, session)
-                    await  cls._create_association(
-                        session, new_case.id, new_content.id, last_index + 1
-                    )
+                    new_contents.append(new_content)
+
+                # ✅ 用 new_case.id 和 new_contents，按索引顺序设置 step_order
+                assoc_values = [
+                    {
+                        "interface_case_id": new_case.id,                   
+                        "interface_case_content_id": new_content.id, 
+                        "step_order": index
+                    }
+                    for index, new_content in enumerate(new_contents, start=1)
+                ]
+                await session.execute(
+                     insert(InterfaceCaseStepContentAssociation).values(assoc_values)
+                )
+                
         except Exception as e:
             log.error(e)
             raise
 
     @classmethod
-    async def delete_case(cls, case_id: int) -> None:
+    async def remove_case(cls, case_id: int) -> None:
         """
         删除用例
 
@@ -439,11 +419,56 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             async with cls.transaction() as session:
                 case = await cls.get_by_id(session=session, ident=case_id)
                 contents = await cls.query_steps(case_id, session)
-                # todo
+
+                delete_tasks = []
+                for content in contents:
+                    strategy_func = STEP_DELETE_STRATEGIES.get(content.content_type)
+                    if strategy_func:
+                        delete_tasks.append(strategy_func(content.target_id, session))
+
+                for i in range(0, len(delete_tasks), 5):
+                    batch = delete_tasks[i:i + 5]
+                    await asyncio.gather(*batch)
 
                 await session.delete(case)
         except Exception as e:
             log.error(f"delete_case error: {e}")
+            raise
+    
+    
+    
+    @classmethod
+    async def remove_step(cls, case_id: int, content_id: int) -> None:
+        """
+        移除用例步骤
+
+        根据步骤类型执行不同的删除逻辑：
+        - 私有 API：删除关联的接口
+        - 条件步骤：删除关联的条件及其关联的非公共接口
+        - 循环步骤：删除关联的循环及其关联的非公共接口
+        - 其他步骤：仅删除步骤内容
+
+        Args:
+            case_id: 用例 ID
+            content_id: 步骤内容 ID
+        """
+        try:
+            async with cls.transaction() as session:
+                case = await cls.get_by_id(session=session, ident=case_id)
+                content = await InterfaceCaseContentMapper.get_by_id(
+                    ident=content_id, session=session
+                )
+
+                log.info(f"delete content type={content.content_type}")
+
+                strategy_func = STEP_DELETE_STRATEGIES.get(content.content_type)
+                if strategy_func:
+                    await strategy_func(content.target_id, session)
+
+                if case.case_api_num > 0:
+                    case.case_api_num -= 1
+        except Exception as e:
+            log.error(f"remove_step error: {e}")
             raise
 
     # ==================== 查询操作 ====================
@@ -462,7 +487,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             session: 数据库会话（可选）
 
         Returns:
-            Sequence[InterfaceCaseContents]: 步骤内容列表，按顺序排序
+            Sequence[InterfaceCaseContents]: 步骤内容列表，按顺序排序，预加载关联数据
         """
         async def _query(s: AsyncSession):
             result = await s.scalars(
@@ -471,10 +496,18 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     InterfaceCaseStepContentAssociation,
                     InterfaceCaseContents.id == InterfaceCaseStepContentAssociation.interface_case_content_id
                 )
+                .options(
+                    joinedload(APIStepContent.interface_api),
+                    joinedload(ConditionStepContent.interface_condition),
+                    joinedload(LoopStepContent.interface_loop),
+                    joinedload(GroupStepContent.interface_group),
+                    joinedload(DBStepContent.db_execute),
+                    joinedload(WhileStepContent.interface_condition),
+                )
                 .where(InterfaceCaseStepContentAssociation.interface_case_id == case_id)
                 .order_by(InterfaceCaseStepContentAssociation.step_order)
             )
-            return result.all()
+            return result.unique().all()
 
         if session:
             return await _query(session)
@@ -525,7 +558,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             step_order: 步骤顺序
         """
         await session.execute(
-            insert(InterfaceCaseStepContentAssociation).values({
+            insert(InterfaceCaseStepContentAssociation).prefix_with("IGNORE").values({
                 "interface_case_id": case_id,
                 "interface_case_content_id": content_id,
                 "step_order": step_order
@@ -554,7 +587,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
         if values:
             await session.execute(
-                insert(InterfaceCaseStepContentAssociation).values(values)
+                insert(InterfaceCaseStepContentAssociation).prefix_with("IGNORE").values(values)
             )
 
 

@@ -23,6 +23,10 @@ from enums import ModuleEnum, InterfaceRequestTBodyTypeEnum
 from utils import log
 from utils.fileManager import API_DATA
 
+__all__ = [
+    "InterfaceMapper"
+]
+
 
 
 class InterfaceMapper(Mapper[Interface]):
@@ -157,6 +161,33 @@ class InterfaceMapper(Mapper[Interface]):
 
 
     @classmethod
+    async def remove_self_interface(cls,interface_id:int)->bool:
+        """
+        删除接口关联的文件
+
+        Args:
+            interface_id: 接口 ID
+
+        Returns:
+            bool: 是否删除成功
+        """
+        try:
+            interface = await InterfaceMapper.get_by_id(
+            ident=interface_id, session=session
+        )
+            if not interface:
+                return False
+
+            if interface.is_common:
+                return False
+
+            await session.delete(interface)
+            return True
+        except Exception as e:
+            log.error(f"remove_self_interface error: {e}")
+            raise
+    
+    @classmethod
     async def copy_interface(
         cls,
         interface_id: int,
@@ -194,6 +225,43 @@ class InterfaceMapper(Mapper[Interface]):
             log.error(f"copy_interface error: {e}")
             raise
 
+    
+    
+    @classmethod
+    async def copy_interface_with_entity(
+        cls,
+        interface: Interface,
+        user: User,
+        copy_name: bool = False,
+        is_common: bool = False
+    ) -> Interface:
+        """
+        复制接口
+
+        Args:
+            interface_id: 源接口 ID
+            user: 操作用户
+            copy_name: 是否复制名称（False 则添加"副本"后缀）
+            is_common: 是否设为公共接口
+
+        Returns:
+            Interface: 复制后的接口实例
+        """
+        try:
+            target_api_map = interface.copy_map()
+            
+            if not copy_name:
+                target_api_map['interface_name'] = f"{target_api_map['interface_name']}(副本)"
+            
+            new_interface = cls.__model__(**target_api_map)
+            new_interface.creator = user.id
+            new_interface.creatorName = user.username
+            new_interface.is_common = is_common
+            
+            return await cls.add_flush_expunge(session, new_interface)
+        except Exception as e:
+            log.error(f"copy_interface_with_entity error: {e}")
+            raise
 
 
     # ==================== 批量导入 ====================

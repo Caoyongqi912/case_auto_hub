@@ -117,7 +117,7 @@ class Mapper(Generic[M]):
             raise
 
     @classmethod
-    async def copy_one(cls, target: Union[int,BaseModel], session: AsyncSession, user: User = None) -> M:
+    async def copy_one(cls, target: Union[int,BaseModel], session: AsyncSession, user: User = None, **kwargs) -> M:
         """复制模型实例"""
         if isinstance(target, BaseModel):
             old_one = target
@@ -127,6 +127,10 @@ class Mapper(Generic[M]):
         if user:
             new_one.creator = user.id
             new_one.creatorName = user.username
+        if kwargs:
+            for k, v in kwargs.items():
+                if hasattr(new_one, k):
+                    setattr(new_one, k, v)
         return await cls.add_flush_expunge(session, new_one)
 
     @classmethod

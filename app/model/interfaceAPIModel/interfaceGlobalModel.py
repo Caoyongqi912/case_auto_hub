@@ -5,7 +5,10 @@ from sqlalchemy import Column, String, ForeignKey, INTEGER
 
 from app.model import BaseModel
 
-
+__all__ = [
+    "InterfaceGlobalHeader",
+    "InterfaceGlobalFunc"
+]
 
 
 

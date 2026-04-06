@@ -179,7 +179,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoopModal]):
             raise
 
     @classmethod
-    async def delete_loop(cls, loop_id: int, session: AsyncSession) -> None:
+    async def delete_loop(cls, loop_id: int, session: AsyncSession) -> bool:
         """
         删除循环
 
@@ -190,12 +190,84 @@ class InterfaceLoopMapper(Mapper[InterfaceLoopModal]):
             session: 数据库会话
         """
         try:
+
             await session.execute(
-                delete(InterfaceLoopModal).where(InterfaceLoopModal.id == loop_id)
+            delete(Interface).where(
+                Interface.id.in_(
+                    select(InterfaceLoopAPIAssociation.interface_api_id)
+                    .where(InterfaceLoopAPIAssociation.loop_id == loop_id)
+                ),
+                Interface.is_common == 0  # 非公共
             )
+        )
+
+
+
+            loop = await InterfaceLoopMapper.get_by_id(
+                ident=loop_id, session=session
+            )
+            if not loop:
+                return False
+            await session.delete(loop)
+            return True
         except Exception as e:
             log.error(f"delete_loop error: {e}")
             raise
+
+    @classmethod
+    async def copy_loop(cls, loop_id: int, user: User, session: AsyncSession) -> InterfaceLoopModal:
+        """
+        复制循环及其关联接口的子步骤
+        非公共接口的子步骤会复制并关联，公共接口的子步骤保持原样关联
+        step_order 与原顺序保持一致
+        :param loop_id: 循环ID
+        :param user: 用户对象
+        :param session: 会话对象
+        :return: 复制后的循环对象
+        """
+        from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
+
+        loop = await cls.get_by_id(ident=loop_id, session=session)
+        if not loop:
+            return False
+
+        new_loop = await cls.copy_one(
+            target=loop,
+            user=user,
+            session=session,
+        )
+
+        assoc_result = await session.execute(
+            select(InterfaceLoopAPIAssociation)
+            .where(InterfaceLoopAPIAssociation.loop_id == loop_id)
+            .order_by(InterfaceLoopAPIAssociation.step_order)
+        )
+        original_assocs = assoc_result.scalars().all()
+
+        new_assocs = []
+        for assoc in original_assocs:
+            original_interface = await InterfaceMapper.get_by_id(ident=assoc.interface_api_id, session=session)
+            if original_interface.is_common:
+                new_interface_id = original_interface.id
+            else:
+                new_interface = await InterfaceMapper.copy_one(
+                    target=original_interface,
+                    user=user,
+                    session=session,
+                    is_common=False,
+                )
+                new_interface_id = new_interface.id
+
+            new_assocs.append({
+                "loop_id": new_loop.id,
+                "interface_api_id": new_interface_id,
+                "step_order": assoc.step_order
+            })
+
+        if new_assocs:
+            await session.execute(insert(InterfaceLoopAPIAssociation), new_assocs)
+
+        return new_loop
 
     @classmethod
     async def get_last_step_order(cls, loop_id: int, session: AsyncSession) -> int:

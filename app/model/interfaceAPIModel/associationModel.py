@@ -105,12 +105,12 @@ class InterfaceGroupAPIAssociation(base):
     """
     __tablename__ = "interface_group_api_association"
     
-    interface_group_id = Column(
+    group_id = Column(
         INTEGER, 
         ForeignKey('interface_group.id', ondelete="CASCADE"), 
         primary_key=True
     )
-    interface_api_id = Column(
+    interface_id = Column(
         INTEGER, 
         ForeignKey('interface.id', ondelete="CASCADE"), 
         primary_key=True
@@ -118,12 +118,12 @@ class InterfaceGroupAPIAssociation(base):
     step_order = Column(INTEGER, nullable=False, default=0, comment="接口在组中的顺序")
 
     __table_args__ = (
-        Index('idx_group_api_order', 'interface_group_id', 'step_order'),
-        UniqueConstraint('interface_group_id', 'step_order', name='uq_group_api_order'),
+        Index('idx_group_api_order', 'group_id', 'step_order'),
+        UniqueConstraint('group_id', 'step_order', name='uq_group_api_order'),
     )
 
     def __repr__(self):
-        return f"<GroupAPIAssociation(group_id={self.interface_group_id}, api_id={self.interface_api_id}, order={self.step_order})>"
+        return f"<GroupAPIAssociation(group_id={self.group_id}, api_id={self.interface_id}, order={self.step_order})>"
 
 
 class InterfaceConditionAPIAssociation(base):

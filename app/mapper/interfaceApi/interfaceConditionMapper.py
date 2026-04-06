@@ -6,7 +6,7 @@
 # @Software: PyCharm
 # @Desc: 条件 Mapper - 处理条件及其关联接口的管理
 
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy import select, delete, insert, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,35 +48,43 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
         return await cls.add_flush_expunge(session, condition)
 
     @classmethod
-    async def query_interfaces_by_condition_id(cls, condition_id: int) -> List[Interface]:
+    async def query_interfaces_by_condition_id(cls, condition_id: int, session: Optional[AsyncSession] = None) -> List[Interface]:
         """
         查询条件关联的接口列表
 
         Args:
             condition_id: 条件 ID
+            session: 数据库会话（可选，不传则自动创建）
 
         Returns:
             List[Interface]: 接口列表，按执行顺序排序
         """
+        should_close = False
         try:
-            async with async_session() as session:
-                stmt = (
-                    select(Interface)
-                    .join(InterfaceConditionAPIAssociation)
-                    .where(
-                        InterfaceConditionAPIAssociation.condition_id == condition_id,
-                        Interface.id == InterfaceConditionAPIAssociation.interface_api_id
-                    )
-                    .order_by(InterfaceConditionAPIAssociation.step_order)
+            if not session:
+                session = async_session()
+                should_close = True
+
+            stmt = (
+                select(Interface)
+                .join(InterfaceConditionAPIAssociation)
+                .where(
+                    InterfaceConditionAPIAssociation.condition_id == condition_id,
+                    Interface.id == InterfaceConditionAPIAssociation.interface_api_id
                 )
-                result = await session.scalars(stmt)
-                return result.all()
+                .order_by(InterfaceConditionAPIAssociation.step_order)
+            )
+            result = await session.scalars(stmt)
+            return result.all()
         except Exception as e:
             log.error(f"query_interfaces_by_condition_id error: {e}")
             raise
+        finally:
+            if should_close:
+                await session.close()
 
     @classmethod
-    async def delete_condition(cls, condition_id: int, session: AsyncSession) -> None:
+    async def delete_condition(cls, condition_id: int, session: AsyncSession) -> bool:
         """
         删除条件
 
@@ -87,9 +95,24 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
             session: 数据库会话
         """
         try:
+
+
             await session.execute(
-                delete(InterfaceCondition).where(InterfaceCondition.id == condition_id)
+            delete(Interface).where(
+                Interface.id.in_(
+                    select(InterfaceConditionAPIAssociation.interface_api_id)
+                    .where(InterfaceConditionAPIAssociation.condition_id == condition_id)
+                ),
+                Interface.is_common == 0  # 非公共
             )
+        )
+            condition = await cls.get_by_id(
+                ident=condition_id, session=session
+            )
+            if not condition:
+                return False
+            await session.delete(condition)
+            return True
         except Exception as e:
             log.error(f"delete_condition error: {e}")
             raise
@@ -113,9 +136,6 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
         except Exception as e:
             log.error(f"associate_interfaces error: {e}")
             raise
-
-
-
 
     @classmethod
     async def remove_association_interface(cls, condition_id: int, interface_id: int):
@@ -165,6 +185,60 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
                 log.error(f'reorder_condition_apis error: {e}')
                 raise
 
+
+
+    @classmethod
+    async def copy_condition(cls, condition_id: int, user: User, session: AsyncSession) -> InterfaceCondition:
+        """
+        复制条件及其关联接口的子步骤
+        非公共接口的子步骤会复制并关联，公共接口的子步骤保持原样关联
+        step_order 与原顺序保持一致
+        :param condition_id: 条件ID
+        :param user: 用户对象
+        :param session: 会话对象
+        :return: 复制后的条件对象
+        """
+        from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
+        condition = await cls.get_by_id(ident=condition_id,session=session)
+        if not condition:
+            return False
+        new_condition = await cls.copy_one(
+            target=condition,
+            user=user,
+            session=session,
+        )
+
+        assoc_result = await session.execute(
+            select(InterfaceConditionAPIAssociation)
+            .where(InterfaceConditionAPIAssociation.condition_id == condition_id)
+            .order_by(InterfaceConditionAPIAssociation.step_order)
+        )
+        original_assocs = assoc_result.scalars().all()
+
+        new_assocs = []
+        for assoc in original_assocs:
+            original_interface = await InterfaceMapper.get_by_id(ident=assoc.interface_api_id, session=session)
+            if original_interface.is_common:
+                new_interface_id = original_interface.id
+            else:
+                new_interface = await InterfaceMapper.copy_one(
+                    target=original_interface,
+                    user=user,
+                    session=session,
+                    is_common=False,
+                )
+                new_interface_id = new_interface.id
+
+            new_assocs.append({
+                "condition_id": new_condition.id,
+                "interface_api_id": new_interface_id,
+                "step_order": assoc.step_order
+            })
+
+        if new_assocs:
+            await session.execute(insert(InterfaceConditionAPIAssociation), new_assocs)
+
+        return new_condition
 
 class LastIndexHelper:
     """索引查询辅助类"""
