@@ -1,132 +1,180 @@
-from typing import List
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2026/4/7
+# @Author : cyq
+# @File : interfaceTaskMapper
+# @Software: PyCharm
+# @Desc: 任务 Mapper - 处理任务及其关联接口/用例的管理
 
-from app.model import async_session
+from typing import List, Optional
+
+from sqlalchemy import and_, delete, insert
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from app.mapper import Mapper
 from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
 from app.model.interfaceAPIModel.interfaceModel import Interface
 from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
-from app.model.interfaceAPIModel.associationModel import InterfaceCaseTaskAssociation,InterfaceAPITaskAssociation
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_,delete,insert,update
-from sqlalchemy import select
-from app.mapper import Mapper
+from app.model.interfaceAPIModel.associationModel import (
+    InterfaceCaseTaskAssociation,
+    InterfaceAPITaskAssociation,
+)
+from utils import log
 
 
-__all__ = [
-    "InterfaceTaskMapper"
-]
+__all__ = ["InterfaceTaskMapper"]
+
+
 class InterfaceTaskMapper(Mapper[InterfaceTask]):
     __model__ = InterfaceTask
 
-
     @classmethod
-    async def query_association_interfaces(cls,task_id:int) -> list[Interface]:
+    async def query_association_interfaces(
+            cls,
+            task_id: int,
+            session: Optional[AsyncSession] = None
+    ) -> List[Interface]:
         """
-        查询接口关联
+        查询任务关联的接口列表
+
+        Args:
+            task_id: 任务ID
+            session: 可选数据库会话
         """
-        try:
-            async with async_session() as session:
-                result = await session.scalars(
-                    select(Interface).join(
-                        InterfaceAPITaskAssociation,
-                        InterfaceAPITaskAssociation.interface_api_id == Interface.id
-                    ).where(
-                        InterfaceAPITaskAssociation.interface_task_id == task_id
-                    ).order_by(
-                        InterfaceAPITaskAssociation.step_order
-                    )
+        async def _query(s: AsyncSession):
+            result = await s.scalars(
+                select(Interface)
+                .join(
+                    InterfaceAPITaskAssociation,
+                    InterfaceAPITaskAssociation.interface_api_id == Interface.id
                 )
-                return result.all()
-        except Exception as e:
-            raise e 
+                .where(InterfaceAPITaskAssociation.interface_task_id == task_id)
+                .order_by(InterfaceAPITaskAssociation.step_order)
+            )
+            return result.all()
 
-
+        if session:
+            return await _query(session)
+        async with cls.transaction() as s:
+            return await _query(s)
 
     @classmethod
-    async def query_association_interface_cases(cls,task_id:int) -> list[InterfaceCase]:
+    async def query_association_interface_cases(
+            cls,
+            task_id: int,
+            session: Optional[AsyncSession] = None
+    ) -> List[InterfaceCase]:
         """
-        查询接口业务关联
+        查询任务关联的用例列表
+
+        Args:
+            task_id: 任务ID
+            session: 可选数据库会话
         """
-        try:
-            async with async_session() as session:
-                result = await session.scalars(
-                    select(InterfaceCase).join(
-                        InterfaceCaseTaskAssociation,
-                        InterfaceCaseTaskAssociation.interface_case_id == InterfaceCase.id
-                    ).where(
-                        InterfaceCaseTaskAssociation.interface_task_id == task_id
-                    ).order_by(
-                        InterfaceCaseTaskAssociation.step_order
-                    )
+        async def _query(s: AsyncSession):
+            result = await s.scalars(
+                select(InterfaceCase)
+                .join(
+                    InterfaceCaseTaskAssociation,
+                    InterfaceCaseTaskAssociation.interface_case_id == InterfaceCase.id
                 )
-                return result.all()
-        except Exception as e:
-            raise e 
+                .where(InterfaceCaseTaskAssociation.interface_task_id == task_id)
+                .order_by(InterfaceCaseTaskAssociation.step_order)
+            )
+            return result.all()
 
-
+        if session:
+            return await _query(session)
+        async with cls.transaction() as s:
+            return await _query(s)
 
     @classmethod
-    async def association_interfaces(cls,task_id:int,interface_ids:list[int]) -> bool:
+    async def association_interfaces(
+            cls,
+            task_id: int,
+            interface_ids: List[int]
+    ) -> bool:
         """
         关联接口到任务
+
+        Args:
+            task_id: 任务ID
+            interface_ids: 接口ID列表
         """
+        if not interface_ids:
+            return False
+
         try:
             async with cls.transaction() as session:
-                if not interface_ids:
-                    return False
-                task = await cls.get_by_id(ident=task_id,session=session)
+                task = await cls.get_by_id(ident=task_id, session=session)
                 if not task:
                     return False
 
-                last_step_order = await cls.get_api_last_index(task_id=task_id,session=session)
-                await cls.insert_interfaces_task_association(session=session,
-                            task_id=task_id,
-                            interface_ids=interface_ids,
-                            step_order=last_step_order)
+                last_step_order = await cls.get_api_last_index(task_id=task_id, session=session)
+                await cls._insert_interfaces_association(
+                    session=session,
+                    task_id=task_id,
+                    interface_ids=interface_ids,
+                    start_order=last_step_order
+                )
                 task.interface_task_total_apis_num += len(interface_ids)
                 return True
         except Exception as e:
-            raise e
-
-    
+            log.error(f"association_interfaces error: {e}")
+            raise
 
     @classmethod
-    async def association_interface_cases(cls,task_id:int,case_ids:list[int]) -> bool:
+    async def association_interface_cases(
+            cls,
+            task_id: int,
+            case_ids: List[int]
+    ) -> bool:
         """
-        关联接口业务到任务  
+        关联用例到任务
+
+        Args:
+            task_id: 任务ID
+            case_ids: 用例ID列表
         """
+        if not case_ids:
+            return False
+
         try:
             async with cls.transaction() as session:
-                if not case_ids:
-
-                    return False
-                task = await cls.get_by_id(ident=task_id,session=session)
+                task = await cls.get_by_id(ident=task_id, session=session)
                 if not task:
                     return False
 
-                last_step_order = await cls.get_case_last_index(task_id=task_id,session=session)
-                await cls.insert_cases_task_association(session=session,
-                            task_id=task_id,
-                            case_ids=case_ids,
-                            step_order=last_step_order)
+                last_step_order = await cls.get_case_last_index(task_id=task_id, session=session)
+                await cls._insert_cases_association(
+                    session=session,
+                    task_id=task_id,
+                    case_ids=case_ids,
+                    start_order=last_step_order
+                )
                 task.interface_task_total_cases_num += len(case_ids)
                 return True
         except Exception as e:
-            raise e
-
-
-    
+            log.error(f"association_interface_cases error: {e}")
+            raise
 
     @classmethod
-    async def remove_association_interface(cls,task_id:int,interface_id:int) -> bool:
+    async def remove_association_interface(
+            cls,
+            task_id: int,
+            interface_id: int
+    ) -> bool:
         """
-        解除关联
-        :param task_id: 任务ID
-        :param interface_id: 接口ID
+        解除接口与任务的关联
+
+        Args:
+            task_id: 任务ID
+            interface_id: 接口ID
         """
         try:
             async with cls.transaction() as session:
-                task = await cls.get_by_id(ident=task_id,session=session)
-                await session.execute(
+                result = await session.execute(
                     delete(InterfaceAPITaskAssociation).where(
                         and_(
                             InterfaceAPITaskAssociation.interface_task_id == task_id,
@@ -134,27 +182,33 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                         )
                     )
                 )
-                task.interface_task_total_apis_num -= 1
+                if result.rowcount == 0:
+                    return False
+
+                task = await cls.get_by_id(ident=task_id, session=session)
+                if task and task.interface_task_total_apis_num > 0:
+                    task.interface_task_total_apis_num -= 1
                 return True
         except Exception as e:
-            raise e
-
-
-
-
-
+            log.error(f"remove_association_interface error: {e}")
+            raise
 
     @classmethod
-    async def remove_association_interface_case(cls,task_id:int,case_id:int) -> bool:
+    async def remove_association_interface_case(
+            cls,
+            task_id: int,
+            case_id: int
+    ) -> bool:
         """
-        解除关联
-        :param task_id: 任务ID
-        :param case_id: 接口业务ID
+        解除用例与任务的关联
+
+        Args:
+            task_id: 任务ID
+            case_id: 用例ID
         """
         try:
             async with cls.transaction() as session:
-                task = await cls.get_by_id(ident=task_id,session=session)
-                await session.execute(
+                result = await session.execute(
                     delete(InterfaceCaseTaskAssociation).where(
                         and_(
                             InterfaceCaseTaskAssociation.interface_task_id == task_id,
@@ -162,139 +216,187 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                         )
                     )
                 )
-                task.interface_task_total_cases_num -= 1
+                if result.rowcount == 0:
+                    return False
+
+                task = await cls.get_by_id(ident=task_id, session=session)
+                if task and task.interface_task_total_cases_num > 0:
+                    task.interface_task_total_cases_num -= 1
                 return True
         except Exception as e:
-            raise e
+            log.error(f"remove_association_interface_case error: {e}")
+            raise
 
     @classmethod
-    async def reorder_interface(cls,task_id:int,interface_ids:list[int]) -> bool:
+    async def reorder_interface(
+            cls,
+            task_id: int,
+            interface_ids: List[int]
+    ) -> bool:
         """
-        子步骤重新排序
-        :param task_id: 任务ID
-        :param interface_ids: 接口ID列表
+        重新排序任务关联的接口（先删后插策略）
+
+        Args:
+            task_id: 任务ID
+            interface_ids: 按新顺序排列的接口ID列表
         """
+        if not interface_ids:
+            return False
+
         try:
             async with cls.transaction() as session:
-                update_values = []
-                for index, interface_id in enumerate(interface_ids, start=1):
-                    update_values.append({
+                await session.execute(
+                    delete(InterfaceAPITaskAssociation).where(
+                        InterfaceAPITaskAssociation.interface_task_id == task_id
+                    )
+                )
+
+                values = [
+                    {
                         "interface_task_id": task_id,
                         "interface_api_id": interface_id,
                         "step_order": index
-                    })
-                await session.execute(
-                    update(InterfaceAPITaskAssociation).values(
-                        update_values
-                    )
-                )
+                    }
+                    for index, interface_id in enumerate(interface_ids, start=1)
+                ]
+                await session.execute(insert(InterfaceAPITaskAssociation).values(values))
                 return True
         except Exception as e:
-            raise e
-
+            log.error(f"reorder_interface error: {e}")
+            raise
 
     @classmethod
-    async def reorder_interface_case(cls,task_id:int,case_ids:list[int]) -> bool:
+    async def reorder_interface_case(
+            cls,
+            task_id: int,
+            case_ids: List[int]
+    ) -> bool:
         """
-        子步骤重新排序
-        :param task_id: 任务ID
-        :param case_ids: 接口业务ID列表
+        重新排序任务关联的用例（先删后插策略）
+
+        Args:
+            task_id: 任务ID
+            case_ids: 按新顺序排列的用例ID列表
         """
+        if not case_ids:
+            return False
+
         try:
             async with cls.transaction() as session:
-                update_values = []
-                for index, case_id in enumerate(case_ids, start=1):
-                    update_values.append({
+                await session.execute(
+                    delete(InterfaceCaseTaskAssociation).where(
+                        InterfaceCaseTaskAssociation.interface_task_id == task_id
+                    )
+                )
+
+                values = [
+                    {
                         "interface_task_id": task_id,
                         "interface_case_id": case_id,
                         "step_order": index
-                    })
-                await session.execute(
-                    update(InterfaceCaseTaskAssociation).values(
-                        update_values
-                    )
-                )
+                    }
+                    for index, case_id in enumerate(case_ids, start=1)
+                ]
+                await session.execute(insert(InterfaceCaseTaskAssociation).values(values))
+                return True
         except Exception as e:
-            raise e
-
-
+            log.error(f"reorder_interface_case error: {e}")
+            raise
 
     @staticmethod
-    async def get_case_last_index(task_id:int,session:AsyncSession) -> int:
+    async def get_case_last_index(task_id: int, session: AsyncSession) -> int:
         """
-        获取接口业务索引
+        获取用例关联的最大排序值
+
+        Args:
+            task_id: 任务ID
+            session: 数据库会话
         """
-        try:
-            result = await session.execute(
-                select(InterfaceCaseTaskAssociation.step_order).where(
-                    InterfaceCaseTaskAssociation.interface_task_id == task_id
-                ).order_by(
-                    InterfaceCaseTaskAssociation.step_order.desc()
-                ).limit(1)
-            )
-            last_step_order = result.scalar()  # 获取第一个结果
-            # 如果查询结果为 None，则返回 0；否则返回查询到的值
-            return last_step_order if last_step_order is not None else 0
-        except Exception as e:
-            raise e
+        result = await session.execute(
+            select(InterfaceCaseTaskAssociation.step_order)
+            .where(InterfaceCaseTaskAssociation.interface_task_id == task_id)
+            .order_by(InterfaceCaseTaskAssociation.step_order.desc())
+            .limit(1)
+        )
+        last_step_order = result.scalar()
+        return last_step_order if last_step_order is not None else 0
 
     @staticmethod
-    async def get_api_last_index(task_id:int,session:AsyncSession) -> int:
+    async def get_api_last_index(task_id: int, session: AsyncSession) -> int:
+        """
+        获取接口关联的最大排序值
 
+        Args:
+            task_id: 任务ID
+            session: 数据库会话
         """
-        获取接口索引
-        """
-        try:
-            result = await session.execute(
-                select(InterfaceAPITaskAssociation.step_order).where(
-                    InterfaceAPITaskAssociation.interface_task_id == task_id
-                ).order_by(
-                    InterfaceAPITaskAssociation.step_order.desc()
-                ).limit(1)
-            )
-            last_step_order = result.scalar()  # 获取第一个结果
-            # 如果查询结果为 None，则返回 0；否则返回查询到的值
-            return last_step_order if last_step_order is not None else 0
-        except Exception as e:
-            raise e
-    
+        result = await session.execute(
+            select(InterfaceAPITaskAssociation.step_order)
+            .where(InterfaceAPITaskAssociation.interface_task_id == task_id)
+            .order_by(InterfaceAPITaskAssociation.step_order.desc())
+            .limit(1)
+        )
+        last_step_order = result.scalar()
+        return last_step_order if last_step_order is not None else 0
 
     @staticmethod
-    async def insert_cases_task_association(session:AsyncSession,task_id:int,case_ids:List[int],step_order:int):
-        try:
-            values = [
+    async def _insert_cases_association(
+            session: AsyncSession,
+            task_id: int,
+            case_ids: List[int],
+            start_order: int
+    ):
+        """
+        批量插入用例关联（内部方法）
+
+        Args:
+            session: 数据库会话
+            task_id: 任务ID
+            case_ids: 用例ID列表
+            start_order: 起始排序值
+        """
+        if not case_ids:
+            return
+
+        values = [
             {
                 "interface_task_id": task_id,
                 "interface_case_id": case_id,
                 "step_order": index
-            } for index, case_id in enumerate(case_ids, start=step_order + 1)
-            ]
-            if values:
-                await session.execute(
-                        insert(InterfaceCaseTaskAssociation).prefix_with("IGNORE")
-                        .values(values)
-                    )
-        except Exception as e:
-            raise e
-
+            }
+            for index, case_id in enumerate(case_ids, start=start_order + 1)
+        ]
+        await session.execute(
+            insert(InterfaceCaseTaskAssociation).prefix_with("IGNORE").values(values)
+        )
 
     @staticmethod
-    async def insert_interfaces_task_association(session:AsyncSession,task_id:int,interface_ids:list[int],step_order:int):
+    async def _insert_interfaces_association(
+            session: AsyncSession,
+            task_id: int,
+            interface_ids: List[int],
+            start_order: int
+    ):
         """
-        插入接口任务关联
+        批量插入接口关联（内部方法）
+
+        Args:
+            session: 数据库会话
+            task_id: 任务ID
+            interface_ids: 接口ID列表
+            start_order: 起始排序值
         """
-        try:
-            values = [
+        if not interface_ids:
+            return
+
+        values = [
             {
                 "interface_task_id": task_id,
-                "interface_api_id": interface_api_id,
+                "interface_api_id": interface_id,
                 "step_order": index
-            } for index, interface_api_id in enumerate(interface_ids, start=step_order + 1)
-            ]
-            if values:
-                await session.execute(
-                        insert(InterfaceAPITaskAssociation).prefix_with("IGNORE")
-                        .values(values)
-                    )
-        except Exception as e:
-            raise e
+            }
+            for index, interface_id in enumerate(interface_ids, start=start_order + 1)
+        ]
+        await session.execute(
+            insert(InterfaceAPITaskAssociation).prefix_with("IGNORE").values(values)
+        )

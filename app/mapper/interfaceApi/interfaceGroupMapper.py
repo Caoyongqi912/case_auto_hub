@@ -1,6 +1,8 @@
 
 
 
+from typing import List
+
 from app.mapper import Mapper
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.model import async_session
@@ -110,27 +112,37 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
             raise e
 
     @classmethod
-    async def reorder_interfaces(cls,group_id:int,interface_ids:list[int]) -> None:
-       """
-       子步骤重新排序
-       :param group_id: 分组ID
-       :param interface_ids: 接口ID列表
-       """
-       try:
+    async def reorder_interfaces(cls, group_id: int, interface_ids: List[int]) -> None:
+        """
+        重新排序分组关联的接口（先删后插策略）
+
+        Args:
+            group_id: 分组ID
+            interface_ids: 按新顺序排列的接口ID列表
+        """
+        if not interface_ids:
+            return
+
+        try:
             async with cls.transaction() as session:
-                update_values = []
-                for index, interface_id in enumerate(interface_ids, start=1):
-                    update_values.append({
-                        "step_order": index,
-                        "interface_id": interface_id
-                    })
                 await session.execute(
-                    update(InterfaceGroupAPIAssociation).where(
+                    delete(InterfaceGroupAPIAssociation).where(
                         InterfaceGroupAPIAssociation.group_id == group_id
-                    ).values(update_values)
+                    )
                 )
-       except Exception as e:
-            raise e
+
+                values = [
+                    {
+                        "group_id": group_id,
+                        "interface_id": interface_id,
+                        "step_order": index
+                    }
+                    for index, interface_id in enumerate(interface_ids, start=1)
+                ]
+                await session.execute(insert(InterfaceGroupAPIAssociation).values(values))
+        except Exception as e:
+            log.error(f"reorder_interfaces error: {e}")
+            raise
 
 
     @classmethod

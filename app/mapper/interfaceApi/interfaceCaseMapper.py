@@ -9,10 +9,10 @@
 import asyncio
 from typing import List, Sequence, Dict, Callable
 
-from sqlalchemy import select, insert, update
+from sqlalchemy import select, insert, delete
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from app.mapper.interfaceApi.dynamicMapper import InterfaceCaseDynamicMapper
 from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
 from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
 from app.model import async_session
@@ -34,17 +34,11 @@ from app.mapper.interfaceApi.interfaceCaseContentMapper import InterfaceCaseCont
 from enums.CaseEnum import CaseStepContentType
 from utils import log
 
-
-
-
-
 STEP_DELETE_STRATEGIES: Dict[CaseStepContentType, Callable] = {
     CaseStepContentType.STEP_API: InterfaceMapper.remove_self_interface,
     CaseStepContentType.STEP_API_CONDITION: InterfaceConditionMapper.delete_condition,
     CaseStepContentType.STEP_LOOP: InterfaceLoopMapper.delete_loop,
 }
-
-
 
 
 class InterfaceCaseMapper(Mapper[InterfaceCase]):
@@ -56,14 +50,59 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
     __model__ = InterfaceCase
 
+    @classmethod
+    async def insert_interface_case(cls, user: User, **kwargs) -> InterfaceCase:
+        try:
+            async with cls.transaction() as session:
+                interface_case = await cls.save(
+                    creator_user=user,
+                    session=session,
+                    **kwargs
+                )
+                await InterfaceCaseDynamicMapper.new_dynamic(
+                    entity_name=interface_case.case_title,
+                    entity_id=interface_case.id,
+                    session=session,
+                    user=user
+                )
+                return interface_case
+        except Exception as e:
+            log.error(f"insert_interface_case error: {e}")
+            raise
+
+    @classmethod
+    async def update_interface_case(cls, case_id: int, user: User, **kwargs) -> InterfaceCase:
+        """
+        用例调整
+        """
+        try:
+            async with cls.transaction() as session:
+                old_case = await cls.get_by_id(ident=case_id, session=session)
+                new_case = await cls.update_by_id(
+                    session=session,
+                    update_user=user,
+                    **kwargs
+                )
+                await InterfaceCaseDynamicMapper.append_dynamic(
+                    entity_id=old_case.id,
+                    user=user,
+                    old_info=old_case.to_dict(),
+                    new_info=new_case.to_dict(),
+                    session=session
+                )
+                return new_case
+        except Exception as e:
+            log.error(f"update_interface_case error: {e}")
+            raise
+
     # ==================== 关联操作 ====================
 
     @classmethod
     async def associate_interface(
-        cls,
-        user: User,
-        case_id: int,
-        interface_id: int = None
+            cls,
+            user: User,
+            case_id: int,
+            interface_id: int = None
     ):
         """
         关联单个接口到用例
@@ -111,10 +150,10 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
     @classmethod
     async def associate_interfaces(
-        cls,
-        user: User,
-        case_id: int,
-        interface_id_list: List[int]
+            cls,
+            user: User,
+            case_id: int,
+            interface_id_list: List[int]
     ):
         """
         批量关联接口到用例
@@ -145,7 +184,6 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     )
                     contents.append(content)
 
-
                 content_ids = [content.id for content in contents]
                 await cls._create_associations(
                     session=session,
@@ -159,10 +197,10 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
     @classmethod
     async def associate_groups(
-        cls,
-        user: User,
-        case_id: int,
-        group_id_list: List[int]
+            cls,
+            user: User,
+            case_id: int,
+            group_id_list: List[int]
     ):
         """
         批量关联接口组到用例
@@ -192,7 +230,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     target_id=group_id
                 )
                 case_step_content_group_apis.append(content)
-            last_index = await cls._get_last_step_order(case_id=case_id,session=session)
+            last_index = await cls._get_last_step_order(case_id=case_id, session=session)
             content_ids = [content.id for content in case_step_content_group_apis]
             await cls._create_associations(
                 session=session,
@@ -206,9 +244,9 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
     @classmethod
     async def associate_condition(
-        cls,
-        user: User,
-        case_id: int
+            cls,
+            user: User,
+            case_id: int
     ):
         """
         关联条件到用例
@@ -239,13 +277,12 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             log.error(f"associate_condition error {e}")
             raise
 
-
     @classmethod
     async def associate_loop(
-        cls,
-        user: User,
-        case_id: int,
-        **kwargs
+            cls,
+            user: User,
+            case_id: int,
+            **kwargs
     ):
         """
         关联循环到用例
@@ -285,40 +322,45 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
     @classmethod
     async def reorder_steps(
-        cls,
-        case_id: int,
-        content_step_order: List[int]
+            cls,
+            case_id: int,
+            content_step_order: List[int]
     ):
         """
-        重新排序用例步骤
-
+        重新排序用例步骤（先删后插策略）
 
         Args:
             case_id: 用例 ID
             content_step_order: 步骤内容 ID 列表（新顺序）
         """
+        if not content_step_order:
+            return
 
         try:
             async with cls.transaction() as session:
-                update_values = [
+                await session.execute(
+                    delete(InterfaceCaseStepContentAssociation).where(
+                        InterfaceCaseStepContentAssociation.interface_case_id == case_id
+                    )
+                )
+
+                values = [
                     {
-                        "interface_case_content_id": step_id,
                         "interface_case_id": case_id,
+                        "interface_case_content_id": step_id,
                         "step_order": index
                     }
                     for index, step_id in enumerate(content_step_order, start=1)
                 ]
                 await session.execute(
-                    update(InterfaceCaseStepContentAssociation),
-                    update_values
+                    insert(InterfaceCaseStepContentAssociation).values(values)
                 )
         except Exception as e:
             log.error(f"reorder_steps error: {e}")
             raise
 
-
     @classmethod
-    async def copy_step(cls, case_id: int, content_id: int, user: User)->None:
+    async def copy_step(cls, case_id: int, content_id: int, user: User) -> None:
         """
         复制用例步骤
 
@@ -346,8 +388,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         except Exception as e:
             log.error(f"copy_step error: {e}")
             raise
-    
-    
+
     @classmethod
     async def copy_case(cls, case_id: int, user: User) -> None:
         """
@@ -387,16 +428,16 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 # ✅ 用 new_case.id 和 new_contents，按索引顺序设置 step_order
                 assoc_values = [
                     {
-                        "interface_case_id": new_case.id,                   
-                        "interface_case_content_id": new_content.id, 
+                        "interface_case_id": new_case.id,
+                        "interface_case_content_id": new_content.id,
                         "step_order": index
                     }
                     for index, new_content in enumerate(new_contents, start=1)
                 ]
                 await session.execute(
-                     insert(InterfaceCaseStepContentAssociation).values(assoc_values)
+                    insert(InterfaceCaseStepContentAssociation).values(assoc_values)
                 )
-                
+
         except Exception as e:
             log.error(e)
             raise
@@ -422,7 +463,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
                 delete_tasks = []
                 for content in contents:
-                    strategy_func = STEP_DELETE_STRATEGIES.get(content.content_type)
+                    strategy_func = STEP_DELETE_STRATEGIES.get(CaseStepContentType(content.content_type))
                     if strategy_func:
                         delete_tasks.append(strategy_func(content.target_id, session))
 
@@ -434,9 +475,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         except Exception as e:
             log.error(f"delete_case error: {e}")
             raise
-    
-    
-    
+
     @classmethod
     async def remove_step(cls, case_id: int, content_id: int) -> None:
         """
@@ -475,9 +514,9 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
     @classmethod
     async def query_steps(
-        cls,
-        case_id: int,
-        session: AsyncSession = None
+            cls,
+            case_id: int,
+            session: AsyncSession = None
     ) -> Sequence[InterfaceCaseContents]:
         """
         查询用例步骤列表
@@ -489,6 +528,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         Returns:
             Sequence[InterfaceCaseContents]: 步骤内容列表，按顺序排序，预加载关联数据
         """
+
         async def _query(s: AsyncSession):
             result = await s.scalars(
                 select(InterfaceCaseContents)
@@ -514,8 +554,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         else:
             async with async_session() as s:
                 return await _query(s)
-            
-            
+
     # ==================== 私有方法 ====================
 
     @classmethod
@@ -539,14 +578,13 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         result = await session.execute(stmt)
         return result.scalar() or 0
 
-
     @classmethod
     async def _create_association(
-        cls,
-        session: AsyncSession,
-        case_id: int,
-        content_id: int,
-        step_order: int
+            cls,
+            session: AsyncSession,
+            case_id: int,
+            content_id: int,
+            step_order: int
     ) -> None:
         """
         创建用例与步骤内容的关联
@@ -589,7 +627,6 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             await session.execute(
                 insert(InterfaceCaseStepContentAssociation).prefix_with("IGNORE").values(values)
             )
-
 
 
 __all__ = ["InterfaceCaseMapper"]

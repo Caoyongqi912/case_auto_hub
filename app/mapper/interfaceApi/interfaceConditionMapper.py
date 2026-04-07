@@ -158,32 +158,43 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
             log.error(f'remove_association_interface error: {e}')
             raise
     @classmethod
-    async def reorder_condition_apis(cls, condition_id: int, interface_id_list: List[int]):
+    async def reorder_condition_apis(
+        cls,
+        condition_id: int,
+        interface_id_list: List[int]
+    ):
         """
-        子步骤重新排序
-        :param condition_id: 条件ID
-        :param interface_id_list: 接口ID列表
+        重新排序条件关联的接口（先删后插策略）
+
+        Args:
+            condition_id: 条件ID
+            interface_id_list: 按新顺序排列的接口ID列表
         """
+        if not interface_id_list:
+            return
+
         try:
             async with cls.transaction() as session:
-                update_values = []
-                for index, interface_id in enumerate(interface_id_list, start=1):
-                    update_values.append({
+                await session.execute(
+                    delete(InterfaceConditionAPIAssociation).where(
+                        InterfaceConditionAPIAssociation.condition_id == condition_id
+                    )
+                )
+
+                values = [
+                    {
                         "condition_id": condition_id,
                         "interface_api_id": interface_id,
                         "step_order": index
-                    })
-
-                # 批量更新
-                if update_values:
-                    await session.execute(
-                        update(InterfaceConditionAPIAssociation),
-                        update_values
-                    )
-
+                    }
+                    for index, interface_id in enumerate(interface_id_list, start=1)
+                ]
+                await session.execute(
+                    insert(InterfaceConditionAPIAssociation).values(values)
+                )
         except Exception as e:
-                log.error(f'reorder_condition_apis error: {e}')
-                raise
+            log.error(f"reorder_condition_apis error: {e}")
+            raise
 
 
 

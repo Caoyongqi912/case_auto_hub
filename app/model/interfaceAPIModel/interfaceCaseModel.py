@@ -29,4 +29,4 @@ class InterfaceCase(BaseModel):
 
     
     def __repr__(self):
-        return f"InterfaceCase id=\"{self.id}\" uid=\"{self.uid}\" name=\"{self.case_title}\" desc=\"{self.case_desc}\" method=\"{self.case_http}\" project={self.project_id} module={self.module_id}..."
+        return f"InterfaceCase id=\"{self.id}\" uid=\"{self.uid}\" name=\"{self.case_title}\" desc=\"{self.case_desc}\" ..."
