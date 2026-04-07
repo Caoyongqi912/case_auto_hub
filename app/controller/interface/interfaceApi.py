@@ -17,7 +17,7 @@ from croe.interface.executor.interface_executor import InterfaceExecutor
 from croe.a_manager import ScriptManager,VariableManager
 from croe.interface.runner import InterfaceRunner
 from croe.interface.starter import APIStarter
-
+from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper as InterfaceMapperV2
 # 项目内部导入 - 工具类
 from utils import MyLoguru
 from utils.curlTrans import CurlConverter
@@ -45,9 +45,7 @@ async def set_interface_module(info: SetInterfacesModuleSchema, _=Depends(Authen
 @router.post("/insert", description="新增接口")
 async def create_interface(api_info: AddInterfaceApiSchema, creator_user=Depends(Authentication())):
     """创建新的接口测试步骤"""
-    api = await InterfaceMapper.save(
-        creator_user=creator_user,
-        **api_info.model_dump())
+    api = await InterfaceMapperV2.create_interface(**api_info.model_dump(),user=user)
     return Response.success(api)
 
 @router.get("/detail", description="获取接口详情")

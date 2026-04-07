@@ -5,8 +5,9 @@
 # @File : interfaceModel
 # @Software: PyCharm
 # @Desc:
+
 from app.model.basic import BaseModel
-from sqlalchemy import Column, String, INTEGER, ForeignKey, JSON, BOOLEAN, Text
+from sqlalchemy import Column, String, INTEGER, ForeignKey, JSON, Text
 
 
 class Interface(BaseModel):
@@ -57,4 +58,3 @@ class Interface(BaseModel):
 
     def __repr__(self):
         return f"Interface  id=\"{self.id}\" uid=\"{self.uid}\" name=\"{self.interface_name}\" desc=\"{self.interface_desc}\" method=\"{self.interface_method}\" project={self.project_id} module={self.module_id}..."
-

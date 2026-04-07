@@ -391,9 +391,10 @@ class Mapper(Generic[M]):
         model = cls.__model__
         try:
             async with async_session() as session:
+                sort = kwargs.pop("sort", None)
                 conditions = await cls.search_conditions(**kwargs)
                 base_query = select(model).filter(and_(*conditions))
-                base_query = await cls.sorted_search(base_query, kwargs.pop("sort", None))
+                base_query = await cls.sorted_search(base_query,sort)
 
                 total_query = select(func.count()).select_from(model).filter(*conditions)
                 total = (await session.execute(total_query)).scalar()

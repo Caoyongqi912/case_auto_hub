@@ -223,6 +223,29 @@ class InterfaceMapper(Mapper[Interface]):
             raise
 
 
+
+    @classmethod
+    async def copy_to_module(cls, interface_id: int, project_id: int, module_id: int, user: User):
+        """
+        复制API到指定模块
+            :param interface_id: API ID
+            :param project_id: 项目ID
+            :param module_id: 模块ID
+            :param user: 创建人
+        :return: 复制后的API实例
+        """
+        try:
+            async with cls.transaction() as session:
+                original_interface = await cls.get_by_id(ident=interface_id, session=session)
+                copy_interface = await cls.copy_one(target=original_interface, user=user,  session=session, is_common=True)
+                copy_interface.project_id = project_id
+                copy_interface.module_id = module_id
+                copy_interface = await cls.add_flush_expunge(session=session, model=copy_interface)
+                log.info(copy_interface)
+        except Exception as e:
+            log.error(f"copy_to_module error: {e}")
+            raise
+
     # ==================== 批量导入 ====================
 
     @classmethod

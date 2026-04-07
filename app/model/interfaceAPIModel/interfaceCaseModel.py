@@ -5,10 +5,10 @@
 # @File : interfaceCaseModel
 # @Software: PyCharm
 # @Desc:接口用例
-
+from datetime import datetime
 
 from app.model.basic import BaseModel
-from sqlalchemy import Column, String, INTEGER, ForeignKey
+from sqlalchemy import Column, String, INTEGER, ForeignKey, Float, DATETIME
 
 
 class InterfaceCase(BaseModel):

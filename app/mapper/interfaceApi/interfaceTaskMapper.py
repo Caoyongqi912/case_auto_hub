@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.mapper import Mapper
+from app.mapper.interfaceApi.dynamicMapper import InterfaceTaskDynamicMapper
+from app.model.base import User
 from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
 from app.model.interfaceAPIModel.interfaceModel import Interface
 from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
@@ -28,6 +30,53 @@ __all__ = ["InterfaceTaskMapper"]
 
 class InterfaceTaskMapper(Mapper[InterfaceTask]):
     __model__ = InterfaceTask
+
+
+    @classmethod
+    async def insert_task(cls, user: User, **kwargs) -> InterfaceTask:
+        try:
+            async with cls.transaction() as session:
+                task = await cls.save(
+                    creator_user=user,
+                    session=session,
+                    **kwargs
+                )
+                await InterfaceTaskDynamicMapper.new_dynamic(
+                    entity_name=task.interface_task_title,
+                    entity_id=task.id,
+                    session=session,
+                    user=user
+                )
+                return task
+        except Exception as e:
+            log.error(f"insert_interface_case error: {e}")
+            raise
+
+    @classmethod
+    async def update_task(cls, case_id: int, user: User, **kwargs) -> InterfaceTask:
+        """
+        用例调整
+        """
+        try:
+            async with cls.transaction() as session:
+                old_task = await cls.get_by_id(ident=case_id, session=session)
+                new_task = await cls.update_by_id(
+                    session=session,
+                    update_user=user,
+                    **kwargs
+                )
+                await InterfaceTaskDynamicMapper.append_dynamic(
+                    entity_id=old_task.id,
+                    user=user,
+                    old_info=old_task.to_dict(),
+                    new_info=new_task.to_dict(),
+                    session=session
+                )
+                return new_task
+        except Exception as e:
+            log.error(f"update_interface_case error: {e}")
+            raise
+
 
     @classmethod
     async def query_association_interfaces(
