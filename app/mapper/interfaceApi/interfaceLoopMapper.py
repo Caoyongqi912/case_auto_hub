@@ -6,7 +6,7 @@
 # @Software: PyCharm
 # @Desc: 循环 Mapper - 处理循环及其关联接口的管理
 
-from typing import List
+from typing import List, Optional
 
 from sqlalchemy import select, insert, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -215,7 +215,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoopModal]):
             raise
 
     @classmethod
-    async def copy_loop(cls, loop_id: int, user: User, session: AsyncSession) -> InterfaceLoopModal:
+    async def copy_loop(cls, loop_id: int, user: User, session: AsyncSession) -> Optional[InterfaceLoopModal]:
         """
         复制循环及其关联接口的子步骤
         非公共接口的子步骤会复制并关联，公共接口的子步骤保持原样关联
@@ -229,7 +229,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoopModal]):
 
         loop = await cls.get_by_id(ident=loop_id, session=session)
         if not loop:
-            return False
+            return None
 
         new_loop = await cls.copy_one(
             target=loop,
@@ -242,10 +242,10 @@ class InterfaceLoopMapper(Mapper[InterfaceLoopModal]):
             .where(InterfaceLoopAPIAssociation.loop_id == loop_id)
             .order_by(InterfaceLoopAPIAssociation.step_order)
         )
-        original_assocs = assoc_result.scalars().all()
+        original_assoc = assoc_result.scalars().all()
 
-        new_assocs = []
-        for assoc in original_assocs:
+        new_assoc = []
+        for assoc in original_assoc:
             original_interface = await InterfaceMapper.get_by_id(ident=assoc.interface_api_id, session=session)
             if original_interface.is_common:
                 new_interface_id = original_interface.id
@@ -258,14 +258,14 @@ class InterfaceLoopMapper(Mapper[InterfaceLoopModal]):
                 )
                 new_interface_id = new_interface.id
 
-            new_assocs.append({
+            new_assoc.append({
                 "loop_id": new_loop.id,
                 "interface_api_id": new_interface_id,
                 "step_order": assoc.step_order
             })
 
-        if new_assocs:
-            await session.execute(insert(InterfaceLoopAPIAssociation), new_assocs)
+        if new_assoc:
+            await session.execute(insert(InterfaceLoopAPIAssociation), new_assoc)
 
         return new_loop
 

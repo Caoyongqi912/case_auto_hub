@@ -6,9 +6,9 @@
 # @Software: PyCharm
 # @Desc: 条件 Mapper - 处理条件及其关联接口的管理
 
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
-from sqlalchemy import select, delete, insert, and_
+from sqlalchemy import select, delete, insert, and_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
@@ -48,7 +48,7 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
         return await cls.add_flush_expunge(session, condition)
 
     @classmethod
-    async def query_interfaces_by_condition_id(cls, condition_id: int, session: Optional[AsyncSession] = None) -> List[Interface]:
+    async def query_interfaces_by_condition_id(cls, condition_id: int, session: Optional[AsyncSession] = None) -> Sequence[Interface]:
         """
         查询条件关联的接口列表
 
@@ -188,7 +188,7 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
 
 
     @classmethod
-    async def copy_condition(cls, condition_id: int, user: User, session: AsyncSession) -> InterfaceCondition:
+    async def copy_condition(cls, condition_id: int, user: User, session: AsyncSession) -> Optional[InterfaceCondition]:
         """
         复制条件及其关联接口的子步骤
         非公共接口的子步骤会复制并关联，公共接口的子步骤保持原样关联
@@ -201,7 +201,7 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
         from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
         condition = await cls.get_by_id(ident=condition_id,session=session)
         if not condition:
-            return False
+            return None
         new_condition = await cls.copy_one(
             target=condition,
             user=user,
@@ -213,10 +213,10 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
             .where(InterfaceConditionAPIAssociation.condition_id == condition_id)
             .order_by(InterfaceConditionAPIAssociation.step_order)
         )
-        original_assocs = assoc_result.scalars().all()
+        original_assoc = assoc_result.scalars().all()
 
-        new_assocs = []
-        for assoc in original_assocs:
+        new_assoc = []
+        for assoc in original_assoc:
             original_interface = await InterfaceMapper.get_by_id(ident=assoc.interface_api_id, session=session)
             if original_interface.is_common:
                 new_interface_id = original_interface.id
@@ -229,14 +229,14 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
                 )
                 new_interface_id = new_interface.id
 
-            new_assocs.append({
+            new_assoc.append({
                 "condition_id": new_condition.id,
                 "interface_api_id": new_interface_id,
                 "step_order": assoc.step_order
             })
 
-        if new_assocs:
-            await session.execute(insert(InterfaceConditionAPIAssociation), new_assocs)
+        if new_assoc:
+            await session.execute(insert(InterfaceConditionAPIAssociation), new_assoc)
 
         return new_condition
 

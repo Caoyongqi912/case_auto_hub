@@ -4,11 +4,11 @@
 # @Author : cyq
 # @File : interfaceCaseContentMapper
 # @Software: PyCharm
-# @Desc:
-from lzma import is_check_supported
-from typing import Dict,Type
+# @Desc: 用例步骤内容 Mapper
+from typing import Dict, Type
 
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.mapper import Mapper
 from app.mapper.interfaceApi.interfaceGroupMapper import InterfaceGroupMapper
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
@@ -28,8 +28,8 @@ from app.model.interfaceAPIModel.contents import (
     LoopStepContent,
 )
 from enums.CaseEnum import CaseStepContentType
-
 from utils import log
+
 
 class InterfaceCaseContentMapper(Mapper):
     
@@ -42,12 +42,6 @@ class InterfaceCaseContentMapper(Mapper):
         CaseStepContentType.STEP_API_WAIT: WaitStepContent,
         CaseStepContentType.STEP_API_WHILE: WhileStepContent,
         CaseStepContentType.STEP_API_ASSERT: AssertStepContent,
-        CaseStepContentType.STEP_LOOP: LoopStepContent,
-    }
-
-    CONTENT_TYPE_MAPPER = {
-        CaseStepContentType.STEP_API: InterfaceMapper,
-        CaseStepContentType.STEP_API_CONDITION: ConditionStepContent,
         CaseStepContentType.STEP_LOOP: LoopStepContent,
     }
 
@@ -87,7 +81,7 @@ class InterfaceCaseContentMapper(Mapper):
             raise
 
     @classmethod
-    async def copy_content(cls, content: InterfaceCaseContents, session: AsyncSession, user: User, **kwargs):
+    async def copy_content(cls, content: InterfaceCaseContents, session: AsyncSession, user: User):
         """
         复制步骤内容
 
@@ -118,7 +112,7 @@ class InterfaceCaseContentMapper(Mapper):
         Returns:
             InterfaceCaseContents: 复制后的步骤内容实例
         """
-        cls_model = cls.CONTENT_TYPE_MAP.get(content.content_type)
+        cls_model = cls.CONTENT_TYPE_MAP.get(CaseStepContentType(content.content_type))
         if not cls_model:
             log.error(f"不支持的 content_type: {content.content_type}")
             return False

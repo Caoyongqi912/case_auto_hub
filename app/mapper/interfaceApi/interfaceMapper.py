@@ -14,7 +14,6 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
-from app.mapper.project.moduleMapper import ModuleMapper
 from app.model.base import User
 from app.model.base.module import Module
 from app.model.interfaceAPIModel.interfaceModel import Interface
@@ -26,7 +25,6 @@ from utils.fileManager import API_DATA
 __all__ = [
     "InterfaceMapper"
 ]
-
 
 
 class InterfaceMapper(Mapper[Interface]):
@@ -102,11 +100,11 @@ class InterfaceMapper(Mapper[Interface]):
 
     @classmethod
     async def association_empty_interface(
-        cls,
-        module_id: int,
-        project_id: int,
-        user: User,
-        session: AsyncSession
+            cls,
+            module_id: int,
+            project_id: int,
+            user: User,
+            session: AsyncSession
     ) -> Interface:
         """
         创建空白接口模板
@@ -149,32 +147,31 @@ class InterfaceMapper(Mapper[Interface]):
         try:
             async with cls.transaction() as session:
                 interface = await cls.get_by_id(ident=interface_id, session=session)
-                
+
                 # 异步执行文件清理，不阻塞数据库操作
                 async_remove_files(interface)
-                
+
                 await session.delete(interface)
         except Exception as e:
             log.error(f"remove_interface error: {e}")
             raise
 
-
-
     @classmethod
-    async def remove_self_interface(cls,interface_id:int)->bool:
+    async def remove_self_interface(cls, interface_id: int, session: AsyncSession) -> bool:
         """
         删除接口关联的文件
 
         Args:
             interface_id: 接口 ID
+            session: session
 
         Returns:
             bool: 是否删除成功
         """
         try:
             interface = await InterfaceMapper.get_by_id(
-            ident=interface_id, session=session
-        )
+                ident=interface_id, session=session
+            )
             if not interface:
                 return False
 
@@ -186,14 +183,14 @@ class InterfaceMapper(Mapper[Interface]):
         except Exception as e:
             log.error(f"remove_self_interface error: {e}")
             raise
-    
+
     @classmethod
     async def copy_interface(
-        cls,
-        interface_id: int,
-        user: User,
-        copy_name: bool = False,
-        is_common: bool = False
+            cls,
+            interface_id: int,
+            user: User,
+            copy_name: bool = False,
+            is_common: bool = False
     ) -> Interface:
         """
         复制接口
@@ -211,56 +208,18 @@ class InterfaceMapper(Mapper[Interface]):
             async with cls.transaction() as session:
                 target_api = await cls.get_by_id(ident=interface_id, session=session)
                 target_api_map = target_api.copy_map()
-                
+
                 if not copy_name:
                     target_api_map['interface_name'] = f"{target_api_map['interface_name']}(副本)"
-                
+
                 new_interface = cls.__model__(**target_api_map)
                 new_interface.creator = user.id
                 new_interface.creatorName = user.username
                 new_interface.is_common = is_common
-                
+
                 return await cls.add_flush_expunge(session, new_interface)
         except Exception as e:
             log.error(f"copy_interface error: {e}")
-            raise
-
-    
-    
-    @classmethod
-    async def copy_interface_with_entity(
-        cls,
-        interface: Interface,
-        user: User,
-        copy_name: bool = False,
-        is_common: bool = False
-    ) -> Interface:
-        """
-        复制接口
-
-        Args:
-            interface_id: 源接口 ID
-            user: 操作用户
-            copy_name: 是否复制名称（False 则添加"副本"后缀）
-            is_common: 是否设为公共接口
-
-        Returns:
-            Interface: 复制后的接口实例
-        """
-        try:
-            target_api_map = interface.copy_map()
-            
-            if not copy_name:
-                target_api_map['interface_name'] = f"{target_api_map['interface_name']}(副本)"
-            
-            new_interface = cls.__model__(**target_api_map)
-            new_interface.creator = user.id
-            new_interface.creatorName = user.username
-            new_interface.is_common = is_common
-            
-            return await cls.add_flush_expunge(session, new_interface)
-        except Exception as e:
-            log.error(f"copy_interface_with_entity error: {e}")
             raise
 
 
@@ -268,12 +227,12 @@ class InterfaceMapper(Mapper[Interface]):
 
     @classmethod
     async def upload(
-        cls,
-        apis: List[Dict[str, Any]],
-        project_id: str,
-        module_id: str,
-        env_id: str,
-        creator: User
+            cls,
+            apis: List[Dict[str, Any]],
+            project_id: str,
+            module_id: str,
+            env_id: str,
+            creator: User
     ) -> None:
         """
         批量上传接口
@@ -289,13 +248,13 @@ class InterfaceMapper(Mapper[Interface]):
             async with cls.transaction() as session:
                 module_names = [api.pop("module") for api in apis]
                 module_map = {}
-                
+
                 for name in set(module_names):
                     mid = await cls._get_or_create_module(
                         name, session, int(module_id), int(project_id), creator
                     )
                     module_map[name] = mid
-                
+
                 tasks = [
                     cls._batch_insert_apis(
                         session, int(project_id), int(env_id),
@@ -310,13 +269,13 @@ class InterfaceMapper(Mapper[Interface]):
 
     @classmethod
     async def _batch_insert_apis(
-        cls,
-        session: AsyncSession,
-        project_id: int,
-        env_id: int,
-        module_id: int,
-        creator: User,
-        data: List[Dict[str, Any]]
+            cls,
+            session: AsyncSession,
+            project_id: int,
+            env_id: int,
+            module_id: int,
+            creator: User,
+            data: List[Dict[str, Any]]
     ) -> None:
         """
         批量插入接口数据
@@ -347,12 +306,12 @@ class InterfaceMapper(Mapper[Interface]):
 
     @classmethod
     async def _get_or_create_module(
-        cls,
-        module_name: str,
-        session: AsyncSession,
-        parent_id: int,
-        project_id: int,
-        creator: User
+            cls,
+            module_name: str,
+            session: AsyncSession,
+            parent_id: int,
+            project_id: int,
+            creator: User
     ) -> int:
         """
         获取或创建模块
@@ -378,11 +337,11 @@ class InterfaceMapper(Mapper[Interface]):
                 )
             )
             existing = result.scalar_one_or_none()
-            
+
             if existing and module_name == existing.title:
                 log.debug(f"模块 '{module_name}' 已存在")
                 return existing.id
-            
+
             new_module = Module(
                 title=module_name,
                 project_id=project_id,
@@ -438,13 +397,13 @@ class FileManager:
         """
         api_datas = interface.interface_data
         uid_prefix = f"{interface.uid}_"
-        
+
         if api_datas and interface.interface_body_type == InterfaceRequestTBodyTypeEnum.Data:
             for data in api_datas:
                 value = data.get("value")
                 if value and uid_prefix in value:
                     FileManager._safe_remove_file(value)
-        
+
         FileManager._cleanup_uid_directories(uid_prefix)
 
     @staticmethod
@@ -457,7 +416,7 @@ class FileManager:
         """
         api_datas = interface.interface_data
         uid_prefix = f"{interface.uid}_"
-        
+
         if api_datas and interface.interface_body_type == InterfaceRequestTBodyTypeEnum.Data:
             for data in api_datas:
                 value = data.get("value")
@@ -478,11 +437,11 @@ class FileManager:
             bool: 是否删除成功
         """
         filepath = os.path.join(API_DATA, filename)
-        
+
         if not os.path.abspath(filepath).startswith(os.path.abspath(API_DATA)):
             log.warning(f"非法路径尝试: {filepath}")
             return False
-        
+
         try:
             if os.path.exists(filepath) and os.path.isfile(filepath):
                 os.remove(filepath)
@@ -490,7 +449,7 @@ class FileManager:
                 return True
         except Exception as e:
             log.error(f"删除文件失败: {filepath}, {e}")
-        
+
         return False
 
     @staticmethod
@@ -503,7 +462,7 @@ class FileManager:
         """
         if not os.path.exists(API_DATA):
             return
-        
+
         try:
             for dir_name in os.listdir(API_DATA):
                 if dir_name.startswith(uid_prefix):
@@ -515,7 +474,7 @@ class FileManager:
             log.error(f"清理目录失败: {e}")
 
 
-def async_remove_files( interface: Interface) -> None:
+def async_remove_files(interface: Interface) -> None:
     """
     异步清理接口关联文件（后台任务）
 

@@ -2,11 +2,13 @@
 # -*- coding:utf-8 -*-
 # @Time : 2026/4/2
 # @Author : cyq
-# @File : interfaceCaseContentsModel
+# @File : interfaceCaseContentsModel.py
 # @Software: PyCharm
 # @Desc: 用例步骤内容基类
 
 from abc import abstractmethod
+from typing import Optional
+
 from app.model import BaseModel
 from sqlalchemy import Column, INTEGER, ForeignKey
 
@@ -33,6 +35,7 @@ class InterfaceCaseContents(BaseModel):
 
     content_type = Column(INTEGER, nullable=False, index=True, comment="步骤类型")
     enable = Column(INTEGER, default=1, nullable=False, comment="是否启用")
+    target_id: Optional[int] = None  # 类型注解，用于子类继承时不报类型警告
 
     __mapper_args__ = {
         'polymorphic_on': content_type,

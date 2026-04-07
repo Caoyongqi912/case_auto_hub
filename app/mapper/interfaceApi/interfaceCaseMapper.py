@@ -9,7 +9,7 @@
 import asyncio
 from typing import List, Sequence, Dict, Callable
 
-from sqlalchemy import select, insert, delete, update
+from sqlalchemy import select, insert, update
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +18,7 @@ from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
 from app.model import async_session
 from app.mapper import Mapper
 from app.model.base import User
-from app.model.interfaceAPIModel import contents
+from app.model.interfaceAPIModel.associationModel import InterfaceCaseStepContentAssociation
 from app.model.interfaceAPIModel.contents import (
     InterfaceCaseContents,
     APIStepContent,
@@ -38,7 +38,7 @@ from utils import log
 
 
 
-STEP_DELETE_STRATEGIES: Dict[CaseStepContentType, Callable[[int, AsyncSession], bool]] = {
+STEP_DELETE_STRATEGIES: Dict[CaseStepContentType, Callable] = {
     CaseStepContentType.STEP_API: InterfaceMapper.remove_self_interface,
     CaseStepContentType.STEP_API_CONDITION: InterfaceConditionMapper.delete_condition,
     CaseStepContentType.STEP_LOOP: InterfaceLoopMapper.delete_loop,
@@ -331,9 +331,9 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             async with cls.transaction() as session:
                 case = await cls.get_by_id(session=session, ident=case_id)
                 case.case_api_num += 1
-
+                origin_content = await InterfaceCaseContentMapper.get_by_id(session=session, ident=content_id)
                 content = await InterfaceCaseContentMapper.copy_content(
-                    content_id=content_id,
+                    content=origin_content,
                     session=session,
                     user=user
                 )

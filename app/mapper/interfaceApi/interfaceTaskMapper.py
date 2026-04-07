@@ -1,3 +1,6 @@
+from typing import List
+
+from app.model import async_session
 from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
 from app.model.interfaceAPIModel.interfaceModel import Interface
 from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
@@ -80,6 +83,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                             interface_ids=interface_ids,
                             step_order=last_step_order)
                 task.interface_task_total_apis_num += len(interface_ids)
+                return True
         except Exception as e:
             raise e
 
@@ -100,11 +104,12 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                     return False
 
                 last_step_order = await cls.get_case_last_index(task_id=task_id,session=session)
-                await cls.insert_interface_cases_task_association(session=session,
+                await cls.insert_cases_task_association(session=session,
                             task_id=task_id,
                             case_ids=case_ids,
                             step_order=last_step_order)
                 task.interface_task_total_cases_num += len(case_ids)
+                return True
         except Exception as e:
             raise e
 
@@ -120,6 +125,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
         """
         try:
             async with cls.transaction() as session:
+                task = await cls.get_by_id(ident=task_id,session=session)
                 await session.execute(
                     delete(InterfaceAPITaskAssociation).where(
                         and_(
@@ -129,6 +135,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                     )
                 )
                 task.interface_task_total_apis_num -= 1
+                return True
         except Exception as e:
             raise e
 
@@ -146,6 +153,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
         """
         try:
             async with cls.transaction() as session:
+                task = await cls.get_by_id(ident=task_id,session=session)
                 await session.execute(
                     delete(InterfaceCaseTaskAssociation).where(
                         and_(
@@ -155,6 +163,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                     )
                 )
                 task.interface_task_total_cases_num -= 1
+                return True
         except Exception as e:
             raise e
 
@@ -179,6 +188,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                         update_values
                     )
                 )
+                return True
         except Exception as e:
             raise e
 

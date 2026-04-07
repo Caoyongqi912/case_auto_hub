@@ -3,13 +3,15 @@
 
 from app.mapper import Mapper
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
+from app.model import async_session
 from app.model.base.user import User
 from app.model.interfaceAPIModel.interfaceGroupModel import InterfaceGroup
 from app.model.interfaceAPIModel.associationModel import InterfaceGroupAPIAssociation
 from app.model.interfaceAPIModel.interfaceModel import Interface
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_,delete,insert,update
+from sqlalchemy import and_, delete, insert, update, select
 
+from utils import log
 
 
 class InterfaceGroupMapper(Mapper[InterfaceGroup]):
@@ -71,11 +73,11 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                 last_index = await cls.get_last_index(session=session,group_id=group_id)
 
                 if not interface.is_common:
-                    interface = await InterfaceMapper.copy_interface(
+                    interface = await InterfaceMapper.copy_one(
                         session=session,
+                        target=interface,
                         user=user,
-                        is_common=False,
-                        interface_id=interface_id)
+                        is_common=False )
 
 
 
@@ -84,6 +86,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                 ,group_id=group_id,interface_id=interface.id,
                 step_order=new_index)
         except Exception as e:
+            log.error(e)
             raise
 
 
