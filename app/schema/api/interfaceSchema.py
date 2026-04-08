@@ -7,13 +7,73 @@ Interface Schema 定义
 使用 Pydantic v2 注解，提供数据验证和序列化
 """
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schema import PageSchema
-from app.schema.interface import TryAddInterfaceApiSchema
-from enums import ModuleEnum
+from enums import ModuleEnum, InterfaceAuthType
+
+
+class IItem(BaseModel):
+    """headers 等的结构定义"""
+    id: Union[int, str] = Field(..., description="ID")
+    key: str = Field(..., description="键", title="Key")
+    value: Optional[Any] = Field(..., description="值")
+    desc: Optional[str] = Field(None, description="描述")
+
+
+class IAssert(BaseModel):
+    """断言结构定义"""
+    assert_name: str = Field(..., description="断言名")
+    assert_switch: bool = Field(True, description="是否开启断言")
+    assert_target: str = Field(..., description="断言目标")
+    assert_extract: Optional[str] = Field(None, description="提取")
+    assert_text: Optional[str] = Field(None, description="表达式")
+    assert_opt: int = Field(..., description="断言类型")
+    assert_value: Any = Field(..., description="预期值")
+
+
+class KVAuth(BaseModel):
+    """KV认证模型"""
+    key: str
+    value: str
+    target: Literal['query', 'header'] = 'query'
+
+    class Config:
+        title = "KV认证"
+
+
+class BasicAuth(BaseModel):
+    """Basic认证模型"""
+    username: str
+    password: str
+
+    class Config:
+        title = "Basic认证"
+
+
+class BearerAuth(BaseModel):
+    """Bearer Token认证模型"""
+    token: str
+
+    class Config:
+        title = "Bearer Token认证"
+
+
+class IExtract(BaseModel):
+    """提取结构定义"""
+    key: str = Field(..., description="键", title="Key")
+    value: Optional[Any] = Field(..., description="值")
+    target: int = Field(..., description="目标")
+    extraOpt: str = Field(..., description="类型")
+
+
+class IBeforeSqlExtracts(BaseModel):
+    """前置SQL提取结构定义"""
+    id: Union[int, str] = Field(..., description="ID")
+    jp: str = Field(..., description="JSONPath", title="jp")
+    key: str = Field(..., description="键")
 
 
 class InterfaceSchema(BaseModel):
@@ -26,39 +86,40 @@ class InterfaceSchema(BaseModel):
     id: Optional[int] = Field(None, description="接口ID")
     uid: Optional[str] = Field(None, description="唯一标识")
 
-    interface_name: str = Field(..., description="接口名称")
+    interface_name: Optional[str] = Field(None, description="接口名称")
     interface_desc: Optional[str] = Field(None, description="接口描述")
     interface_status: Optional[str] = Field(None, description="接口状态")
     interface_level: Optional[str] = Field(None, description="接口等级")
-    interface_url: str = Field(..., description="接口地址")
+    interface_url: Optional[str] = Field(None, description="接口地址")
     interface_method: Literal["GET", "POST", "PUT", "DELETE", "PATCH"] = Field(
         default="GET",
         description="请求方法"
     )
-    interface_params: Optional[Dict[str, Any]] = Field(None, description="请求参数")
-    interface_headers: Optional[Dict[str, Any]] = Field(None, description="请求头")
-    interface_body_type: int = Field(default=0, description="请求体类型: 0无 1raw 2data 3..")
+    interface_params: Optional[List[IItem]] = Field(None, description="请求参数")
+    interface_headers: Optional[List[IItem]] = Field(None, description="请求头")
+    interface_body_type: Optional[int] = Field(default=0, description="请求体类型: 0无 1raw 2data 3..")
     interface_raw_type: Optional[str] = Field(None, description="raw类型: json/text")
-    interface_body: Optional[Dict[str, Any]] = Field(None, description="请求体")
-    interface_data: Optional[Dict[str, Any]] = Field(None, description="表单数据")
-    interface_asserts: Optional[List[Dict[str, Any]]] = Field(None, description="断言配置")
-    interface_extracts: Optional[List[Dict[str, Any]]] = Field(None, description="响应提取配置")
-    interface_follow_redirects: int = Field(default=0, description="是否跟随重定向: 0否 1是")
-    interface_connect_timeout: int = Field(default=6, description="连接超时时间(秒)")
-    interface_response_timeout: int = Field(default=6, description="响应超时时间(秒)")
+    interface_body: Optional[Any] = Field(None, description="请求体")
+    interface_data: Optional[List[IItem]] = Field(None, description="表单数据")
+    interface_asserts: Optional[List[IAssert]] = Field(None, description="断言配置")
+    interface_extracts: Optional[List[IExtract]] = Field(None, description="响应提取配置")
+    interface_follow_redirects: Optional[int] = Field(default=0, description="是否跟随重定向: 0否 1是")
+    interface_connect_timeout: Optional[int] = Field(default=6, description="连接超时时间(秒)")
+    interface_response_timeout: Optional[int] = Field(default=6, description="响应超时时间(秒)")
     interface_before_script: Optional[str] = Field(None, description="前置脚本")
     interface_before_db_id: Optional[int] = Field(None, description="前置数据库ID")
-    interface_before_sql: Optional[str] = Field(None, description="前置SQL")
+    interface_before_sql: Optional[List[IBeforeSqlExtracts]] = Field(None, description="前置SQL")
     interface_before_sql_extracts: Optional[List[Dict[str, Any]]] = Field(None, description="SQL提取配置")
     interface_before_params: Optional[List[Dict[str, Any]]] = Field(None, description="前置参数")
     interface_after_script: Optional[str] = Field(None, description="后置脚本")
-    interface_auth_type: int = Field(default=1, description="认证类型: 1不认证 2KV 3Basic 4Bearer")
+
+    interface_auth_type: Optional[int] = Field(default=1, description="认证类型: 1不认证 2KV 3Basic 4Bearer")
     interface_auth: Optional[Dict[str, Any]] = Field(None, description="认证配置")
 
-    is_common: int = Field(default=1, description="是否公共API: 0否 1是")
+    is_common: Optional[int] = Field(default=1, description="是否公共API: 0否 1是")
     env_id: Optional[int] = Field(None, description="环境ID")
-    module_id: int = Field(..., description="模块ID")
-    project_id: int = Field(..., description="项目ID")
+    module_id: Optional[int] = Field(None, description="模块ID")
+    project_id: Optional[int] = Field(None, description="项目ID")
 
     creator: Optional[int] = Field(None, description="创建人ID")
     creatorName: Optional[str] = Field(None, description="创建人姓名")
@@ -66,6 +127,29 @@ class InterfaceSchema(BaseModel):
     updaterName: Optional[str] = Field(None, description="更新人姓名")
     create_time: Optional[datetime] = Field(None, description="创建时间")
     update_time: Optional[datetime] = Field(None, description="更新时间")
+
+    @model_validator(mode="before")
+    def validate_auth_type_and_auth(cls, values):
+        """根据auth_type验证和转换auth字段"""
+        auth_type = values.get('interface_auth_type')
+        auth_data = values.get('interface_auth', {})
+
+        # 如果没有设置auth_type，则不进行验证
+        if auth_type is None:
+            return values
+
+        # 根据auth_type创建对应的认证模型
+        if auth_type == InterfaceAuthType.No_Auth:
+            # 无需认证时，清空auth
+            values['interface_auth'] = None
+        elif auth_type == InterfaceAuthType.KV_Auth:
+            values['interface_auth'] = KVAuth(**auth_data)
+        elif auth_type == InterfaceAuthType.BASIC_Auth:
+            values["interface_auth"] = BasicAuth(**auth_data)
+        elif auth_type == InterfaceAuthType.BEARER_Auth:
+            values['interface_auth'] = BearerAuth(**auth_data)
+
+        return values
 
 
 class InterfaceBriefSchema(BaseModel):
@@ -97,7 +181,7 @@ class InterfaceBriefSchema(BaseModel):
         return self.interface_desc[:10] + "..." if len(self.interface_desc) > 10 else self.interface_desc
 
 
-class AddInterfaceSchema(BaseModel):
+class AddInterfaceSchema(InterfaceSchema):
     """
     添加接口 Schema - 创建新接口时使用
     必填字段验证
@@ -119,63 +203,17 @@ class AddInterfaceSchema(BaseModel):
     project_id: int = Field(..., description="项目ID")
     env_id: Optional[int] = Field(None, description="环境ID")
 
-    interface_params: Optional[Dict[str, Any]] = Field(None, description="请求参数")
-    interface_headers: Optional[Dict[str, Any]] = Field(None, description="请求头")
-    interface_body: Optional[Dict[str, Any]] = Field(None, description="请求体")
-    interface_data: Optional[Dict[str, Any]] = Field(None, description="表单数据")
-    interface_asserts: Optional[List[Dict[str, Any]]] = Field(None, description="断言配置")
-    interface_extracts: Optional[List[Dict[str, Any]]] = Field(None, description="响应提取配置")
-    interface_raw_type: Optional[str] = Field(None, description="raw类型")
-    interface_connect_timeout: int = Field(default=6, ge=1, le=300, description="连接超时(秒)")
-    interface_response_timeout: int = Field(default=6, ge=1, le=300, description="响应超时(秒)")
-    interface_before_script: Optional[str] = Field(None, description="前置脚本")
-    interface_before_db_id: Optional[int] = Field(None, description="前置数据库ID")
-    interface_before_sql: Optional[str] = Field(None, description="前置SQL")
-    interface_before_sql_extracts: Optional[List[Dict[str, Any]]] = Field(None, description="SQL提取配置")
-    interface_before_params: Optional[List[Dict[str, Any]]] = Field(None, description="前置参数")
-    interface_after_script: Optional[str] = Field(None, description="后置脚本")
-    interface_auth_type: int = Field(default=1, ge=1, le=4, description="认证类型")
-    interface_auth: Optional[Dict[str, Any]] = Field(None, description="认证配置")
 
-
-class UpdateInterfaceSchema(BaseModel):
+class UpdateInterfaceSchema(InterfaceSchema):
     """
     更新接口 Schema - 更新现有接口时使用
     所有字段可选，允许部分更新
     """
-    interface_name: Optional[str] = Field(None, min_length=1, max_length=100, description="接口名称")
-    interface_url: Optional[str] = Field(None, min_length=1, max_length=500, description="接口地址")
-    interface_method: Optional[Literal["GET", "POST", "PUT", "DELETE", "PATCH"]] = Field(
-        None,
-        description="请求方法"
+    interface_id: int = Field(
+        ...,
+        validation_alias="id",
+        description="接口ID"
     )
-    interface_desc: Optional[str] = Field(None, description="接口描述")
-    interface_status: Optional[str] = Field(None, description="接口状态")
-    interface_level: Optional[str] = Field(None, description="接口等级")
-    interface_body_type: Optional[int] = Field(None, description="请求体类型")
-    interface_follow_redirects: Optional[int] = Field(None, description="是否跟随重定向")
-    is_common: Optional[int] = Field(None, description="是否公共API")
-
-    module_id: Optional[int] = Field(None, description="模块ID")
-    env_id: Optional[int] = Field(None, description="环境ID")
-
-    interface_params: Optional[Dict[str, Any]] = Field(None, description="请求参数")
-    interface_headers: Optional[Dict[str, Any]] = Field(None, description="请求头")
-    interface_body: Optional[Dict[str, Any]] = Field(None, description="请求体")
-    interface_data: Optional[Dict[str, Any]] = Field(None, description="表单数据")
-    interface_asserts: Optional[List[Dict[str, Any]]] = Field(None, description="断言配置")
-    interface_extracts: Optional[List[Dict[str, Any]]] = Field(None, description="响应提取配置")
-    interface_raw_type: Optional[str] = Field(None, description="raw类型")
-    interface_connect_timeout: Optional[int] = Field(None, ge=1, le=300, description="连接超时(秒)")
-    interface_response_timeout: Optional[int] = Field(None, ge=1, le=300, description="响应超时(秒)")
-    interface_before_script: Optional[str] = Field(None, description="前置脚本")
-    interface_before_db_id: Optional[int] = Field(None, description="前置数据库ID")
-    interface_before_sql: Optional[str] = Field(None, description="前置SQL")
-    interface_before_sql_extracts: Optional[List[Dict[str, Any]]] = Field(None, description="SQL提取配置")
-    interface_before_params: Optional[List[Dict[str, Any]]] = Field(None, description="前置参数")
-    interface_after_script: Optional[str] = Field(None, description="后置脚本")
-    interface_auth_type: Optional[int] = Field(None, ge=1, le=4, description="认证类型")
-    interface_auth: Optional[Dict[str, Any]] = Field(None, description="认证配置")
 
 
 class InterfaceListSchema(BaseModel):
@@ -257,6 +295,7 @@ class GetInterfaceApiSchema(BaseModel):
 class TryScriptSchema(BaseModel):
     """尝试执行脚本模型"""
     script: str = Field(..., description="脚本")
+
 
 class CurlSchema(BaseModel):
     """Curl命令模型"""

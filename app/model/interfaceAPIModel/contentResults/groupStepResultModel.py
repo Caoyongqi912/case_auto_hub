@@ -6,7 +6,8 @@
 # @Software: PyCharm
 # @Desc: API组步骤执行结果模型
 
-from sqlalchemy import Column, INTEGER, ForeignKey, String, relationship
+from sqlalchemy import Column, INTEGER, ForeignKey, String
+from sqlalchemy.orm import relationship
 
 from app.model.interfaceAPIModel.contentResults.baseStepResultModel import (
     BaseStepResult,

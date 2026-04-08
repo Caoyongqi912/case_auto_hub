@@ -19,7 +19,8 @@ __all__ = [
     "ExecuteTasSchema",
     "AssociationCasesSchema",
     "AssociationInterfacesSchema",
-    "RemoveAssociationInterfacesSchema"
+    "RemoveAssociationInterfacesSchema",
+    "ExecuteTask",
 ]
 
 class InsertInterfaceTaskSchema(BaseModel):
@@ -41,7 +42,7 @@ class UpdateInterfaceTaskSchema(BaseModel):
     project_id: Optional[int] = Field(None, description="项目ID")
     id:int = Field(..., description="ID")
     
-class PageInterfaceTaskSchema(BaseModel, PageSchema):
+class PageInterfaceTaskSchema(PageSchema):
     """接口任务分页查询模型"""
     module_type: int = Field(ModuleEnum.API_TASK, description="模块类型")
     interface_task_title: Optional[str] = Field(None, description="标题")
@@ -84,3 +85,9 @@ class RemoveAssociationInterfacesSchema(BaseModel):
     """移除关联API模型"""
     task_id: int = Field(..., description="任务ID")
     interface_id: int = Field(..., description="API ID")
+
+class ExecuteTask(BaseModel):
+    """执行任务模型"""
+    task_id: int = Field(..., description="任务ID")
+    env_id: int = Field(..., description="环境ID")
+    options: List[str] = Field(..., description="选项")

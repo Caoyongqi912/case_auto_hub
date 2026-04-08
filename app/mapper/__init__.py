@@ -8,7 +8,7 @@
 import json
 from contextlib import asynccontextmanager
 from math import ceil
-from typing import TypeVar, List, Type, Any, Optional, Generic, Dict, Union, Sequence
+from typing import TypeVar, List, Type, Any, Optional, Generic, Dict, Union, Sequence, AsyncIterator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, text, delete, update
@@ -45,10 +45,31 @@ class Mapper(Generic[M]):
     """通用Mapper基类，提供标准的CRUD操作"""
     __model__: Type[M] | Any
 
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        if not hasattr(cls, '__model__'):
-            raise TypeError(f"{cls.__name__} 必须定义 __model__ 类变量")
+    # def __init_subclass__(cls, **kwargs):
+    #     super().__init_subclass__(**kwargs)
+    #     if not hasattr(cls, '__model__'):
+    #         raise TypeError(f"{cls.__name__} 必须定义 __model__ 类变量")
+
+    @classmethod
+    @asynccontextmanager
+    async def session_scope(cls, session: AsyncSession = None) -> AsyncIterator[AsyncSession]:
+        """
+        Session 上下文管理器
+
+        如果传入 session 则直接使用，否则创建新 session
+
+        Args:
+            session: 可选的数据库会话
+
+        Yields:
+            AsyncSession: 数据库会话
+        """
+        if session:
+            yield session
+        else:
+            async with async_session() as s:
+                yield s
+
 
     @classmethod
     async def _execute_query(cls, stmt, session: Optional[AsyncSession] = None):
@@ -144,16 +165,12 @@ class Mapper(Generic[M]):
         """
         model = cls.__model__
         try:
-            if session is None:
-                async with async_session() as session:
-                    instance = await session.get(model, ident)
-            else:
+            async with cls.session_scope(session) as session:
                 instance = await session.get(model, ident)
-
-            if not instance:
-                error_msg = f"数据{desc}不存在或已经删除，id: {ident}" if desc else f"数据不存在，id: {ident}"
-                raise NotFind(error_msg)
-            return instance
+                if not instance:
+                    error_msg = f"数据{desc}不存在或已经删除，id: {ident}" if desc else f"数据不存在，id: {ident}"
+                    raise NotFind(error_msg)
+                return instance
         except NotFind:
             raise
         except Exception as e:
@@ -188,14 +205,12 @@ class Mapper(Generic[M]):
             kwargs = set_updater(update_user, **kwargs)
 
             if session is None:
-                async with async_session() as session:
-                    async with session.begin():
-                        target = await cls.get_by_id(ident, session)
-                        return await cls.update_cls(target, session, **kwargs)
+                async with cls.transaction() as session:
+                    target = await cls.get_by_id(ident, session)
+                    return await cls.update_cls(target, session, **kwargs)
             else:
                 target = await cls.get_by_id(ident, session)
                 await cls.update_cls(target, session, **kwargs)
-                await session.commit()
                 return target
         except Exception as e:
             log.exception(e)

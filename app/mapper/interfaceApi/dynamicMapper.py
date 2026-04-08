@@ -175,25 +175,28 @@ class BaseDynamicMapper(Mapper):
             session: 数据库会话
         """
         try:
+            log.info(f'{cls.__name__}.append_dynamic old_info: {old_info}')
+            log.info(f'{cls.__name__}.append_dynamic new_info: {new_info}')
             diff_info = cls._diff_dict(old_info, new_info)
+            log.debug(f"{cls.__name__}.append_dynamic diff_info: {diff_info}")
             if not diff_info:
                 return
 
-            session.add(
-                cls.__model__(
+            model = cls.__model__(
                     description=f"{user.username} 更新了{cls.ENTITY_TYPE}:\n{diff_info}",
                     creator=user.id,
                     creatorName=user.username,
                     **{cls.FK_FIELD: entity_id}
                 )
-            )
-            await session.flush()
+            log.debug(f"{cls.__name__}.append_dynamic model: {model}")
+            await cls.add_flush_expunge(session=session,model=model)
         except Exception as e:
             log.error(f'{cls.__name__}.append_dynamic error: {e}')
             raise
 
 
 class InterfaceDynamicMapper(BaseDynamicMapper):
+
     """
     接口变更记录 Mapper
     """

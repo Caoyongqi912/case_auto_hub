@@ -87,14 +87,14 @@ async def page_case(page_info: PageInterfaceCaseSchema, _=Depends(Authentication
 
 
 @router.post("/update", description="修改用例基本信息")
-async def update_case_base_info(info: UpdateInterfaceCaseSchema, updater: User = Depends(Authentication())):
+async def update_case_base_info(info: UpdateInterfaceCaseSchema, user: User = Depends(Authentication())):
     """
     更新用例基本信息
 
     - **info**: 用例更新信息
     """
-    await InterfaceCaseMapper.update_by_id(
-        update_user=updater,
+    await InterfaceCaseMapper.update_interface_case(
+        user=user,
         **info.model_dump(exclude_none=True)
     )
     return Response.success()
@@ -177,13 +177,13 @@ async def reorder_content(order_info: ReorderContentStepSchema, _=Depends(Authen
 # ==================== 关联接口管理 ====================
 
 @router.post("/associate/associate_interfaces", description="关联接口到用例")
-async def associate_interfaces(interfaces: AssociationApisSchema, _=Depends(Authentication())):
+async def associate_interfaces(interfaces: AssociationApisSchema, user:User=Depends(Authentication())):
     """
     将多个接口关联到用例
 
     - **interfaces**: 包含用例ID和接口ID列表
     """
-    await InterfaceCaseMapper.associate_interfaces(**interfaces.model_dump())
+    await InterfaceCaseMapper.associate_interfaces(**interfaces.model_dump(),user=user)
     return Response.success()
 
 

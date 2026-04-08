@@ -31,18 +31,3 @@ class BaseSchema:
             if not value:
                 raise ParamsError("不能为空")
         return value
-
-
-from app.schema.api import (
-    InterfaceSchema,
-    AddInterfaceSchema,
-    UpdateInterfaceSchema,
-    UpdateInterfaceApiSchema,
-    RemoveInterfaceApiSchema,
-    CopyInterfaceApiSchema,
-    CopyInterfaceToModuleSchema,
-    InterfaceListSchema,
-    InterfaceBriefSchema,
-    InterfaceQuerySchema,
-    PageInfoSchema,
-)

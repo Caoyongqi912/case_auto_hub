@@ -14,23 +14,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper import Mapper
 from app.model import async_session
 from app.model.base import User
-from app.model.interfaceAPIModel.interfaceLoopModel import InterfaceLoopModal
+from app.model.interfaceAPIModel.interfaceLoopModel import InterfaceLoop
 from app.model.interfaceAPIModel.associationModel import InterfaceLoopAPIAssociation
 from app.model.interfaceAPIModel.interfaceModel import Interface
 from utils import log
 
 
-class InterfaceLoopMapper(Mapper[InterfaceLoopModal]):
+class InterfaceLoopMapper(Mapper[InterfaceLoop]):
     """
     循环 Mapper
 
     提供循环的增删改查、关联管理等功能
     """
 
-    __model__ = InterfaceLoopModal
+    __model__ = InterfaceLoop
 
     @classmethod
-    async def add_empty_loop(cls, session: AsyncSession, user: User) -> InterfaceLoopModal:
+    async def add_empty_loop(cls, session: AsyncSession, user: User) -> InterfaceLoop:
         """
         创建空白循环
 
@@ -215,7 +215,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoopModal]):
             raise
 
     @classmethod
-    async def copy_loop(cls, loop_id: int, user: User, session: AsyncSession) -> Optional[InterfaceLoopModal]:
+    async def copy_loop(cls, loop_id: int, user: User, session: AsyncSession) -> Optional[InterfaceLoop]:
         """
         复制循环及其关联接口的子步骤
         非公共接口的子步骤会复制并关联，公共接口的子步骤保持原样关联

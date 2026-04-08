@@ -1,6 +1,6 @@
 
 from app.mapper import Mapper
-from app.model.interface.interfaceGlobal import  InterfaceGlobalHeader, InterfaceGlobalFunc
+from app.model.interfaceAPIModel.interfaceGlobalModel import  InterfaceGlobalHeader, InterfaceGlobalFunc
 
 
 

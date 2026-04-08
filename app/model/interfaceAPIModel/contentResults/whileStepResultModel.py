@@ -6,8 +6,8 @@
 # @Software: PyCharm
 # @Desc: While循环步骤执行结果模型
 
-from sqlalchemy import Column, INTEGER, ForeignKey, JSON, String, relationship
-
+from sqlalchemy import Column, INTEGER, ForeignKey, JSON, String
+from sqlalchemy.orm import relationship
 from app.model.interfaceAPIModel.contentResults.baseStepResultModel import (
     BaseStepResult,
     step_result_id_column

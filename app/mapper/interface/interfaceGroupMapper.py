@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper import Mapper
 from app.model import async_session
 from app.model.base import User
-from app.model.interface import InterfaceModel
-from app.model.interface.InterfaceCaseStepContent import InterfaceGroupModel
+from app.model.interfaceAPIModel.interfaceModel import Interface
+from app.model.interfaceAPIModel.interfaceGroupModel import InterfaceGroup
 from app.model.interface.association import GroupApiAssociation
 from enums.CaseEnum import CaseStepContentType
 from utils import log
@@ -55,8 +55,8 @@ async def insert_group_api(session: AsyncSession, groupId: int, apiId: int, step
         raise e
 
 
-class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
-    __model__ = InterfaceGroupModel
+class InterfaceGroupMapper(Mapper[InterfaceGroup]):
+    __model__ = InterfaceGroup
 
     @classmethod
     async def update_group(cls, user: User, **kwargs):
@@ -88,7 +88,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
         try:
             async with async_session() as session:
                 async with session.begin():
-                    group: InterfaceGroupModel = await cls.get_by_id(ident=groupId, session=session)
+                    group: InterfaceGroup = await cls.get_by_id(ident=groupId, session=session)
                     group.api_num += 1
                     last_index = await get_last_index(session=session, groupId=groupId)
                     await insert_group_api(session=session, groupId=groupId, apiId=apiId, step_order=last_index + 1)
@@ -130,7 +130,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
         try:
             async with async_session() as session:
                 async with session.begin():
-                    group: InterfaceGroupModel = await cls.get_by_id(ident=groupId, session=session)
+                    group: InterfaceGroup = await cls.get_by_id(ident=groupId, session=session)
                     last_index = await get_last_index(session=session, groupId=groupId)
                     for index, apiId in enumerate(apiIds, start=last_index + 1):
                         flag = await insert_group_api(session=session, groupId=groupId, apiId=apiId, step_order=index)
@@ -143,7 +143,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
             raise e
 
     @classmethod
-    async def query_apis(cls, groupId: int) -> List[InterfaceModel]:
+    async def query_apis(cls, groupId: int) -> List[Interface]:
         """
         查询关联api
         :param groupId:
@@ -152,9 +152,9 @@ class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
         try:
             async with async_session() as session:
                 result = await session.execute(
-                    select(InterfaceModel).join(
+                    select(Interface).join(
                         GroupApiAssociation,
-                        GroupApiAssociation.api_id == InterfaceModel.id
+                        GroupApiAssociation.api_id == Interface.id
                     ).where(
                         GroupApiAssociation.api_group_id == groupId
                     ).order_by(GroupApiAssociation.step_order)
@@ -177,9 +177,9 @@ class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
                 async with session.begin():
                     from app.mapper.interface import InterfaceMapper
 
-                    group: InterfaceGroupModel = await cls.get_by_id(ident=groupId, session=session)
+                    group: InterfaceGroup = await cls.get_by_id(ident=groupId, session=session)
                     group.api_num -= 1
-                    api: InterfaceModel = await InterfaceMapper.get_by_id(ident=apiId, session=session)
+                    api: Interface = await InterfaceMapper.get_by_id(ident=apiId, session=session)
                     await session.execute(
                         delete(GroupApiAssociation).where(
                             and_(
@@ -231,19 +231,19 @@ class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
         """
         try:
 
-            query = await session.scalars(select(InterfaceGroupModel.id).join(
+            query = await session.scalars(select(InterfaceGroup.id).join(
                 GroupApiAssociation,
-                GroupApiAssociation.api_id == InterfaceGroupModel.id
+                GroupApiAssociation.api_id == InterfaceGroup.id
             ).where(
                 GroupApiAssociation.api_id == apiId
             ))
-            groups: Sequence[InterfaceGroupModel.id] = query.all()
+            groups: Sequence[InterfaceGroup.id] = query.all()
             log.debug(groups)
             await session.execute(
-                update(InterfaceGroupModel).where(
-                    InterfaceGroupModel.id.in_(groups)
+                update(InterfaceGroup).where(
+                    InterfaceGroup.id.in_(groups)
                 ).values(
-                    api_num=InterfaceGroupModel.api_num - 1
+                    api_num=InterfaceGroup.api_num - 1
                 )
             )
             await session.execute(
@@ -269,9 +269,9 @@ class InterfaceGroupMapper(Mapper[InterfaceGroupModel]):
                     group = await cls.get_by_id(groupId, session)
                     # 查询api
                     query = await session.execute(
-                        select(InterfaceModel).join(
+                        select(Interface).join(
                             GroupApiAssociation,
-                            GroupApiAssociation.api_id == InterfaceModel.id
+                            GroupApiAssociation.api_id == Interface.id
                         ).where(
                             GroupApiAssociation.api_group_id == groupId
                         )

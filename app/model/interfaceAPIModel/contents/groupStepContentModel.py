@@ -6,7 +6,9 @@
 # @Software: PyCharm
 # @Desc: API组步骤内容模型
 
-from sqlalchemy import Column, INTEGER, ForeignKey, relationship
+from sqlalchemy import Column, INTEGER, ForeignKey
+from sqlalchemy.orm import relationship
+from app.model.interfaceAPIModel.interfaceGroupModel import InterfaceGroup
 from app.model.interfaceAPIModel.contents.interfaceCaseContentsModel import (
     InterfaceCaseContents,
     step_content_id_column
@@ -27,7 +29,7 @@ class GroupStepContent(InterfaceCaseContents):
     step_content_id = step_content_id_column()
     target_id = Column(INTEGER, ForeignKey('interface_group.id', ondelete='CASCADE'), nullable=True, comment="关联接口组ID")
 
-    interface_group = relationship("InterfaceGroup", foreign_keys=[target_id], lazy="noload")
+    interface_group = relationship(InterfaceGroup, foreign_keys=[target_id], lazy="noload")
 
     @property
     def content_name(self) -> str:

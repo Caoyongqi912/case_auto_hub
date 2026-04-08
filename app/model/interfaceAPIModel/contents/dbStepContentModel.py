@@ -6,7 +6,9 @@
 # @Software: PyCharm
 # @Desc: 数据库步骤内容模型
 
-from sqlalchemy import Column, INTEGER, ForeignKey, relationship
+from app.model.base.db_config import DBExecuteModel
+from sqlalchemy import Column, INTEGER, ForeignKey
+from sqlalchemy.orm import relationship
 from app.model.interfaceAPIModel.contents.interfaceCaseContentsModel import (
     InterfaceCaseContents,
     step_content_id_column
@@ -25,9 +27,9 @@ class DBStepContent(InterfaceCaseContents):
     __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_API_DB}
 
     step_content_id = step_content_id_column()
-    target_id = Column(INTEGER, ForeignKey('case_content_db_execute.id', ondelete='SET NULL'), nullable=True, comment="关联数据库执行配置ID")
+    target_id = Column(INTEGER, ForeignKey('db_execute.id', ondelete='SET NULL'), nullable=True, comment="关联数据库执行配置ID")
 
-    db_execute = relationship("CaseContentDBExecute", foreign_keys=[target_id], lazy="noload")
+    db_execute = relationship(DBExecuteModel, foreign_keys=[target_id], lazy="noload")
 
     @property
     def content_name(self) -> str:

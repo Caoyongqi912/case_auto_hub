@@ -29,10 +29,11 @@ from app.model.interfaceAPIModel.contents import (
 )
 from enums.CaseEnum import CaseStepContentType
 from utils import log
+from sqlalchemy import select
 
 
 class InterfaceCaseContentMapper(Mapper):
-    
+    __model__: Type[InterfaceCaseContents] = InterfaceCaseContents
     CONTENT_TYPE_MAP: Dict[CaseStepContentType, Type[InterfaceCaseContents]] = {
         CaseStepContentType.STEP_API: APIStepContent,
         CaseStepContentType.STEP_API_GROUP: GroupStepContent,
@@ -46,7 +47,28 @@ class InterfaceCaseContentMapper(Mapper):
     }
 
     @classmethod
-    async def insert_content(cls,user:User, session:AsyncSession,content_type:CaseStepContentType, target_id:int,    **kwargs) -> InterfaceCaseContents:
+    async def get_by_id(cls, ident: int, session: AsyncSession) -> InterfaceCaseContents:
+        """
+        根据 ID 获取步骤内容（多态查询）
+
+        注意：在 Joined Table Inheritance 中，ident 是子表的主键（step_content_id），
+        也是基类表的主键（id），SQLAlchemy 会自动处理多态返回
+
+        Args:
+            ident: 步骤内容 ID
+            session: 数据库会话
+
+        Returns:
+            InterfaceCaseContents: 步骤内容实例（具体子类）
+        """
+        result = await session.get(InterfaceCaseContents, ident)
+        if not result:
+            raise ValueError(f"步骤内容不存在，id: {ident}")
+        return result
+
+    @classmethod
+    async def insert_content(cls, user: User, session: AsyncSession, content_type: CaseStepContentType, target_id: int,
+                             **kwargs) -> InterfaceCaseContents:
 
         """
         插入步骤内容
@@ -62,7 +84,8 @@ class InterfaceCaseContentMapper(Mapper):
             **kwargs: 其他可选字段（如 wait_time, script_text 等）
 
         Returns:
-            InterfaceCaseContents: 创建的步骤内容实例
+            InterfaceCaseContents: 创建
+    LoopStepContent,的步骤内容实例
         """
         cls_model = cls.CONTENT_TYPE_MAP.get(content_type)
         if not cls_model:
@@ -72,7 +95,7 @@ class InterfaceCaseContentMapper(Mapper):
             content = cls_model(
                 target_id=target_id,
                 creator=user.id,
-                creator_name=user.creatorName,
+                creatorName=user.username,
                 **kwargs
             )
             return await cls.add_flush_expunge(session=session, model=content)
@@ -120,7 +143,7 @@ class InterfaceCaseContentMapper(Mapper):
         new_content = cls_model(
             target_id=content.target_id,
             creator=user.id,
-            creator_name=user.creatorName,
+            creatorName=user.creatorName,
         )
 
         new_target_id = content.target_id

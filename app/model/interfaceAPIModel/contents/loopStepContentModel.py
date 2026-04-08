@@ -6,7 +6,9 @@
 # @Software: PyCharm
 # @Desc: 循环步骤内容模型
 
-from sqlalchemy import Column, INTEGER, ForeignKey, relationship
+from sqlalchemy import Column, INTEGER, ForeignKey
+from sqlalchemy.orm import relationship
+from app.model.interfaceAPIModel.interfaceLoopModel import InterfaceLoop
 from app.model.interfaceAPIModel.contents.interfaceCaseContentsModel import (
     InterfaceCaseContents,
     step_content_id_column
@@ -27,7 +29,7 @@ class LoopStepContent(InterfaceCaseContents):
     step_content_id = step_content_id_column()
     target_id = Column(INTEGER, ForeignKey('interface_loop.id', ondelete='CASCADE'), nullable=True, comment="关联循环配置ID")
 
-    interface_loop = relationship("InterfaceLoopModal", foreign_keys=[target_id], lazy="noload")
+    interface_loop = relationship(InterfaceLoop, foreign_keys=[target_id], lazy="noload")
 
     @property
     def content_name(self) -> str:

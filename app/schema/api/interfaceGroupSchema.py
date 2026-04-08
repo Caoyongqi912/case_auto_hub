@@ -5,7 +5,7 @@
 # @File : interfaceGroupSchema
 # @Software: PyCharm
 # @Desc:
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import BaseModel, Field
 
@@ -45,7 +45,7 @@ class GetInterfaceGroupSchema(BaseModel):
     id: int = Field(..., description="ID")
 
 
-class PageInterfaceGroupSchema(BaseModel, PageSchema):
+class PageInterfaceGroupSchema( PageSchema):
     """接口组分页查询模型"""
     id: Optional[int] = Field(None, description="ID")
     uid: Optional[str] = Field(None, description="唯一标识")

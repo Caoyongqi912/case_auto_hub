@@ -3,7 +3,7 @@ from sqlalchemy import Column, String
 
 
 
-class InterfaceScriptDesc(BaseModel):
+class InterfaceScriptDesc:
     __tablename__ = 'interface_scriptDesc'
 
     title = Column(String(100), nullable=False, comment="标题")

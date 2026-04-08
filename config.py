@@ -87,7 +87,7 @@ class LocalConfig(BaseConfig):
     UI_REPORT_URL = f"{DOMAIN}/ui/report/detail/resultId="
 
     # ======================= APScheduler ====================
-    APS = True
+    APS = False
     APS_TZ = pytz.timezone('Asia/Shanghai')
     APSJobStores = {
         'default':

@@ -78,19 +78,22 @@ class InterfaceMapper(Mapper[Interface]):
         Returns:
             Interface: 更新后的接口实例
         """
+        kwargs["id"] = interface_id
         try:
             async with cls.transaction() as session:
                 old_interface = await cls.get_by_id(ident=interface_id, session=session)
+                old_interface_map = old_interface.to_dict()
                 new_interface = await cls.update_by_id(
                     session=session,
                     update_user=user,
                     **kwargs
                 )
+                new_interface_map = new_interface.to_dict()
                 await InterfaceDynamicMapper.append_dynamic(
                     entity_id=interface_id,
                     user=user,
-                    old_info=old_interface.to_dict(),
-                    new_info=new_interface.to_dict(),
+                    old_info=old_interface_map,
+                    new_info=new_interface_map,
                     session=session
                 )
                 return new_interface
@@ -159,7 +162,9 @@ class InterfaceMapper(Mapper[Interface]):
     @classmethod
     async def remove_self_interface(cls, interface_id: int, session: AsyncSession) -> bool:
         """
-        删除接口关联的文件
+        删除私有接口
+
+        通过数据库级联删除机制自动删除关联的 APIStepContent 和关联记录
 
         Args:
             interface_id: 接口 ID
@@ -172,13 +177,16 @@ class InterfaceMapper(Mapper[Interface]):
             interface = await InterfaceMapper.get_by_id(
                 ident=interface_id, session=session
             )
+            log.debug(f"remove_self_interface: {interface}")
             if not interface:
                 return False
-
+            log.debug(f"remove_self_interface: {interface.is_common}")
             if interface.is_common:
+                log.debug(f"remove_self_interface: un delete")
                 return False
 
             await session.delete(interface)
+            await session.flush()
             return True
         except Exception as e:
             log.error(f"remove_self_interface error: {e}")

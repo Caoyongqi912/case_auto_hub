@@ -26,15 +26,15 @@ class InterfaceCaseSchema(BaseModel):
     id: Optional[int] = Field(None, description="用例ID")
     uid: Optional[str] = Field(None, description="唯一标识")
 
-    case_title: str = Field(..., description="用例标题")
+    case_title: Optional[str] = Field(None, description="用例标题")
     case_desc: Optional[str] = Field(None, description="用例描述")
-    case_level: str = Field(..., description="用例等级")
-    case_status: str = Field(default="1", description="用例状态")
-    case_api_num: int = Field(default=0, description="接口数量")
-    error_stop: int = Field(default=0, description="错误停止: 0否 1是")
+    case_level: Optional[str] = Field(None, description="用例等级")
+    case_status: Optional[str] = Field(None, description="用例状态")
+    case_api_num: Optional[int] = Field(None, description="接口数量")
+    error_stop: Optional[int] = Field(None, description="错误停止: 0否 1是")
 
-    module_id: int = Field(..., description="模块ID")
-    project_id: int = Field(..., description="项目ID")
+    module_id: Optional[int] = Field(None, description="模块ID")
+    project_id: Optional[int] = Field(None, description="项目ID")
 
     creator: Optional[int] = Field(None, description="创建人ID")
     creatorName: Optional[str] = Field(None, description="创建人姓名")
@@ -89,7 +89,7 @@ class UpdateInterfaceCaseSchema(BaseModel):
     """
     更新接口用例 Schema - 更新现有用例时使用
     """
-    id: int = Field(..., description="ID")
+    case_id: int = Field(..., description="ID",validation_alias="id")
     case_title: Optional[str] = Field(None, min_length=1, max_length=40, description="用例标题")
     case_desc: Optional[str] = Field(None, max_length=200, description="用例描述")
     case_level: Optional[str] = Field(None, description="用例等级")
@@ -128,6 +128,7 @@ class AssociationApisSchema(BaseModel):
     """
     case_id: int = Field(..., description="用例ID")
     interface_id_list: List[int] = Field(..., description="接口ID列表")
+    copy:bool = Field(...,description="复制添加")
 
 
 class AddInterfaceApi2CaseSchema(BaseModel):

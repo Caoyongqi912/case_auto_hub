@@ -1,8 +1,7 @@
-from app.model.basic import  base
 from sqlalchemy import Column, INTEGER, ForeignKey
 
 
-class InterfaceCaseStepContentAssociation(base):
+class InterfaceCaseStepContentAssociation():
     """
     接口 业务用例 步骤 中间表
     """
@@ -18,7 +17,7 @@ class InterfaceCaseStepContentAssociation(base):
                 f" step_order={self.step_order}) />")
 
 
-class CaseTaskAssociation(base):
+class CaseTaskAssociation():
     """
     业务用例与任务中间表
     """
@@ -33,7 +32,7 @@ class CaseTaskAssociation(base):
 
 
 #
-class ApiTaskAssociation(base):
+class ApiTaskAssociation():
     """
     接口 任务中间表
     """
@@ -47,7 +46,7 @@ class ApiTaskAssociation(base):
         return f"<ApiTaskAssociation(api_id={self.api_id}, task_id={self.task_id}, step_order={self.step_order}) />"
 
 
-class GroupApiAssociation(base):
+class GroupApiAssociation():
     """
     接口 接口组 中间表
     """
@@ -61,7 +60,7 @@ class GroupApiAssociation(base):
         return f"<GroupApiAssociation(api_group_id={self.api_group_id}, api_id={self.api_id}, step_order={self.step_order}) />"
 
 
-class ConditionAPIAssociation(base):
+class ConditionAPIAssociation():
     """
     接口 条件 中间表
 
@@ -77,7 +76,7 @@ class ConditionAPIAssociation(base):
 
 
 
-class LoopAPIAssociation(base):
+class LoopAPIAssociation():
     """
     接口 Loop 关系
     """

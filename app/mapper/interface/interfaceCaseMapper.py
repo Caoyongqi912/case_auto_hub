@@ -15,8 +15,9 @@ from app.mapper.interface import InterfaceConditionMapper, InterfaceMapper
 from app.mapper.project.dbConfigMapper import CaseContentDBExecuteMapper
 from app.model import async_session
 from app.model.base import User
-from app.model.interface import InterFaceCaseModel, InterfaceModel
-
+# from app.model.interface import InterfaceCase, InterfaceModel
+from app.model.interfaceAPIModel.interfaceModel import Interface
+from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
 from app.model.interface.InterfaceCaseStepContent import InterfaceCaseStepContent, \
     InterfaceCondition, DBExecuteModel, InterfaceLoopModal
 from app.model.interface.association import InterfaceCaseStepContentAssociation, LoopAPIAssociation
@@ -111,9 +112,9 @@ class AssociationHelper:
         )
 
 
-class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
+class InterfaceCaseMapper(Mapper[Interface]):
     """接口用例Mapper"""
-    __model__ = InterFaceCaseModel
+    __model__ = Interface
 
     @classmethod
     async def association_apis(cls, interface_case_id: int, interface_id_list: List[int]):
@@ -123,7 +124,7 @@ class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
         """
         async with async_session() as session:
             async with session.begin():
-                case: InterFaceCaseModel = await cls.get_by_id(session=session, ident=interface_case_id)
+                case: InterfaceCase = await cls.get_by_id(session=session, ident=interface_case_id)
                 case.apiNum += len(interface_id_list)
 
                 case_step_content_step_apis = []
@@ -150,7 +151,7 @@ class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
         try:
             async with async_session() as session:
                 async with session.begin():
-                    case: InterFaceCaseModel = await cls.get_by_id(session=session, ident=case_id)
+                    case: InterfaceCase = await cls.get_by_id(session=session, ident=case_id)
                     case.apiNum += 1
                     last_index = await LastIndexHelper.get_case_step_last_index(case_id, session)
 
@@ -183,7 +184,7 @@ class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
 
         async with async_session() as session:
             async with session.begin():
-                case: InterFaceCaseModel = await cls.get_by_id(session=session, ident=case_id)
+                case: InterfaceCase = await cls.get_by_id(session=session, ident=case_id)
                 case.apiNum += 1
                 api = await InterfaceMapper.empty_api(user=user, session=session, module_id=module_id,
                                                       project_id=project_id)
@@ -208,7 +209,7 @@ class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
         """
         async with async_session() as session:
             async with session.begin():
-                case: InterFaceCaseModel = await cls.get_by_id(session=session, ident=interface_case_id)
+                case: InterfaceCase = await cls.get_by_id(session=session, ident=interface_case_id)
                 case.apiNum += len(api_group_id_list)
 
                 case_step_content_group_apis = []
@@ -234,7 +235,7 @@ class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
 
         async with async_session() as session:
             async with session.begin():
-                case: InterFaceCaseModel = await cls.get_by_id(session=session, ident=interface_case_id)
+                case: InterfaceCase = await cls.get_by_id(session=session, ident=interface_case_id)
                 case.apiNum += 1
 
                 condition = await InterfaceConditionMapper.add_empty_condition(session=session, user=user)
@@ -286,7 +287,7 @@ class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
 
         async with async_session() as session:
             async with session.begin():
-                case: InterFaceCaseModel = await cls.get_by_id(session=session, ident=case_id)
+                case: InterfaceCase = await cls.get_by_id(session=session, ident=case_id)
                 case.apiNum -= 1
 
                 content: InterfaceCaseStepContent = await InterfaceCaseStepContentMapper.get_by_id(
@@ -312,7 +313,7 @@ class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
         """
         async with async_session() as session:
             async with session.begin():
-                case: InterFaceCaseModel = await cls.get_by_id(session=session, ident=case_id)
+                case: InterfaceCase = await cls.get_by_id(session=session, ident=case_id)
                 case.apiNum += 1
 
                 content = await InterfaceCaseStepContentMapper.copy_content(
@@ -334,7 +335,7 @@ class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
         try:
             async with async_session() as session:
                 async with session.begin():
-                    case: InterFaceCaseModel = await cls.get_by_id(ident=case_id, session=session)
+                    case: InterfaceCase = await cls.get_by_id(ident=case_id, session=session)
                     new_case = cls.__model__(
                         creator=user.id,
                         creatorName=user.username,
@@ -377,7 +378,7 @@ class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
         """
         async with async_session() as session:
             async with session.begin():
-                case: InterFaceCaseModel = await cls.get_by_id(session=session, ident=case_id)
+                case: InterfaceCase = await cls.get_by_id(session=session, ident=case_id)
 
                 contents = await cls.query_content_step(case_id, session)
                 if contents:
@@ -415,7 +416,7 @@ class InterfaceCaseMapper(Mapper[InterFaceCaseModel]):
         """
 
         try:
-            case: InterFaceCaseModel = await cls.get_by_id(ident=caseId)
+            case: InterfaceCase = await cls.get_by_id(ident=caseId)
             if not case:
                 raise Exception("用例不存在")
 
@@ -665,9 +666,9 @@ class InterfaceLoopMapper(Mapper[InterfaceLoopModal]):
         async with async_session() as session:
             loop = await cls.get_by_id(ident=loop_id, session=session)
 
-            stmt = select(InterfaceModel).join(LoopAPIAssociation).where(
+            stmt = select(Interface).join(LoopAPIAssociation).where(
                 LoopAPIAssociation.loop_id == loop.id,
-                InterfaceModel.id == LoopAPIAssociation.api_id
+                Interface.id == LoopAPIAssociation.api_id
             ).order_by(
                 LoopAPIAssociation.step_order
             )
