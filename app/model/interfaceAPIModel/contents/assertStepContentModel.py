@@ -5,6 +5,7 @@
 # @File : assertStepContentModel
 # @Software: PyCharm
 # @Desc: 断言步骤内容模型
+from typing import Optional, Set
 
 from sqlalchemy import Column, JSON
 from app.model.interfaceAPIModel.contents.interfaceCaseContentsModel import (
@@ -25,16 +26,21 @@ class AssertStepContent(InterfaceCaseContents):
     __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_API_ASSERT}
 
     step_content_id = step_content_id_column()
-    assert_list = Column(JSON, nullable=False, comment="断言配置列表")
+    assert_list = Column(JSON, nullable=True, comment="断言配置列表")
 
-    @property
-    def content_name(self) -> str:
+    def _get_default_name(self) -> str:
         return "断言"
 
     @property
     def content_desc(self) -> str:
         count = len(self.assert_list) if self.assert_list else 0
         return f"共 {count} 条断言"
+
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        result = super().to_dict(exclude)
+        if 'assert_list' not in (exclude or set()):
+            result['assert_list'] = self.assert_list
+        return result
 
     def __repr__(self):
         return f"<AssertStepContent(id={self.id}, assert_count={len(self.assert_list) if self.assert_list else 0})>"

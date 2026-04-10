@@ -14,7 +14,7 @@ from sqlalchemy.orm import relationship
 from app.model import BaseModel
 
 
-class CaseStepResult(BaseModel):
+class InterfaceCaseResult(BaseModel):
     """
     用例执行结果
     
@@ -80,6 +80,14 @@ class CaseStepResult(BaseModel):
         "BaseStepResult",
         back_populates="case_result",
         foreign_keys="BaseStepResult.case_result_id",
+        cascade="all, delete-orphan"
+    )
+
+    # InterfaceResult 列表（通过 APIStepResult.target_result_id 关联）
+    interface_results = relationship(
+        "InterfaceResult",
+        back_populates="case_result",
+        foreign_keys="InterfaceResult.case_result_id",
         cascade="all, delete-orphan"
     )
 

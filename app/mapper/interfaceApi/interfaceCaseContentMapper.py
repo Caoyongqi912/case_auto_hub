@@ -5,7 +5,7 @@
 # @File : interfaceCaseContentMapper
 # @Software: PyCharm
 # @Desc: 用例步骤内容 Mapper
-from typing import Dict, Type
+from typing import Dict, Type, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,7 +67,21 @@ class InterfaceCaseContentMapper(Mapper):
         return result
 
     @classmethod
-    async def insert_content(cls, user: User, session: AsyncSession, content_type: CaseStepContentType, target_id: int,
+    async def update_content(cls, content_id: int, **kwargs):
+        try:
+            async with cls.transaction() as session:
+                content =await cls.get_by_id(content_id, session=session)
+                log.debug(f"update_content {content}")
+                log.debug(f"update_content {kwargs}")
+                return await cls.update_model(target=content, session=session, **kwargs)
+
+        except Exception as e:
+            log.error(f"update_content {content_id} error: {e}")
+            raise
+
+    @classmethod
+    async def insert_content(cls, user: User, session: AsyncSession, content_type: CaseStepContentType,
+                             target_id: Optional[int] = None,
                              **kwargs) -> InterfaceCaseContents:
 
         """
@@ -193,3 +207,40 @@ class InterfaceCaseContentMapper(Mapper):
 
         new_content.target_id = new_target_id
         return await cls.add_flush_expunge(session=session, model=new_content)
+
+    
+    
+    
+    
+    
+    @classmethod
+    async def update_model(cls, target: InterfaceCaseContents, session: AsyncSession, **kw) -> InterfaceCaseContents:
+        """
+        更新模型实例（支持 JTI 多态）
+
+        自动识别目标实例的实际类型（基类或子类），
+        从该类的表结构中获取有效列进行更新
+
+        注意：需要同时包含基类和子类的列，因为公共字段在基类表中
+
+        :param target: 目标模型实例（可能是子类）
+        :param session: 会话对象
+        :param kw: 更新字段
+        :return: 更新后的模型实例
+        """
+        try:
+            base_columns = set(InterfaceCaseContents.__table__.columns.keys())
+            child_columns = set(target.__class__.__table__.columns.keys())
+            valid_columns = base_columns | child_columns
+            update_fields = {k: v for k, v in kw.items() if k in valid_columns}
+
+            for field, value in update_fields.items():
+                if hasattr(target, field):
+                    setattr(target, field, value)
+
+            await session.flush()
+            session.expunge(target)
+            return target
+        except Exception as e:
+            log.error(f"update_model error: {e}")
+            raise

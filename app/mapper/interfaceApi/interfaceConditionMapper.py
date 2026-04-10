@@ -12,6 +12,7 @@ from sqlalchemy import select, delete, insert, and_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
+from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.model import async_session
 from app.model.base import User
 from app.model.interfaceAPIModel.interfaceConditionModel import InterfaceCondition
@@ -48,7 +49,8 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
         return await cls.add_flush_expunge(session, condition)
 
     @classmethod
-    async def query_interfaces_by_condition_id(cls, condition_id: int, session: Optional[AsyncSession] = None) -> Sequence[Interface]:
+    async def query_interfaces_by_condition_id(cls, condition_id: int, session: Optional[AsyncSession] = None) -> \
+            Sequence[Interface]:
         """
         查询条件关联的接口列表
 
@@ -96,16 +98,15 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
         """
         try:
 
-
             await session.execute(
-            delete(Interface).where(
-                Interface.id.in_(
-                    select(InterfaceConditionAPIAssociation.interface_api_id)
-                    .where(InterfaceConditionAPIAssociation.condition_id == condition_id)
-                ),
-                Interface.is_common == 0  # 非公共
+                delete(Interface).where(
+                    Interface.id.in_(
+                        select(InterfaceConditionAPIAssociation.interface_api_id)
+                        .where(InterfaceConditionAPIAssociation.condition_id == condition_id)
+                    ),
+                    Interface.is_common == 0  # 非公共
+                )
             )
-        )
             condition = await cls.get_by_id(
                 ident=condition_id, session=session
             )
@@ -118,10 +119,40 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
             raise
 
     @classmethod
+    async def associate_self_interface(cls, case_id: int, condition_id: int, user: User) -> Interface:
+        """
+        添加私有接口
+        """
+        from app.mapper.interfaceApi.interfaceCaseMapper import InterfaceCaseMapper
+
+        try:
+            async with cls.transaction() as session:
+                case = await InterfaceCaseMapper.get_by_id(case_id, session=session)
+                empty_interface = await InterfaceMapper.association_empty_interface(
+                    module_id=case.module_id,
+                    project_id=case.project_id,
+                    user=user,
+                    session=session
+                )
+                await AssociationHelper.create_condition_interface_association(
+                    session=session,
+                    condition_id=condition_id,
+                    interface_id=empty_interface.id
+                )
+                return empty_interface
+
+
+        except Exception as e:
+            log.error(f"associate_self_interface error: {e}")
+            raise
+
+    @classmethod
     async def associate_interfaces(
-        cls,
-        condition_id: int,
-        interface_id_list: List[int],
+            cls,
+            condition_id: int,
+            interface_id_list: List[int],
+            copy: bool,
+            user: User
     ) -> None:
         """
         关联接口到条件
@@ -129,10 +160,29 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
         Args:
             condition_id: 条件 ID
             interface_id_list: 接口 ID 列表
+            copy: 接口 ID 列表
+            user: 用户
         """
+        if not interface_id_list:
+            return
         try:
             async with cls.transaction() as session:
-                await AssociationHelper.create_condition_api_association(session=session, condition_id=condition_id, interface_id_list=interface_id_list)
+                if copy:
+                    interface_ids_to_add = []
+                    for interface_id in interface_id_list:
+                        new_interface = await InterfaceMapper.copy_one(
+                            target=interface_id,
+                            session=session,
+                            user=user,
+                            is_common=False
+                        )
+                        interface_ids_to_add.append(new_interface.id)
+
+                else:
+                    interface_ids_to_add = interface_id_list
+                await AssociationHelper.create_condition_interfaces_association(session=session,
+                                                                                condition_id=condition_id,
+                                                                                interface_id_list=interface_ids_to_add)
         except Exception as e:
             log.error(f"associate_interfaces error: {e}")
             raise
@@ -146,6 +196,10 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
         """
         try:
             async with cls.transaction() as session:
+                interface = await InterfaceMapper.get_by_id(ident=interface_id, session=session)
+                if not interface.is_common:
+                    await session.delete(interface)
+
                 await session.execute(
                     delete(InterfaceConditionAPIAssociation).where(
                         and_(
@@ -157,11 +211,12 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
         except Exception as e:
             log.error(f'remove_association_interface error: {e}')
             raise
+
     @classmethod
     async def reorder_condition_apis(
-        cls,
-        condition_id: int,
-        interface_id_list: List[int]
+            cls,
+            condition_id: int,
+            interface_id_list: List[int]
     ):
         """
         重新排序条件关联的接口（先删后插策略）
@@ -196,8 +251,6 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
             log.error(f"reorder_condition_apis error: {e}")
             raise
 
-
-
     @classmethod
     async def copy_condition(cls, condition_id: int, user: User, session: AsyncSession) -> Optional[InterfaceCondition]:
         """
@@ -210,7 +263,7 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
         :return: 复制后的条件对象
         """
         from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
-        condition = await cls.get_by_id(ident=condition_id,session=session)
+        condition = await cls.get_by_id(ident=condition_id, session=session)
         if not condition:
             return None
         new_condition = await cls.copy_one(
@@ -251,6 +304,7 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
 
         return new_condition
 
+
 class LastIndexHelper:
     """索引查询辅助类"""
 
@@ -275,10 +329,27 @@ class AssociationHelper:
     """关联操作辅助类"""
 
     @staticmethod
-    async def create_condition_api_association(
-        session: AsyncSession,
-        condition_id: int,
-        interface_id_list: List[int]
+    async def create_condition_interface_association(
+            session: AsyncSession,
+            interface_id: int,
+            condition_id: int
+    ):
+        last_index = await LastIndexHelper.get_condition_apis_last_index(condition_id, session)
+        await session.execute(
+            insert(InterfaceConditionAPIAssociation).values(
+                {
+                    "condition_id": condition_id,
+                    "interface_api_id": interface_id,
+                    "step_order": last_index + 1
+                }
+            )
+        )
+
+    @staticmethod
+    async def create_condition_interfaces_association(
+            session: AsyncSession,
+            condition_id: int,
+            interface_id_list: List[int]
     ):
         """
         创建条件与API的关联

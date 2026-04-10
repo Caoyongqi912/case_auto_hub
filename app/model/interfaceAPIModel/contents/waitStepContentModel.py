@@ -5,6 +5,7 @@
 # @File : waitStepContentModel
 # @Software: PyCharm
 # @Desc: 等待步骤内容模型
+from typing import Optional, Set
 
 from sqlalchemy import Column, FLOAT
 from app.model.interfaceAPIModel.contents.interfaceCaseContentsModel import (
@@ -27,13 +28,18 @@ class WaitStepContent(InterfaceCaseContents):
     step_content_id = step_content_id_column()
     wait_time = Column(FLOAT, nullable=False, comment="等待时间(秒)")
 
-    @property
-    def content_name(self) -> str:
+    def _get_default_name(self) -> str:
         return "等待"
 
     @property
     def content_desc(self) -> str:
         return f"等待 {self.wait_time} 秒"
+
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        result = super().to_dict(exclude)
+        if 'wait_time' not in (exclude or set()):
+            result['wait_time'] = self.wait_time
+        return result
 
     def __repr__(self):
         return f"<WaitStepContent(id={self.id}, wait_time={self.wait_time})>"

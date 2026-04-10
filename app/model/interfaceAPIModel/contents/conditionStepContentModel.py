@@ -31,14 +31,12 @@ class ConditionStepContent(InterfaceCaseContents):
 
     interface_condition = relationship(InterfaceCondition, foreign_keys=[target_id], lazy="noload")
 
-    @property
-    def content_name(self) -> str:
+    def _get_default_name(self) -> str:
         return "条件判断"
 
     @property
     def content_desc(self) -> str:
-        if self.interface_condition:
-            return self.interface_condition.condition_desc or ""
+
         return ""
 
     def __repr__(self):

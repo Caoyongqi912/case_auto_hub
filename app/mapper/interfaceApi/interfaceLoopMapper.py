@@ -12,6 +12,7 @@ from sqlalchemy import select, insert, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
+from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.model import async_session
 from app.model.base import User
 from app.model.interfaceAPIModel.interfaceLoopModel import InterfaceLoop
@@ -48,34 +49,52 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
         return await cls.add_flush_expunge(session=session, model=loop)
 
     @classmethod
-    async def associate_apis(
-        cls,
-        loop_id: int,
-        interface_id_list: List[int],
-        session: AsyncSession
+    async def associate_interfaces(
+            cls,
+            loop_id: int,
+            interface_id_list: List[int],
+            copy: bool,
+            user: User,
     ) -> None:
         """
         关联接口到循环
 
         Args:
             loop_id: 循环 ID
+            copy:是否复制添加
             interface_id_list: 接口 ID 列表
-            session: 数据库会话
+            user: 用户
         """
+        if not interface_id_list:
+            return
         try:
-            last_index = await cls.get_last_step_order(loop_id, session)
-            values = [
-                {
-                    "loop_id": loop_id,
-                    "interface_api_id": interface_id,
-                    "step_order": last_index + index + 1
-                }
-                for index, interface_id in enumerate(interface_id_list)
-            ]
-            if values:
-                await session.execute(
-                    insert(InterfaceLoopAPIAssociation).values(values)
-                )
+            async with cls.transaction() as session:
+                if copy:
+                    interface_ids_to_add = []
+                    for interface_id in interface_id_list:
+                        new_interface = await InterfaceMapper.copy_one(
+                            target=interface_id,
+                            session=session,
+                            user=user,
+                            is_common=False
+                        )
+                        interface_ids_to_add.append(new_interface.id)
+
+                else:
+                    interface_ids_to_add = interface_id_list
+                last_index = await cls.get_last_step_order(loop_id, session)
+                values = [
+                    {
+                        "loop_id": loop_id,
+                        "interface_api_id": interface_id,
+                        "step_order": last_index + index + 1
+                    }
+                    for index, interface_id in enumerate(interface_ids_to_add)
+                ]
+                if values:
+                    await session.execute(
+                        insert(InterfaceLoopAPIAssociation).values(values)
+                    )
         except Exception as e:
             log.error(f"associate_apis error: {e}")
             raise
@@ -110,10 +129,9 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
 
     @classmethod
     async def disassociate_api(
-        cls,
-        loop_id: int,
-        interface_id: int,
-        session: AsyncSession
+            cls,
+            loop_id: int,
+            interface_id: int,
     ) -> None:
         """
         解除循环与接口的关联
@@ -121,27 +139,29 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
         Args:
             loop_id: 循环 ID
             interface_id: 接口 ID
-            session: 数据库会话
         """
         try:
-            await session.execute(
-                delete(InterfaceLoopAPIAssociation).where(
-                    and_(
-                        InterfaceLoopAPIAssociation.loop_id == loop_id,
-                        InterfaceLoopAPIAssociation.interface_api_id == interface_id
+            async with cls.transaction() as session:
+                interface = await InterfaceMapper.get_by_id(ident=interface_id, session=session)
+                if not interface.is_common:
+                    await session.delete(interface)
+                await session.execute(
+                    delete(InterfaceLoopAPIAssociation).where(
+                        and_(
+                            InterfaceLoopAPIAssociation.loop_id == loop_id,
+                            InterfaceLoopAPIAssociation.interface_api_id == interface_id
+                        )
                     )
                 )
-            )
         except Exception as e:
             log.error(f"disassociate_api error: {e}")
             raise
 
     @classmethod
     async def reorder_loop_apis(
-        cls,
-        loop_id: int,
-        interface_id_list: List[int],
-        session: AsyncSession
+            cls,
+            loop_id: int,
+            interface_id_list: List[int],
     ) -> None:
         """
         重新排序循环关联的接口
@@ -151,29 +171,29 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
         Args:
             loop_id: 循环 ID
             interface_id_list: 新的接口 ID 列表顺序
-            session: 数据库会话
         """
         try:
-            # 1. 删除旧关联
-            await session.execute(
-                delete(InterfaceLoopAPIAssociation).where(
-                    InterfaceLoopAPIAssociation.loop_id == loop_id
-                )
-            )
-
-            # 2. 插入新关联
-            if interface_id_list:
-                values = [
-                    {
-                        "loop_id": loop_id,
-                        "interface_api_id": interface_id,
-                        "step_order": index
-                    }
-                    for index, interface_id in enumerate(interface_id_list, start=1)
-                ]
+            async with cls.transaction() as session:
+                # 1. 删除旧关联
                 await session.execute(
-                    insert(InterfaceLoopAPIAssociation).values(values)
+                    delete(InterfaceLoopAPIAssociation).where(
+                        InterfaceLoopAPIAssociation.loop_id == loop_id
+                    )
                 )
+
+                # 2. 插入新关联
+                if interface_id_list:
+                    values = [
+                        {
+                            "loop_id": loop_id,
+                            "interface_api_id": interface_id,
+                            "step_order": index
+                        }
+                        for index, interface_id in enumerate(interface_id_list, start=1)
+                    ]
+                    await session.execute(
+                        insert(InterfaceLoopAPIAssociation).values(values)
+                    )
         except Exception as e:
             log.error(f"reorder_loop_apis error: {e}")
             raise
@@ -192,16 +212,14 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
         try:
 
             await session.execute(
-            delete(Interface).where(
-                Interface.id.in_(
-                    select(InterfaceLoopAPIAssociation.interface_api_id)
-                    .where(InterfaceLoopAPIAssociation.loop_id == loop_id)
-                ),
-                Interface.is_common == 0  # 非公共
+                delete(Interface).where(
+                    Interface.id.in_(
+                        select(InterfaceLoopAPIAssociation.interface_api_id)
+                        .where(InterfaceLoopAPIAssociation.loop_id == loop_id)
+                    ),
+                    Interface.is_common == 0  # 非公共
+                )
             )
-        )
-
-
 
             loop = await InterfaceLoopMapper.get_by_id(
                 ident=loop_id, session=session

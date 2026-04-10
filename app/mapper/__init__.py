@@ -451,7 +451,8 @@ class Mapper(Generic[M]):
             update_fields = {k: v for k, v in kw.items() if k in valid_columns}
 
             for field, value in update_fields.items():
-                setattr(target, field, value)
+                if hasattr(target, field):
+                    setattr(target, field, value)
 
             await session.flush()
             session.expunge(target)

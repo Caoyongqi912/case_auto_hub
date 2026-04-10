@@ -31,8 +31,7 @@ class LoopStepContent(InterfaceCaseContents):
 
     interface_loop = relationship(InterfaceLoop, foreign_keys=[target_id], lazy="noload")
 
-    @property
-    def content_name(self) -> str:
+    def _get_default_name(self) -> str:
         if self.interface_loop:
             loop_type = LoopTypeEnum(self.interface_loop.loop_type)
             type_names = {
@@ -46,8 +45,8 @@ class LoopStepContent(InterfaceCaseContents):
     @property
     def content_desc(self) -> str:
         if self.interface_loop:
-            return f"循环次数: {self.interface_loop.loop_count or 0}"
-        return ""
+            return f"子步骤数量 x : {self.interface_loop.loop_step_num or 0}"
+        return "子步骤数量 x 0"
 
     def __repr__(self):
         return f"<LoopStepContent(id={self.id}, target_id={self.target_id})>"

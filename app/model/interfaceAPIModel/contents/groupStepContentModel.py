@@ -5,6 +5,7 @@
 # @File : groupStepContentModel
 # @Software: PyCharm
 # @Desc: API组步骤内容模型
+from typing import Optional, Set
 
 from sqlalchemy import Column, INTEGER, ForeignKey
 from sqlalchemy.orm import relationship
@@ -31,8 +32,7 @@ class GroupStepContent(InterfaceCaseContents):
 
     interface_group = relationship(InterfaceGroup, foreign_keys=[target_id], lazy="noload")
 
-    @property
-    def content_name(self) -> str:
+    def _get_default_name(self) -> str:
         if self.interface_group:
             return self.interface_group.interface_group_name
         return "未知接口组"
@@ -40,8 +40,22 @@ class GroupStepContent(InterfaceCaseContents):
     @property
     def content_desc(self) -> str:
         if self.interface_group:
-            return self.interface_group.interface_group_description or ""
+            return self.interface_group.interface_group_desc or ""
         return ""
+        
+        
+    @property
+    def interface_num(self) -> int:
+        if self.interface_group:
+            return self.interface_group.interface_group_api_num or 0
+        return 0
+    
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        result = super().to_dict(exclude)
+        if 'group_interface_num' not in (exclude or set()):
+            result['group_interface_num'] = self.interface_num
+        return result
+
 
     def __repr__(self):
         return f"<GroupStepContent(id={self.id}, target_id={self.target_id})>"

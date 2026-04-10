@@ -18,8 +18,10 @@ from app.schema.api.interfaceGroupSchema import (
     UpdateInterfaceGroupSchema,
     AssociationInterfacesToGroupSchema,
     PageInterfaceGroupSchema,
-    OptInterfaceGroupSchema,
+    OptInterfaceGroupSchema, AssociationSelfInterfaceToGroupSchema,
 )
+from croe.interface.runner import InterfaceRunner
+from croe.interface.starter import APIStarter
 from utils import log
 
 router = APIRouter(prefix="/interface/group", tags=['自动化接口步骤'])
@@ -100,6 +102,17 @@ async def associate_interfaces(info: AssociationInterfacesToGroupSchema, _: User
     await InterfaceGroupMapper.association_interfaces(**info.model_dump())
     return Response.success()
 
+@router.post("/associate/add_self_interface", description="关联接口到分组")
+async def add_self_interface(info: AssociationSelfInterfaceToGroupSchema, user: User = Depends(Authentication())):
+    """
+    将多个接口关联到分组
+
+    - **info**: 包含分组ID和接口ID列表
+    """
+    await InterfaceGroupMapper.association_interface(**info.model_dump(),user=user)
+    return Response.success()
+
+
 
 @router.get("/associate/query_interfaces", description="查询分组关联的接口列表")
 async def query_associated_interfaces(group_id: int, _: User = Depends(Authentication())):
@@ -130,7 +143,7 @@ async def remove_associated_interface(info: OptInterfaceGroupSchema, _: User = D
 
     - **info**: 包含分组ID和接口ID
     """
-    await InterfaceGroupMapper.remove_association_interface(**info.model_dump())
+    await InterfaceGroupMapper.remove_association(**info.model_dump())
     return Response.success()
 
 
@@ -143,3 +156,12 @@ async def reorder_associated_interfaces(info: OptInterfaceGroupSchema, _: User =
     """
     await InterfaceGroupMapper.reorder_interfaces(**info.model_dump())
     return Response.success()
+
+
+@router.get("/try", description="接口组调试运行")
+async def try_group(group_id: int, env_id: int, user: User = Depends(Authentication())):
+    _starter = APIStarter(user)
+    resp = await InterfaceRunner(
+        starter=_starter
+    ).try_group(group_id=group_id, env_id=env_id)
+    return Response.success(resp)

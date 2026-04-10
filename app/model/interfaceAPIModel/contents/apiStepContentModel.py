@@ -6,6 +6,7 @@
 # @Software: PyCharm
 # @Desc: API步骤内容模型
 
+
 from typing import Optional, Set
 
 from sqlalchemy import Column, INTEGER, ForeignKey
@@ -35,8 +36,7 @@ class APIStepContent(InterfaceCaseContents):
 
     interface_api = relationship(Interface, foreign_keys=[target_id], lazy="noload")
 
-    @property
-    def content_name(self) -> str:
+    def _get_default_name(self) -> str:
         if self.interface_api:
             return self.interface_api.interface_name
         return "未知接口"

@@ -12,15 +12,16 @@ from pydantic import BaseModel, Field
 from app.schema import PageSchema
 from enums import ModuleEnum
 
-
 __all__ = [
     "InsertInterfaceGroupSchema",
     "UpdateInterfaceGroupSchema",
     "GetInterfaceGroupSchema",
     "PageInterfaceGroupSchema",
     "AssociationInterfacesToGroupSchema",
-    "OptInterfaceGroupSchema"
+    "OptInterfaceGroupSchema",
+    "AssociationSelfInterfaceToGroupSchema"
 ]
+
 
 class InsertInterfaceGroupSchema(BaseModel):
     """插入接口组模型"""
@@ -45,7 +46,7 @@ class GetInterfaceGroupSchema(BaseModel):
     id: int = Field(..., description="ID")
 
 
-class PageInterfaceGroupSchema( PageSchema):
+class PageInterfaceGroupSchema(PageSchema):
     """接口组分页查询模型"""
     id: Optional[int] = Field(None, description="ID")
     uid: Optional[str] = Field(None, description="唯一标识")
@@ -57,6 +58,14 @@ class AssociationInterfacesToGroupSchema(BaseModel):
     """关联多个接口到组模型"""
     interface_ids: List[int] = Field(..., description="API ID列表")
     group_id: int = Field(..., description="组ID")
+    copy: bool = Field(..., description="复制添加？")
+
+
+
+class AssociationSelfInterfaceToGroupSchema(BaseModel):
+    """关联多个接口到组模型"""
+    group_id: int = Field(..., description="组ID")
+
 
 
 class OptInterfaceGroupSchema(BaseModel):

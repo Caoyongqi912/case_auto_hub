@@ -89,7 +89,7 @@ class UpdateInterfaceCaseSchema(BaseModel):
     """
     更新接口用例 Schema - 更新现有用例时使用
     """
-    case_id: int = Field(..., description="ID",validation_alias="id")
+    case_id: int = Field(..., description="ID", validation_alias="id")
     case_title: Optional[str] = Field(None, min_length=1, max_length=40, description="用例标题")
     case_desc: Optional[str] = Field(None, max_length=200, description="用例描述")
     case_level: Optional[str] = Field(None, description="用例等级")
@@ -121,6 +121,25 @@ class PageInterfaceCaseSchema(InterfaceCaseSchema, PageSchema):
     module_type: int = Field(ModuleEnum.API_CASE, description="模块类型")
 
 
+class AssociationApiSchema(BaseModel):
+    """
+    关联单个 Schema
+    """
+    case_id: int = Field(..., description="用例ID")
+
+
+class AssociationGroupSchema(BaseModel):
+    """
+    关联单个 Schema
+    """
+    case_id: int = Field(..., description="用例ID")
+    group_id_list: List[int] = Field(..., description="接口组")
+
+
+
+
+
+
 class AssociationApisSchema(BaseModel):
     """
     关联接口列表 Schema
@@ -128,7 +147,7 @@ class AssociationApisSchema(BaseModel):
     """
     case_id: int = Field(..., description="用例ID")
     interface_id_list: List[int] = Field(..., description="接口ID列表")
-    copy:bool = Field(...,description="复制添加")
+    copy: bool = Field(..., description="复制添加")
 
 
 class AddInterfaceApi2CaseSchema(BaseModel):
@@ -191,10 +210,10 @@ class UpdateCaseContentStepSchema(BaseModel):
     """
     更新用例内容步骤 Schema
     """
-    id: int = Field(..., description="步骤ID")
-    content_name: Optional[str] = Field(None, description="内容名称")
+    content_id: int = Field(..., description="步骤ID")
     enable: Optional[bool] = Field(None, description="是否启用")
-    api_wait_time: Optional[int] = Field(None, description="API等待时间")
+    content_name:Optional[str] = Field(None,description="contentName")
+    wait_time: Optional[int] = Field(None, description="API等待时间")
     script_text: Optional[str] = Field(None, description="API脚本文本")
     assert_list: Optional[List[UpdateCaseContentAssert]] = Field(None, description="API断言列表")
 
@@ -217,8 +236,41 @@ class AssociationConditionSchema(BaseModel):
     """
     case_id: int = Field(..., description="用例ID")
 
+class AssociationDBSchema(BaseModel):
+    """
+    关联条件 Schema
+    """
+    case_id: int = Field(..., description="用例ID")
+class UpdateAssociationDBSchema(BaseModel):
+    """
+    关联条件 Schema
+    """
+    content_id: int = Field(..., description="用例ID")
+    db_id:Optional[int] = Field(...,description="目标DB")
+    sql_text:Optional[str] = Field(...,description="SQL")
+    sql_extracts:Optional[List[Any]] = Field(...,description="SQL提取")
+
+
+
 
 class AssociationConditionAPISchema(BaseModel):
+    """
+    关联条件 API Schema
+    """
+    condition_id: int = Field(..., description="条件ID")
+    interface_id_list: List[int] = Field(..., description="接口ID列表")
+    copy: bool = Field(..., description="是否复制")
+
+
+class CreateConditionAPISchema(BaseModel):
+    """
+    关联条件 API Schema
+    """
+    condition_id: int = Field(..., description="条件ID")
+    case_id: int = Field(..., description="CaseId")
+
+
+class ReorderAssociationConditionAPISchema(BaseModel):
     """
     关联条件 API Schema
     """
@@ -273,7 +325,7 @@ class AssociationLoopAPISchema(BaseModel):
     """
     loop_id: int = Field(..., description="循环ID")
     interface_id_list: List[int] = Field(..., description="接口ID列表")
-
+    copy:bool = Field(...,description="复制添加？")
 
 class CopyContentStepSchema(BaseModel):
     """
@@ -282,8 +334,13 @@ class CopyContentStepSchema(BaseModel):
     case_id: int = Field(..., description="用例ID")
     content_id: int = Field(..., description="内容ID")
 
+class InsertCaseContentStepSchema(BaseModel):
+    case_id: int = Field(...,description="用例ID")
+    content_type:int = Field(...,description="类型")
+
 
 __all__ = [
+    "InsertCaseContentStepSchema",
     'InterfaceCaseSchema',
     'InterfaceCaseBriefSchema',
     'AddInterfaceCaseSchema',
@@ -308,4 +365,10 @@ __all__ = [
     'UpdateLoopSchema',
     'AssociationLoopAPISchema',
     'CopyContentStepSchema',
+    "AssociationApiSchema",
+    'ReorderAssociationConditionAPISchema',
+    "CreateConditionAPISchema",
+    "AssociationGroupSchema",
+    "AssociationDBSchema",
+    "UpdateAssociationDBSchema"
 ]

@@ -31,8 +31,7 @@ class WhileStepContent(InterfaceCaseContents):
 
     interface_condition = relationship(InterfaceCondition, foreign_keys=[target_id], lazy="noload")
 
-    @property
-    def content_name(self) -> str:
+    def _get_default_name(self) -> str:
         return "While循环"
 
     @property

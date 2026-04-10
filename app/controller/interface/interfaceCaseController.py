@@ -10,10 +10,12 @@ from fastapi import APIRouter
 from fastapi.params import Depends
 
 from app.controller import Authentication
+from app.mapper.interfaceApi.interfaceCaseContentMapper import InterfaceCaseContentMapper
 from app.mapper.interfaceApi.interfaceCaseMapper import InterfaceCaseMapper
 from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
 from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
 from app.mapper.interfaceApi.interfaceVarsMapper import InterfaceVarsMapper
+from app.mapper.project.dbConfigMapper import DBExecuteMapper
 from app.model.base import User
 from app.response import Response
 from app.schema.api.interfaceCaseSchema import (
@@ -31,7 +33,9 @@ from app.schema.api.interfaceCaseSchema import (
     UpdateConditionSchema,
     ExecuteInterfaceCaseSchema,
     RemoveCaseContentSchema,
-    ReorderContentStepSchema,
+    ReorderContentStepSchema, AssociationApiSchema, ReorderAssociationConditionAPISchema, CreateConditionAPISchema,
+    AssociationGroupSchema, InsertCaseContentStepSchema, UpdateCaseContentStepSchema, AssociationDBSchema,
+    UpdateAssociationDBSchema,
 )
 from app.schema.base import AddVarsSchema, UpdateVarsSchema, DeleteVarsSchema
 from app.schema.base.vars import QueryVarsSchema
@@ -127,6 +131,34 @@ async def copy_case(info: OptInterfaceCaseSchema, user: User = Depends(Authentic
 
 # ==================== 用例内容步骤管理 ====================
 
+
+@router.post("/content/insert", description="添加步骤")
+async def insert_content(info: InsertCaseContentStepSchema, user: User = Depends(Authentication())):
+    """
+    复制用例中的指定步骤
+
+    - **info**: 包含用例ID和内容步骤ID
+    """
+    await InterfaceCaseMapper.associate_content(
+        **info.model_dump(),
+        user=user
+    )
+    return Response.success()
+
+
+@router.post("/content/update", description="更新步骤")
+async def update_content(info: UpdateCaseContentStepSchema, _: User = Depends(Authentication())):
+    """
+    复制用例中的指定步骤
+
+    - **info**: 包含用例ID和内容步骤ID
+    """
+    content =  await InterfaceCaseContentMapper.update_content(
+        **info.model_dump(exclude_none=True, exclude_unset=True),
+    )
+    return Response.success(content)
+
+
 @router.post("/content/copy_step", description="复制步骤")
 async def copy_step(info: CopyContentStepSchema, user: User = Depends(Authentication())):
     """
@@ -176,16 +208,50 @@ async def reorder_content(order_info: ReorderContentStepSchema, _=Depends(Authen
 
 # ==================== 关联接口管理 ====================
 
+@router.post("/associate/associate_interface", description="关联接口到用例")
+async def associate_interface(interface: AssociationApiSchema, user: User = Depends(Authentication())):
+    """
+    将多个接口关联到用例
+
+    - **interfaces**: 包含用例ID和接口ID列表
+    return interface
+    """
+    data = await InterfaceCaseMapper.associate_interface(**interface.model_dump(), user=user)
+    return Response.success(data)
+
+
 @router.post("/associate/associate_interfaces", description="关联接口到用例")
-async def associate_interfaces(interfaces: AssociationApisSchema, user:User=Depends(Authentication())):
+async def associate_interfaces(interfaces: AssociationApisSchema, user: User = Depends(Authentication())):
     """
     将多个接口关联到用例
 
     - **interfaces**: 包含用例ID和接口ID列表
     """
-    await InterfaceCaseMapper.associate_interfaces(**interfaces.model_dump(),user=user)
+    await InterfaceCaseMapper.associate_interfaces(**interfaces.model_dump(), user=user)
     return Response.success()
 
+
+# ==================== 关联接口组管理 ====================
+
+
+@router.post("/associate/associate_group")
+async def associate_group(group: AssociationGroupSchema, user: User = Depends(Authentication())):
+    await InterfaceCaseMapper.associate_groups(**group.model_dump(), user=user)
+    return Response.success()
+
+
+# =================  db ==============
+
+@router.post("/associate/associate_db")
+async def associate_db(db_info:AssociationDBSchema, user: User = Depends(Authentication())):
+    await InterfaceCaseMapper.associate_db(user=user,**db_info.model_dump())
+    return Response.success()
+
+
+@router.post("/associate/update_db")
+async def update_db(db_info:UpdateAssociationDBSchema, user: User = Depends(Authentication())):
+    await DBExecuteMapper.update_by_id(user=user,**db_info.model_dump(exclude_none=True))
+    return Response.success()
 
 # ==================== 循环管理 ====================
 
@@ -207,47 +273,47 @@ async def update_loop(loop: UpdateLoopSchema, user: User = Depends(Authenticatio
 
     - **loop**: 循环更新信息
     """
-    await InterfaceLoopMapper.update_by_id(**loop.model_dump(exclude_none=True), update_user=user)
-    return Response.success()
+    loop = await InterfaceLoopMapper.update_by_id(**loop.model_dump(exclude_none=True), update_user=user)
+    return Response.success(loop)
 
 
 @router.post("/associate/associate_loop_interface", description="关联接口到循环")
-async def association_loop_interface(association_loop_interface: AssociationLoopAPISchema,
-                                     _: User = Depends(Authentication())):
+async def association_loop_interface(association_loop: AssociationLoopAPISchema,
+                                     user: User = Depends(Authentication())):
     """
     将接口关联到循环中
 
     - **association_loop_interface**: 包含循环ID和接口ID列表
     """
-    data = await InterfaceLoopMapper.associate_apis(**association_loop_interface.model_dump())
+    data = await InterfaceLoopMapper.associate_interfaces(user=user, **association_loop.model_dump())
     return Response.success(data)
 
 
-@router.post("/loop/remove_loop_interface", description="从循环中移除接口")
-async def remove_loop_interface(association_loop_interface: RemoveAssociationLoopAPISchema,
+@router.post("/associate/remove_loop_interface", description="从循环中移除接口")
+async def remove_loop_interface(association_loop: RemoveAssociationLoopAPISchema,
                                 _: User = Depends(Authentication())):
     """
     从循环中移除指定的接口
 
     - **association_loop_interface**: 包含循环ID和接口ID
     """
-    await InterfaceLoopMapper.disassociate_api(**association_loop_interface.model_dump())
+    await InterfaceLoopMapper.disassociate_api(**association_loop.model_dump())
     return Response.success()
 
 
-@router.post("/loop/reorder_loop_interfaces", description="重排循环中的接口顺序")
-async def reorder_loop_interfaces(association_loop_interface: AssociationLoopAPISchema,
+@router.post("/associate/reorder_loop_interfaces", description="重排循环中的接口顺序")
+async def reorder_loop_interfaces(association_loop: AssociationLoopAPISchema,
                                   _: User = Depends(Authentication())):
     """
     重新排序循环中的接口顺序
 
     - **association_loop_interface**: 包含循环ID和新的接口顺序列表
     """
-    await InterfaceLoopMapper.reorder_loop_apis(**association_loop_interface.model_dump())
+    await InterfaceLoopMapper.reorder_loop_apis(**association_loop.model_dump())
     return Response.success()
 
 
-@router.get("/loop/get_loop_content", description="查询循环内容详情")
+@router.get("/associate/get_loop_content", description="查询循环内容详情")
 async def get_loop_content(loop_id: int, _: User = Depends(Authentication())):
     """
     根据循环ID查询循环内容详情
@@ -258,7 +324,24 @@ async def get_loop_content(loop_id: int, _: User = Depends(Authentication())):
     return Response.success(data)
 
 
+@router.get("/associate/query_loop_interface", description="查询循环接口")
+async def query_loop_interface(loop_id: int, _: User = Depends(Authentication())):
+    """
+    根据循环ID查询循环内容详情
+
+    - **loop_id**: 循环ID
+    """
+    data = await InterfaceLoopMapper.query_interfaces_by_loop_id(loop_id)
+    return Response.success(data)
+
+
 # ==================== 条件管理 ====================
+
+@router.post("/condition/insert_condition", description="初始化条件")
+async def init_condition(info: AssociationConditionSchema, user: User = Depends(Authentication())):
+    await InterfaceCaseMapper.associate_condition(**info.model_dump(), user=user)
+    return Response.success()
+
 
 @router.get("/condition/get_condition_content", description="查询条件内容详情")
 async def get_condition_content(condition_id: int, _: User = Depends(Authentication())):
@@ -295,38 +378,52 @@ async def query_condition_apis(content_condition_id: int, _: User = Depends(Auth
 
 @router.post("/condition/associate_condition_api", description="关联接口到条件")
 async def associate_condition_api(association_condition_api: AssociationConditionAPISchema,
-                                  _: User = Depends(Authentication())):
+                                  user: User = Depends(Authentication())):
     """
     将接口关联到条件中
 
     - **association_condition_api**: 包含条件ID和接口ID列表
     """
-    data = await InterfaceConditionMapper.associate_interfaces(**association_condition_api.model_dump())
+    data = await InterfaceConditionMapper.associate_interfaces(user=user, **association_condition_api.model_dump())
+    return Response.success(data)
+
+
+@router.post("/condition/create_condition_api", description="关联接口到条件")
+async def create_condition_api(condition: CreateConditionAPISchema,
+                               user: User = Depends(Authentication())):
+    """
+    创建私有接口关联到条件中
+
+    - **association_condition_api**: 包含条件ID和接口ID列表
+    """
+    data = await InterfaceConditionMapper.associate_self_interface(user=user, **condition.model_dump())
     return Response.success(data)
 
 
 @router.post("/condition/remove_condition_api", description="从条件中移除接口")
-async def remove_condition_api(remove_condition_api: RemoveAssociationConditionAPISchema,
+async def remove_condition_api(remove_condition: RemoveAssociationConditionAPISchema,
                                _: User = Depends(Authentication())):
     """
     从条件中移除指定的接口
 
     - **remove_condition_api**: 包含条件ID和接口ID
     """
-    await InterfaceConditionMapper.remove_association_interface(**remove_condition_api.model_dump())
+    await InterfaceConditionMapper.remove_association_interface(**remove_condition.model_dump())
     return Response.success()
 
 
 @router.post("/condition/reorder_condition_apis", description="重排条件中的接口顺序")
-async def reorder_condition_apis(association_condition_api: AssociationConditionAPISchema,
+async def reorder_condition_apis(association_condition: ReorderAssociationConditionAPISchema,
                                  _: User = Depends(Authentication())):
     """
     重新排序条件中的接口顺序
 
     - **association_condition_api**: 包含条件ID和新的接口顺序列表
     """
-    await InterfaceConditionMapper.reorder_condition_apis(**association_condition_api.model_dump())
+    await InterfaceConditionMapper.reorder_condition_apis(**association_condition.model_dump())
     return Response.success()
+
+
 
 
 # === vars ====

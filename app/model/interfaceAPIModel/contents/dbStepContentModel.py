@@ -5,6 +5,7 @@
 # @File : dbStepContentModel
 # @Software: PyCharm
 # @Desc: 数据库步骤内容模型
+from typing import Optional, Set
 
 from app.model.base.db_config import DBExecuteModel
 from sqlalchemy import Column, INTEGER, ForeignKey
@@ -31,8 +32,7 @@ class DBStepContent(InterfaceCaseContents):
 
     db_execute = relationship(DBExecuteModel, foreign_keys=[target_id], lazy="noload")
 
-    @property
-    def content_name(self) -> str:
+    def _get_default_name(self) -> str:
         return "数据库操作"
 
     @property

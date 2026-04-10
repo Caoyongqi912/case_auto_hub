@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
 from app.mapper.interface import InterfaceConditionMapper, InterfaceMapper
-from app.mapper.project.dbConfigMapper import CaseContentDBExecuteMapper
+from app.mapper.project.dbConfigMapper import DBExecuteMapper
 from app.model import async_session
 from app.model.base import User
 # from app.model.interface import InterfaceCase, InterfaceModel
@@ -505,7 +505,7 @@ class InterfaceCaseStepContentMapper(Mapper[InterfaceCaseStepContent]):
 
                 # db
                 if content_type == CaseStepContentType.STEP_API_DB:
-                    _db = await CaseContentDBExecuteMapper.init_empty(creator_user=user,
+                    _db = await DBExecuteMapper.init_empty(creator_user=user,
                                                                                session=session)
                     content.target_id = _db.id
 

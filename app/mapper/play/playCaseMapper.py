@@ -21,7 +21,7 @@ from utils import log
 from .playConditionMapper import PlayConditionMapper
 from .playStepGroupMapper import PlayStepGroupMapper
 from ..interface import InterfaceResultMapper, InterfaceMapper
-from ..project.dbConfigMapper import CaseContentDBExecuteMapper
+from ..project.dbConfigMapper import DBExecuteMapper
 from ...exception import NotFind
 from app.model.playUI.playStepContent import PlayStepContent
 from app.model.playUI.playAssociation import PlayCaseStepContentAssociation

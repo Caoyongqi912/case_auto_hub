@@ -96,6 +96,7 @@ async def update_interface(update_info: UpdateInterfaceSchema, user: User = Depe
     log.info(f"更新接口信息: {update_info}")
     await InterfaceMapper.update_interface(**update_info.model_dump(
         exclude_unset=True,
+        exclude_none=True
     ), user=user)
     return Response.success()
 

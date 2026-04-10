@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper.interfaceApi.dynamicMapper import InterfaceCaseDynamicMapper
 from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
 from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
+from app.mapper.project.dbConfigMapper import DBExecuteMapper
 from app.model import async_session
 from app.mapper import Mapper
 from app.model.base import User
@@ -101,13 +102,51 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
     # ==================== 关联操作 ====================
 
     @classmethod
+    async def associate_interface(cls, case_id: int, user: User):
+        """
+        创建默认 接口进行关联
+
+        Args:
+            user: 操作用户
+            case_id: 用例 ID
+        Returns:
+            创建的步骤内容列表
+        """
+        try:
+            async with cls.transaction() as session:
+                case = await cls.get_by_id(session=session, ident=case_id)
+                last_index = await cls._get_last_step_order(case_id, session)
+                empty_interface = await InterfaceMapper.association_empty_interface(
+                    module_id=case.module_id,
+                    project_id=case.project_id,
+                    user=user,
+                    session=session
+                )
+                content = await InterfaceCaseContentMapper.insert_content(
+                    user=user,
+                    session=session,
+                    content_type=CaseStepContentType.STEP_API,
+                    target_id=empty_interface.id,
+                )
+                await cls._create_association(
+                    session=session,
+                    content_id=content.id,
+                    step_order=last_index + 1,
+                    case_id=case_id
+                )
+                return empty_interface
+        except Exception as e:
+            log.error(f"associate_interface error: {e}")
+            raise
+
+    @classmethod
     async def associate_interfaces(
             cls,
             user: User,
             case_id: int,
-            interface_id_list: List[int],
+            interface_id_list: List[int] = None,
             copy: bool = False
-    ):
+    ) -> List[InterfaceCaseContents]:
         """
         批量关联接口到用例
 
@@ -115,48 +154,51 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             user: 操作用户
             case_id: 用例 ID
             interface_id_list: 接口 ID 列表
-            copy: 是否复制添加
+            copy: 是否复制添加（复制时创建私有接口副本）
 
+        Returns:
+            创建的步骤内容列表
         """
+
         if not interface_id_list:
             return []
 
         try:
             async with cls.transaction() as session:
                 case = await cls.get_by_id(session=session, ident=case_id)
-                case.case_api_num += len(interface_id_list)
-
                 last_index = await cls._get_last_step_order(case_id, session)
-                contents = []
-                new_interface_ids = []
+
                 if copy:
+                    interface_ids_to_add = []
                     for interface_id in interface_id_list:
                         new_interface = await InterfaceMapper.copy_one(
                             target=interface_id,
                             session=session,
                             is_common=False
                         )
-                        new_interface_ids.append(new_interface.id)
+                        interface_ids_to_add.append(new_interface.id)
                 else:
-                    new_interface_ids = interface_id_list
+                    interface_ids_to_add = interface_id_list[:]
 
-                for idx, interface_id in enumerate(new_interface_ids):
-                    content = await InterfaceCaseContentMapper.insert_content(
+                case.case_api_num += len(interface_ids_to_add)
+
+                contents = [
+                    await InterfaceCaseContentMapper.insert_content(
                         user=user,
                         session=session,
                         content_type=CaseStepContentType.STEP_API,
                         target_id=interface_id
                     )
-                    log.info(f"InterfaceCaseContentMapper.insert_content: {content}")
-                    contents.append(content)
+                    for interface_id in interface_ids_to_add
+                ]
 
-                content_ids = [content.id for content in contents]
                 await cls._create_associations(
                     session=session,
-                    content_ids=content_ids,
+                    content_ids=[content.id for content in contents],
                     start_index=last_index + 1,
                     case_id=case_id
                 )
+                return contents
         except Exception as e:
             log.error(f"associate_interfaces error: {e}")
             raise
@@ -187,23 +229,23 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 case = await cls.get_by_id(session=session, ident=case_id)
                 case.case_api_num += len(group_id_list)
 
-            case_step_content_group_apis = []
-            for group_id in group_id_list:
-                content = await InterfaceCaseContentMapper.insert_content(
-                    user=user,
+                case_step_content_group_apis = []
+                for group_id in group_id_list:
+                    content = await InterfaceCaseContentMapper.insert_content(
+                        user=user,
+                        session=session,
+                        content_type=CaseStepContentType.STEP_API_GROUP,
+                        target_id=group_id
+                    )
+                    case_step_content_group_apis.append(content)
+                last_index = await cls._get_last_step_order(case_id=case_id, session=session)
+                content_ids = [content.id for content in case_step_content_group_apis]
+                await cls._create_associations(
                     session=session,
-                    content_type=CaseStepContentType.STEP_API_GROUP,
-                    target_id=group_id
+                    content_ids=content_ids,
+                    start_index=last_index + 1,
+                    case_id=case_id
                 )
-                case_step_content_group_apis.append(content)
-            last_index = await cls._get_last_step_order(case_id=case_id, session=session)
-            content_ids = [content.id for content in case_step_content_group_apis]
-            await cls._create_associations(
-                session=session,
-                content_ids=content_ids,
-                start_index=last_index + 1,
-                case_id=case_id
-            )
         except Exception as e:
             log.error(f"associate_groups error {e}")
             raise
@@ -282,6 +324,79 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 await cls._create_association(session, case_id, content.id, last_index + 1)
         except Exception as e:
             log.error(f"associate_loop error : {e}")
+            raise
+
+
+    @classmethod
+    async def associate_db(cls,user:User,case_id:int):
+        """
+        关联DB操作
+        """
+        try:
+            async with cls.transaction() as session:
+                case = await cls.get_by_id(session=session, ident=case_id)
+                case.case_api_num += 1
+                db_execute = await DBExecuteMapper.init_empty(creator_user=user,session=session)
+                content = await InterfaceCaseContentMapper.insert_content(
+                    session=session,
+                    content_type=CaseStepContentType.STEP_API_DB,
+                    target_id=db_execute.id,
+                    user=user
+                )
+                last_index = await cls._get_last_step_order(case_id, session)
+                await cls._create_association(session, case_id, content.id, last_index + 1)
+        except Exception as e:
+            log.error(f"associate_db error {e}")
+            raise
+
+
+    @classmethod
+    async def associate_content(
+            cls,
+            user: User,
+            case_id: int,
+            content_type: int,
+    ):
+        try:
+            content =None
+            async with cls.transaction() as session:
+                match content_type:
+                    case CaseStepContentType.STEP_API_WAIT:
+                        content = await InterfaceCaseContentMapper.insert_content(
+                            user=user,
+                            session=session,
+                            content_type=CaseStepContentType.STEP_API_WAIT,
+                            wait_time=0
+                        )
+                    case CaseStepContentType.STEP_API_DB:
+                        content = await InterfaceCaseContentMapper.insert_content(
+                            user=user,
+                            session=session,
+                            content_type=CaseStepContentType.STEP_API_DB,
+                        )
+                    case CaseStepContentType.STEP_API_ASSERT:
+                        content = await InterfaceCaseContentMapper.insert_content(
+                            user=user,
+                            session=session,
+                            content_type=CaseStepContentType.STEP_API_ASSERT,
+                        )
+                    case CaseStepContentType.STEP_API_SCRIPT:
+                        content = await InterfaceCaseContentMapper.insert_content(
+                            user=user,
+                            session=session,
+                            content_type=CaseStepContentType.STEP_API_SCRIPT,
+                            script_text=""
+                        )
+                log.debug(f"associate_content {content} {case_id}")
+                last_index = await cls._get_last_step_order(case_id=case_id, session=session)
+                if not content:
+                    log.error(f"associate_content error {content}")
+                    return
+
+                await cls._create_association(session, case_id,content.id, last_index + 1)
+
+        except Exception as e:
+            log.error(f"associate_wait error {e}")
             raise
 
     # ==================== 步骤管理 ====================

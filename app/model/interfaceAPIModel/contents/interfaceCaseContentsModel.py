@@ -9,7 +9,7 @@
 from datetime import datetime
 from typing import ClassVar, Optional, Set
 
-from sqlalchemy import Column, INTEGER
+from sqlalchemy import Column, INTEGER, String
 
 from app.model import BaseModel
 
@@ -38,6 +38,7 @@ class InterfaceCaseContents(BaseModel):
 
     content_type = Column(INTEGER, nullable=False, index=True, comment="步骤类型")
     enable = Column(INTEGER, default=1, nullable=False, comment="是否启用")
+    content_name = Column(String(100), nullable=True, comment="自定义名称")
 
     target_id: ClassVar[int | None] = None
 
@@ -47,10 +48,16 @@ class InterfaceCaseContents(BaseModel):
         'with_polymorphic': '*',
     }
 
-    @property
-    def content_name(self) -> str:
-        """步骤名称 - 由子类实现"""
+    def _get_default_name(self) -> str:
+        """获取默认名称 - 子类覆盖"""
         return ""
+
+    @property
+    def resolved_content_name(self) -> str:
+        """实际返回的内容名称 - 优先使用字段值，否则使用默认名称"""
+        if self.content_name:
+            return self.content_name
+        return self._get_default_name()
 
     @property
     def content_desc(self) -> str:
@@ -70,7 +77,7 @@ class InterfaceCaseContents(BaseModel):
         result = {
             'content_type': self.content_type,
             'target_id': self.target_id,
-            'content_name': self.content_name,
+            'content_name': self.resolved_content_name,
             'content_desc': self.content_desc,
             "enable": self.enable,
             "id": self.id,
