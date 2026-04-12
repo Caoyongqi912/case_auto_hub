@@ -6,6 +6,7 @@
 # @Software: PyCharm
 # @Desc:
 import enum
+from re import T
 
 
 class InterfaceResponseStatusCodeEnum:
@@ -20,8 +21,8 @@ class InterfaceAPIStatusEnum:
 
 class InterfaceAPIResultEnum:
     """接口结果实例状态"""
-    SUCCESS = "SUCCESS"
-    ERROR = "ERROR"
+    SUCCESS = True
+    ERROR = False
 
 
 class InterfaceCaseErrorStep:

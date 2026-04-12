@@ -6,9 +6,17 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.errors import ServerErrorMiddleware
 from starlette.middleware.cors import CORSMiddleware
-from app.middware import CORS_ALLOW_ORIGINS, req_middleware, error_middleware, validation_exception_handler
+from app.middware import (
+    CORS_ALLOW_ORIGINS,
+    req_middleware,
+    app_exception_handler,
+    sqlalchemy_exception_handler,
+    validation_exception_handler,
+    generic_exception_handler,
+)
+from app.exception import AppException
+from sqlalchemy.exc import SQLAlchemyError
 from app.controller import RegisterRouterList
 from app.ws import asgi_app
 from utils import log
@@ -54,25 +62,16 @@ def caseHub():
     for item in RegisterRouterList:
         _hub.include_router(item.router)
 
-    # 参数校验捕获
-    _hub.add_exception_handler(
-        RequestValidationError,
-        handler=validation_exception_handler,
-    )
+    _hub.add_exception_handler(AppException, app_exception_handler)
+    _hub.add_exception_handler(SQLAlchemyError, sqlalchemy_exception_handler)
+    _hub.add_exception_handler(RequestValidationError, validation_exception_handler)
+    _hub.add_exception_handler(Exception, generic_exception_handler)
 
-    # 跨域
     _hub.add_middleware(CORSMiddleware, **CORS_ALLOW_ORIGINS)
 
-    # 请求日志
     _hub.add_middleware(
         BaseHTTPMiddleware,
         dispatch=req_middleware,
-    )
-
-    # 全局异常捕获
-    _hub.add_middleware(
-        ServerErrorMiddleware,
-        handler=error_middleware,
     )
 
     # 静态文件服务 - 用于访问截图等静态文件

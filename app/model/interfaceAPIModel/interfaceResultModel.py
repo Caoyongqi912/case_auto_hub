@@ -1,94 +1,521 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
-# @Time : 2026/4/10
+# @Time : 2026/4/11
 # @Author : cyq
-# @File : interfaceResultModel
 # @Software: PyCharm
-# @Desc: 接口执行结果模型 - 存储 API 真正的请求/响应详情
+# @Desc: 接口执行结果模型
 
-from datetime import datetime
+from datetime import datetime, date
+from typing import Optional, Set
 
-from sqlalchemy import Column, INTEGER, String, TEXT, JSON, Float, DATETIME, ForeignKey
+from sqlalchemy import Column, INTEGER, String, ForeignKey, Boolean, DATETIME, JSON, TEXT, Float, DATE
 from sqlalchemy.orm import relationship
 
 from app.model import BaseModel
+from enums.CaseEnum import CaseStepContentType
+
+
+
+def step_content_result_id_column():
+    """子表主键生成器"""
+    return Column(
+        INTEGER,
+        ForeignKey('interface_case_content_result.id', ondelete='CASCADE'),
+        primary_key=True
+    )
 
 
 class InterfaceResult(BaseModel):
-    """
-    API 执行结果
-
-    存储 API 请求/响应的完整详情
-    由 APIStepResult.target_result_id 关联
-    """
+    """接口执行结果"""
     __tablename__ = "interface_result"
 
-    api_id = Column(
-        INTEGER,
-        ForeignKey('interface.id', ondelete='SET NULL'),
-        nullable=True,
-        comment="关联的API ID"
+    interface_id = Column(
+        INTEGER, ForeignKey("interface.id", ondelete="CASCADE"), comment="所属用例"
     )
+    interface_name = Column(String(50), comment="用例名称")
+    interface_uid = Column(String(20), comment="用例Uid")
+    interface_desc = Column(String(250), comment="用例描述")
 
-    api_name = Column(String(100), nullable=True, comment="API名称")
-    api_uid = Column(String(20), nullable=True, comment="API UID")
-    api_desc = Column(String(250), nullable=True, comment="API描述")
-
-    request_method = Column(String(10), nullable=True, comment="请求方法 GET/POST/PUT/DELETE")
-    request_url = Column(String(500), nullable=True, comment="请求地址")
-    request_headers = Column(JSON, nullable=True, comment="请求头")
-    request_params = Column(JSON, nullable=True, comment="URL参数")
-    request_body = Column(TEXT, nullable=True, comment="请求体")
-    request_content_type = Column(String(50), nullable=True, comment="Content-Type")
-
-    response_status = Column(INTEGER, nullable=True, comment="响应状态码")
-    response_headers = Column(JSON, nullable=True, comment="响应头")
-    response_body = Column(TEXT, nullable=True, comment="响应体")
-    response_time = Column(Float, nullable=True, comment="响应时间(ms)")
-
-    extracts = Column(JSON, nullable=True, comment="变量提取")
-    asserts = Column(JSON, nullable=True, comment="断言结果")
-
-    starter_id = Column(INTEGER, nullable=True, comment="运行人ID")
-    starter_name = Column(String(20), nullable=True, comment="运行人姓名")
+    running_env_id = Column(INTEGER,nullable=True, comment="运行环境")
+    running_env_name = Column(String(50), nullable=True, comment="运行环境名称")
 
     start_time = Column(DATETIME, default=datetime.now, comment="开始时间")
-    use_time = Column(String(50), nullable=True, comment="耗时")
+    use_time = Column(String(50), nullable=True, comment="用时")
 
-    result = Column(String(10), nullable=True, comment="执行结果 SUCCESS/FAIL")
-    error_message = Column(TEXT, nullable=True, comment="错误信息")
+    request_url = Column(String(250), nullable=True, comment="请求URL")
+    request_headers = Column(JSON, nullable=True, comment="请求头")
+    request_body = Column(TEXT, nullable=True, comment="请求报文")
+    request_params = Column(JSON, nullable=True, comment="请求参数")
+    request_method = Column(String(10), nullable=True, comment="请求方法")
 
-    env_id = Column(INTEGER, nullable=True, comment="运行环境ID")
-    env_name = Column(String(250), nullable=True, comment="运行环境名称")
+    response_text = Column(TEXT, nullable=True, comment="响应报文")
+    response_status = Column(INTEGER, comment="响应Code")
+    response_headers = Column(JSON, nullable=True, comment="响应头")
+
+    extracts = Column(JSON, nullable=True, comment="提取变量")
+    asserts = Column(JSON, nullable=True, comment="断言信息")
+
+    starter_id = Column(INTEGER, comment="运行人ID")
+    starter_name = Column(String(20), comment="运行人姓名")
+
+    result = Column(Boolean, nullable=True, comment="运行结果")
+
+    content_result_id = Column(
+        INTEGER,
+        ForeignKey("interface_case_content_result.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="所属步骤内容结果ID"
+    )
+
+    def __repr__(self):
+        return f"<InterfaceResult(id={self.id}, name={self.interface_name}, result={self.result})>"
+
+
+class InterfaceCaseResult(BaseModel):
+    """用例执行结果"""
+    __tablename__ = "interface_case_result"
+
+    interface_case_id = Column(
+        INTEGER, ForeignKey("interface_case.id", ondelete="CASCADE"), comment="所属用例"
+    )
+    interface_case_name = Column(String(20), comment="用例名称")
+    interface_case_uid = Column(String(20), comment="用例Uid")
+    interface_case_desc = Column(String(50), comment="用例描述")
+    
+    project_id = Column(INTEGER, comment="所属项目")
+    module_id = Column(INTEGER, comment="所属模块")
+
+    interface_log = Column(TEXT, nullable=True, comment="运行日志")
+
+    running_env_id = Column(INTEGER, nullable=True, comment="运行环境")
+    running_env_name = Column(String(250), nullable=True, comment="运行环境")
+
+    progress = Column(Float, default=0.0, comment="进度")
+    start_time = Column(DATETIME, default=datetime.now, comment="开始时间")
+    use_time = Column(String(20), nullable=True, comment="用时")
+
+    total_num = Column(INTEGER, default=0, comment="总共数量")
+    success_num = Column(INTEGER, default=0, comment="成功数量")
+    fail_num = Column(INTEGER, default=0, comment="失败数量")
+
+    starter_id = Column(INTEGER, comment="运行人ID")
+    starter_name = Column(String(20), comment="运行人姓名")
+    status = Column(String(10), nullable=True, comment="运行状态")
+    result = Column(String(10), nullable=True, comment="运行结果")
+
+    interface_task_result_id = Column(
+        INTEGER,
+        ForeignKey("interface_task_result.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="所属task result",
+    )
+
+    def __repr__(self):
+        return f"<InterfaceCaseResult(id={self.id}, name={self.interface_case_name}, result={self.result})>"
+
+
+class InterfaceTaskResult(BaseModel):
+    """任务执行结果"""
+    __tablename__ = "interface_task_result"
+    status = Column(String(10), default="RUNNING", comment="状态")  # "RUNNING","DONE"
+    result = Column(String(10), nullable=True, comment="运行结果")  # SUCCESS FAIL
+
+    total_num = Column(INTEGER, comment="总运行数量")
+    success_num = Column(INTEGER, default=0, comment="成功数量")
+    fail_num = Column(INTEGER, default=0, comment="失败数量")
+
+    start_by = Column(INTEGER, nullable=False, comment="1user 2robot 3...")
+    starter_name = Column(String(20), nullable=True, comment="运行人名称")
+    starter_id = Column(INTEGER, nullable=True, comment="运行人ID")
+
+    total_use_time = Column(String(20), comment="运行时间")
+    start_time = Column(
+        DATETIME, default=datetime.now, nullable=True, comment="开始时间"
+    )
+    end_time = Column(DATETIME, nullable=True, comment="结束时间")
+
+    task_id = Column(
+        INTEGER, ForeignKey("interface_task.id", ondelete="CASCADE"), nullable=True
+    )
+    task_uid = Column(String(10), nullable=False, comment="task索引")
+    task_name = Column(String(20), nullable=True, comment="任务名称")
+
+    run_day = Column(DATE, default=date.today(), comment="运行日期")
+    progress = Column(Float, default=0, comment="进度")
+
+    running_env_id = Column(INTEGER, nullable=True, comment="运行环境")
+    running_env_name = Column(String(250), nullable=True, comment="运行环境")
+
+    project_id = Column(INTEGER, comment="所属项目")
+    module_id = Column(INTEGER, comment="所属模块")
+
+    def __repr__(self):
+        return f"<InterfaceTaskResult(id={self.id}, task_name={self.task_name}, status={self.status})>"
+
+
+class InterfaceCaseContentResult(BaseModel):
+    """
+    步骤内容结果基类 - Joined Table Inheritance
+
+    设计说明：
+    - 使用 SQLAlchemy Joined Table Inheritance 实现多态
+    - 基类表存储公共字段，子类表存储特有字段
+    - 通过 content_type 区分不同类型的执行结果
+    """
+    __tablename__ = "interface_case_content_result"
+    __allow_unmapped__ = True
 
     case_result_id = Column(
         INTEGER,
-        ForeignKey('interface_case_result.id', ondelete='CASCADE'),
+        ForeignKey("interface_case_result.id", ondelete="CASCADE"),
         nullable=True,
-        comment="关联的用例结果ID"
+        comment="所属case result"
     )
 
-    case_result = relationship(
-        "CaseStepResult",
-        foreign_keys=[case_result_id],
+    task_result_id = Column(
+        INTEGER,
+        ForeignKey("interface_task_result.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="所属task result"
+    )
+
+    content_id = Column(
+        INTEGER,
+        ForeignKey("interface_case_step_content.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="步骤ID"
+    )
+    content_name = Column(String(250), nullable=True, comment="步骤名称")
+    content_desc = Column(String(250), nullable=True, comment="步骤描述")
+    content_step = Column(INTEGER, nullable=False, comment="步骤序号")
+    content_type = Column(INTEGER, nullable=False, index=True, comment="步骤类型")
+
+    result = Column(Boolean, nullable=True, comment="执行结果")
+    start_time = Column(DATETIME, default=datetime.now, comment="开始时间")
+    use_time = Column(String(50), nullable=True, comment="执行用时")
+    status = Column(String(20), default="PENDING", comment="执行状态")
+
+    __mapper_args__ = {
+        'polymorphic_on': content_type,
+        'polymorphic_identity': None,
+        'with_polymorphic': '*',
+    }
+
+    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """
+        转换为结果字典 - 包含基类字段 + 子类字段
+
+        Args:
+            exclude: 要排除的字段集合
+
+        Returns:
+            包含完整结果的字典
+        """
+        result = {
+            'id': self.id,
+            'uid': self.uid,
+            'content_type': self.content_type,
+            'content_name': self.content_name,
+            'content_desc': self.content_desc,
+            'content_step': self.content_step,
+            'result': self.result,
+            'start_time': self.start_time.strftime("%Y-%m-%d %H:%M:%S") if self.start_time else None,
+            'use_time': self.use_time,
+            'status': self.status,
+            'create_time': self.create_time.strftime("%Y-%m-%d %H:%M:%S") if self.create_time else None,
+        }
+
+        for mapper in self.__class__.__mapper__.self_and_descendants:
+            if mapper.local_table.name != self.__tablename__:
+                for col in mapper.local_table.columns:
+                    if hasattr(self, col.name):
+                        value = getattr(self, col.name)
+                        if isinstance(value, datetime):
+                            result[col.name] = value.strftime("%Y-%m-%d %H:%M:%S")
+                        else:
+                            result[col.name] = value
+
+        if exclude:
+            for key in exclude:
+                result.pop(key, None)
+
+        return result
+
+    def __repr__(self):
+        return f"<InterfaceCaseContentResult(id={self.id}, type={self.content_type}, result={self.result})>"
+
+
+class APIStepContentResult(InterfaceCaseContentResult):
+    """
+    API步骤执行结果
+
+    特点：1对1 关联 interface_result
+    """
+    __tablename__ = "interface_case_content_result_api"
+    __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_API}
+
+    result_id = step_content_result_id_column()
+
+    interface_result_id = Column(
+        INTEGER,
+        ForeignKey("interface_result.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="关联接口执行结果ID"
+    )
+
+    interface_result = relationship(
+        "InterfaceResult",
+        foreign_keys=[interface_result_id],
         lazy="noload"
     )
 
-    @property
-    def base_info(self) -> dict:
-        """基本信息"""
-        return {
-            "id": self.id,
-            "api_id": self.api_id,
-            "api_name": self.api_name,
-            "api_uid": self.api_uid,
-            "request_method": self.request_method,
-            "request_url": self.request_url,
-            "response_status": self.response_status,
-            "response_time": self.response_time,
-            "result": self.result,
-            "use_time": self.use_time,
-        }
+    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回完整的执行结果信息（包含 interface_result 详情）"""
+        result = super().to_result_dict(exclude)
+        if self.interface_result:
+            result['interface_result'] = self.interface_result.to_dict()
+        return result
 
     def __repr__(self):
-        return f"<InterfaceResult(id={self.id}, api_id={self.api_id}, api_name={self.api_name}, status={self.response_status}, result={self.result})>"
+        return f"<APIStepContentResult(id={self.id}, interface_result_id={self.interface_result_id})>"
+
+
+class GroupStepContentResult(InterfaceCaseContentResult):
+    """
+    API组步骤执行结果
+
+    特点：1对多 关联 interface_result
+    """
+    __tablename__ = "interface_case_content_result_group"
+    __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_API_GROUP}
+
+    result_id = step_content_result_id_column()
+
+    total_api_num = Column(INTEGER, default=0, comment="总接口数量")
+    success_api_num = Column(INTEGER, default=0, comment="成功接口数量")
+    fail_api_num = Column(INTEGER, default=0, comment="失败接口数量")
+
+    def get_interface_results(self):
+        """获取所有关联的接口执行结果"""
+        from sqlalchemy.orm import object_session
+        session = object_session(self)
+        if session:
+            return session.query(InterfaceResult).filter(
+                InterfaceResult.content_result_id == self.id
+            ).all()
+        return []
+
+    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回组执行结果（包含所有 interface_result 详情）"""
+        result = super().to_result_dict(exclude)
+        result['interface_results'] = [r.to_dict() for r in self.get_interface_results()]
+        return result
+
+    def __repr__(self):
+        return f"<GroupStepContentResult(id={self.id}, total={self.total_api_num}, success={self.success_api_num})>"
+
+
+class ConditionStepContentResult(InterfaceCaseContentResult):
+    """
+    条件步骤执行结果
+
+    特点：1对多 关联 interface_result + 断言信息
+    """
+    __tablename__ = "interface_case_content_result_condition"
+    __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_API_CONDITION}
+
+    result_id = step_content_result_id_column()
+
+    condition_result = Column(Boolean, nullable=True, comment="条件判断结果")
+    condition_key = Column(String(100), nullable=True, comment="条件键")
+    condition_value = Column(String(100), nullable=True, comment="条件值")
+    condition_operator = Column(INTEGER, nullable=True, comment="条件操作符")
+
+    assert_data = Column(JSON, nullable=True, comment="断言信息")
+    extract_data = Column(JSON, nullable=True, comment="提取变量")
+
+    def get_interface_results(self):
+        """获取所有关联的接口执行结果"""
+        from sqlalchemy.orm import object_session
+        session = object_session(self)
+        if session:
+            return session.query(InterfaceResult).filter(
+                InterfaceResult.content_result_id == self.id
+            ).all()
+        return []
+
+    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回条件执行结果（包含断言信息和 interface_result 详情）"""
+        result = super().to_result_dict(exclude)
+        result['interface_results'] = [r.to_dict() for r in self.get_interface_results()]
+        return result
+
+    def __repr__(self):
+        return f"<ConditionStepContentResult(id={self.id}, condition_result={self.condition_result})>"
+
+
+class ScriptStepContentResult(InterfaceCaseContentResult):
+    """
+    脚本步骤执行结果
+
+    特点：执行自定义脚本
+    """
+    __tablename__ = "interface_case_content_result_script"
+    __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_API_SCRIPT}
+
+    result_id = step_content_result_id_column()
+
+    script_output = Column(TEXT, nullable=True, comment="脚本输出")
+    script_error = Column(TEXT, nullable=True, comment="脚本错误")
+
+    def __repr__(self):
+        return f"<ScriptStepContentResult(id={self.id}, result={self.result})>"
+
+
+class DBStepContentResult(InterfaceCaseContentResult):
+    """
+    数据库步骤执行结果
+
+    特点：执行数据库操作
+    """
+    __tablename__ = "interface_case_content_result_db"
+    __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_API_DB}
+
+    result_id = step_content_result_id_column()
+
+    db_query_result = Column(JSON, nullable=True, comment="查询结果")
+    db_affected_rows = Column(INTEGER, default=0, comment="影响行数")
+    db_error = Column(TEXT, nullable=True, comment="数据库错误")
+
+    def __repr__(self):
+        return f"<DBStepContentResult(id={self.id}, affected_rows={self.db_affected_rows})>"
+
+
+class WaitStepContentResult(InterfaceCaseContentResult):
+    """
+    等待步骤执行结果
+
+    特点：等待指定时间
+    """
+    __tablename__ = "interface_case_content_result_wait"
+    __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_API_WAIT}
+
+    result_id = step_content_result_id_column()
+
+    wait_seconds = Column(INTEGER, default=0, comment="等待秒数")
+
+    def __repr__(self):
+        return f"<WaitStepContentResult(id={self.id}, wait_seconds={self.wait_seconds})>"
+
+
+class WhileStepContentResult(InterfaceCaseContentResult):
+    """
+    While循环步骤执行结果
+
+    特点：循环执行直到条件满足
+    """
+    __tablename__ = "interface_case_content_result_while"
+    __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_API_WHILE}
+
+    result_id = step_content_result_id_column()
+
+    loop_count = Column(INTEGER, default=0, comment="循环次数")
+    max_loop = Column(INTEGER, default=0, comment="最大循环次数")
+    break_reason = Column(String(250), nullable=True, comment="退出原因")
+
+    def get_interface_results(self):
+        """获取所有关联的接口执行结果"""
+        from sqlalchemy.orm import object_session
+        session = object_session(self)
+        if session:
+            return session.query(InterfaceResult).filter(
+                InterfaceResult.content_result_id == self.id
+            ).all()
+        return []
+
+    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回循环执行结果"""
+        result = super().to_result_dict(exclude)
+        result['interface_results'] = [r.to_dict() for r in self.get_interface_results()]
+        return result
+
+    def __repr__(self):
+        return f"<WhileStepContentResult(id={self.id}, loop_count={self.loop_count})>"
+
+
+class AssertStepContentResult(InterfaceCaseContentResult):
+    """
+    断言步骤执行结果
+
+    特点：执行断言验证
+    """
+    __tablename__ = "interface_case_content_result_assert"
+    __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_API_ASSERT}
+
+    result_id = step_content_result_id_column()
+
+    assert_data = Column(JSON, nullable=True, comment="断言数据")
+    assert_result = Column(Boolean, nullable=True, comment="断言结果")
+    assert_error = Column(TEXT, nullable=True, comment="断言错误信息")
+
+    def __repr__(self):
+        return f"<AssertStepContentResult(id={self.id}, assert_result={self.assert_result})>"
+
+
+class LoopStepContentResult(InterfaceCaseContentResult):
+    """
+    循环步骤执行结果
+
+    特点：按次数或条件循环执行
+    """
+    __tablename__ = "interface_case_content_result_loop"
+    __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_LOOP}
+
+    result_id = step_content_result_id_column()
+
+    loop_count = Column(INTEGER, default=0, comment="循环次数")
+    loop_type = Column(INTEGER, nullable=True, comment="循环类型")
+    loop_items = Column(JSON, nullable=True, comment="循环数据项")
+
+    success_count = Column(INTEGER, default=0, comment="成功次数")
+    fail_count = Column(INTEGER, default=0, comment="失败次数")
+
+    def get_interface_results(self):
+        """获取所有关联的接口执行结果"""
+        from sqlalchemy.orm import object_session
+        session = object_session(self)
+        if session:
+            return session.query(InterfaceResult).filter(
+                InterfaceResult.content_result_id == self.id
+            ).all()
+        return []
+
+    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回循环执行结果"""
+        result = super().to_result_dict(exclude)
+        result['interface_results'] = [r.to_dict() for r in self.get_interface_results()]
+        return result
+
+    def __repr__(self):
+        return f"<LoopStepContentResult(id={self.id}, loop_count={self.loop_count})>"
+
+
+
+
+__all__ = [
+    "InterfaceResult",
+    "InterfaceTaskResult",
+    "InterfaceCaseResult",
+    "LoopStepContentResult",
+    "AssertStepContentResult",
+    "WhileStepContentResult",
+    "WaitStepContentResult",
+    "InterfaceCaseContentResult",
+    "DBStepContentResult",
+    "ScriptStepContentResult",
+    "APIStepContentResult",
+
+
+    
+
+]

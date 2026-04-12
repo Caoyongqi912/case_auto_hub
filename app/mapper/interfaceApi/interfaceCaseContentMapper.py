@@ -4,9 +4,11 @@
 # @Author : cyq
 # @File : interfaceCaseContentMapper
 # @Software: PyCharm
-# @Desc: 用例步骤内容 Mapper
-from typing import Dict, Type, Optional
+# @Desc: 用例步骤内容 Mapper - 性能优化版
 
+from typing import Dict, Type, Optional, List
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
@@ -29,11 +31,16 @@ from app.model.interfaceAPIModel.contents import (
 )
 from enums.CaseEnum import CaseStepContentType
 from utils import log
-from sqlalchemy import select
 
 
 class InterfaceCaseContentMapper(Mapper):
+    """
+    用例步骤内容 Mapper
+
+    """
     __model__: Type[InterfaceCaseContents] = InterfaceCaseContents
+    
+    # 内容类型映射
     CONTENT_TYPE_MAP: Dict[CaseStepContentType, Type[InterfaceCaseContents]] = {
         CaseStepContentType.STEP_API: APIStepContent,
         CaseStepContentType.STEP_API_GROUP: GroupStepContent,
@@ -47,7 +54,12 @@ class InterfaceCaseContentMapper(Mapper):
     }
 
     @classmethod
-    async def get_by_id(cls, ident: int, session: AsyncSession) -> InterfaceCaseContents:
+    async def get_by_id(
+        cls,
+        ident: int,
+        session: AsyncSession,
+        with_relations: bool = False
+    ) -> InterfaceCaseContents:
         """
         根据 ID 获取步骤内容（多态查询）
 

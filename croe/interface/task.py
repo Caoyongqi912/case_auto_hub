@@ -1,1 +1,299 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2026/1/21# @Author : cyq# @File : task# @Software: PyCharm# @Desc:import asyncioimport timefrom dataclasses import dataclassfrom typing import List, Union, Optionalfrom app.mapper.interface import InterfaceTaskMapper, InterfaceCaseResultMapperfrom app.mapper.project.env import EnvMapperfrom app.model.interface import InterfaceTaskfrom common.notifyManager import NotifyManagerfrom enums import InterfaceAPIResultEnumfrom croe.interface.runner import InterfaceRunnerfrom .starter import APIStarter, logfrom .types import *from .writer import write_task_process, init_interface_task_result, write_interface_task_resultCASE = "CASE"API = "API"@dataclassclass TaskParams:    """任务执行参数封装"""    task_id: Union[int, str]  # 任务Id    env_id: Optional[int] = None  # 环境    retry: int = 0  # 重试次数    retry_interval: int = 0  # 重试间隔    options: Optional[List[str]] = None  # 执行选项    notify_id: Optional[int] = None  # 推送    variables: Optional[VARS] = None  # 变量    env: Optional[Env] = None    def __post_init__(self):        if self.options is None:            self.options = [API, CASE]class TaskRunner:    task: InterfaceTask    """    任务执行    - execute_task     """    def __init__(self, starter: APIStarter):        self.starter = starter        self.progress = 0        self._last_progress_update = 0  # 记录上次更新进度的时间        self._progress_update_interval = 0.5  # 最小更新间隔（秒）    async def set_process(self, task_result: InterfaceTaskResult):        """写进度"""        self.progress += 1        current_time = time.time()        # 只有超过间隔时间或进度完成时才更新        if (current_time - self._last_progress_update >= self._progress_update_interval or                self.progress >= task_result.totalNumber):            task_result.progress = round((self.progress / task_result.totalNumber) * 100, 1)            await write_task_process(task_result=task_result)            self._last_progress_update = current_time    async def write_process_result(self, flag: bool, task_result: InterfaceTaskResult):        await self.set_process(task_result)        if flag:            task_result.successNumber += 1        else:            task_result.failNumber += 1    async def handler_execute_task(self, params: TaskParams):        """        手动执行任务        :params: params        :return:        """        if isinstance(params.task_id, int):            self.task = await InterfaceTaskMapper.get_by_id(params.task_id)        else:            self.task = await InterfaceTaskMapper.get_by_uid(params.task_id)        log.info(f"running task {self.task} start by {self.starter.username}")        if params.env_id:            params.env = await EnvMapper.get_by_id(params.env_id)        task_result = await init_interface_task_result(self.task,                                                       starter=self.starter,                                                       env=params.env)        try:            task_result.totalNumber = 0            if API in params.options:                apis = await InterfaceTaskMapper.query_apis(self.task.id)                if apis:                    task_result.totalNumber += len(apis)                    await self.__run_apis(apis=apis,                                          task_result=task_result,                                          params=params,                                          )            if CASE in params.options:                cases = await InterfaceTaskMapper.query_case(self.task.id)                if cases:                    task_result.totalNumber += len(cases)                    await self.__run_cases(cases=cases,                                           task_result=task_result,                                           params=params,                                           )        except Exception as e:            log.exception(e)            raise e        finally:            if task_result.failNumber > 0:                task_result.result = InterfaceAPIResultEnum.ERROR            else:                task_result.result = InterfaceAPIResultEnum.SUCCESS            await write_interface_task_result(task_result)            if params.notify_id:                await self.nodify_report(params.notify_id, task_result)    @staticmethod    async def nodify_report(notify_id: int, task_result: "InterfaceTaskResult"):        """        推送报告        """        n = NotifyManager(notify_id)        await n.push(flag="API", task_result=task_result)    async def __run_apis(self, apis: List["InterfaceAPI"], task_result: "InterfaceTaskResult", params: TaskParams):        """执行关联api"""        parallel = self.task.parallel        # 顺序执行        if parallel == 0:            return await self.__run_api_by_sequential_execution(apis=apis,                                                                task_result=task_result,                                                                params=params                                                                )        semaphore = asyncio.Semaphore(parallel)  # 限制并行数量为 parallel        await self.starter.send(f"并行数量 {parallel}")        lock = asyncio.Lock()  # 保护共享资源        tasks = []        for api in apis:            task = asyncio.create_task(                self.__run_single_api_with_semaphore_and_lock(api=api,                                                              task_result=task_result,                                                              semaphore=semaphore,                                                              lock=lock,                                                              params=params                                                              )            )            tasks.append(task)        return await asyncio.gather(*tasks)    async def __run_api_by_sequential_execution(self,                                                apis: List["InterfaceAPI"],                                                task_result: "InterfaceTaskResult",                                                params: "TaskParams"                                                ):        """        顺序执行        :param apis        :param task_result        """        for api in apis:            runner = InterfaceRunner(self.starter)            if params.variables:                await self.starter.send(f"添加变量 {params.variables}")                await runner.variable_manager.add_vars(params.variables)            flag: bool = await runner.run_interface_by_task(                interface=api,                task_result=task_result,                retry_interval=params.retry_interval,                retry=params.retry,                env=params.env            )            await self.write_process_result(flag, task_result)            await self.starter.clear_logs()    async def __run_single_api_with_semaphore_and_lock(self,                                                       api: "InterfaceAPI",                                                       task_result: "InterfaceTaskResult",                                                       semaphore: asyncio.Semaphore,                                                       lock: asyncio.Lock,                                                       params: TaskParams                                                       ):        """        执行单个 API，限制并行数量，并保护共享资源        :param api 待执行API        :param task_result 任务结果        :param semaphore 信号        :param lock 锁        """        async with semaphore:  # 限制并行数量            runner = InterfaceRunner(self.starter)            if params.variables:                await self.starter.send(f"添加变量 {params.variables}")                await runner.variable_manager.add_vars(params.variables)            flag: bool = await runner.run_interface_by_task(                interface=api,                task_result=task_result,                retry=params.retry,                retry_interval=params.retry_interval,                env=params.env            )            # 使用锁保护共享资源的修改            async with lock:                await self.write_process_result(flag, task_result)            await self.starter.clear_logs()    async def __run_cases(self, cases: List[InterfaceCase], task_result: InterfaceTaskResult,                          params: TaskParams):        """执行关联case"""        for case in cases:            for r in range(params.retry + 1):                await self.set_process(task_result)                case_runner = InterfaceRunner(self.starter)                if params.variables:                    await self.starter.send(f"添加变量 {params.variables}")                    await case_runner.variable_manager.add_vars(params.variables)                flag, case_result = await case_runner.run_interface_case(                    interface_case_id=case.id,                    task_result=task_result,                    env=params.env,                    error_stop=True  # 任务执行默认True                )                # 成功了 直接跳过                if flag:                    task_result.successNumber += 1                    break                # 重试判断                if r < params.retry:                    if params.retry_interval > 0:                        await asyncio.sleep(params.retry_interval)                    await self.starter.send(f"业务用例 {case} 失败  第 {r + 1} 次重试")                    # 删除记录                    await  InterfaceCaseResultMapper.delete_by_case_id(case.id)                    continue                else:                    task_result.failNumber += 1                await self.starter.clear_logs()__call__ = (    "TaskRunner",    "TaskParams")
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2026/1/21
+# @Author : cyq
+# @File : task
+# @Software: PyCharm
+# @Desc: 任务执行模块
+
+import asyncio
+import time
+from dataclasses import dataclass
+from typing import List, Union, Optional, Any
+
+from app.mapper.interfaceApi.interfaceTaskMapper import (
+    InterfaceTaskMapper,
+)
+
+from app.mapper.project.env import EnvMapper
+from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
+from common.notifyManager import NotifyManager
+from enums import InterfaceAPIResultEnum
+from croe.interface.runner import InterfaceRunner
+from croe.interface.starter import APIStarter, log
+from croe.interface.writer import (
+    write_task_process,
+    init_interface_task_result,
+    write_interface_task_result
+)
+
+CASE = "CASE"
+API = "API"
+
+
+@dataclass
+class TaskParams:
+    """任务执行参数封装"""
+
+    task_id: Union[int, str]
+    env_id: Optional[int] = None
+    retry: int = 0
+    retry_interval: int = 0
+    options: Optional[List[str]] = None
+    notify_id: Optional[int] = None
+    variables: Optional[Any] = None
+    env: Optional[Any] = None
+
+    def __post_init__(self) -> None:
+        """初始化后处理"""
+        if self.options is None:
+            self.options = [API, CASE]
+
+
+class TaskRunner:
+    """任务执行器"""
+
+    task: InterfaceTask
+
+    def __init__(self, starter: APIStarter) -> None:
+        """
+        初始化任务执行器
+
+        Args:
+            starter: API启动器实例
+        """
+        self.starter = starter
+        self.progress = 0
+        self._last_progress_update = 0.0
+        self._progress_update_interval = 0.5
+
+    async def set_process(
+        self,
+        task_result: Any
+    ) -> None:
+        """
+        写进度
+
+        Args:
+            task_result: 任务结果对象
+        """
+        self.progress += 1
+
+        current_time = time.time()
+        should_update = (
+            current_time - self._last_progress_update >=
+            self._progress_update_interval or
+            self.progress >= task_result.totalNumber
+        )
+
+        if should_update:
+            task_result.progress = round(
+                (self.progress / task_result.totalNumber) * 100, 1
+            )
+            await write_task_process(task_result=task_result)
+            self._last_progress_update = current_time
+
+    async def execute_task(
+        self,
+        params: TaskParams
+    ) -> Any:
+        """
+        执行任务
+
+        Args:
+            params: 任务参数
+
+        Returns:
+            任务结果
+        """
+        self.task = await InterfaceTaskMapper.get_by_id(ident=params.task_id)
+        log.info(f"查询到任务 {self.task}")
+
+        if not self.task:
+            await self.starter.send(
+                f"未通过{params.task_id} 找到 相关任务"
+            )
+            return await self.starter.over()
+
+        if params.env_id:
+            params.env = await EnvMapper.get_by_id(ident=params.env_id)
+
+        await self.starter.send(
+            f"✍️✍️ 任务 {self.task.title} 执行开始。"
+            f"执行人 {self.starter.username}"
+        )
+        await self.starter.send(
+            f"查询到关联Step x {self.task.stepNum} ..."
+        )
+
+        task_result = await init_interface_task_result(
+            interfaceTask=self.task,
+            starter=self.starter,
+            env=params.env
+        )
+
+        if params.variables:
+            await self._init_task_variables(params.variables)
+
+        try:
+            interface_runner = InterfaceRunner(self.starter)
+
+            if API in params.options:
+                await self._execute_api_steps(
+                    interface_runner, task_result, params
+                )
+
+            if CASE in params.options:
+                await self._execute_case_steps(
+                    interface_runner, task_result, params
+                )
+
+            await self._finalize_task_result(task_result)
+
+            if params.notify_id:
+                await self._send_notification(params.notify_id, task_result)
+
+            return task_result
+
+        except Exception as e:
+            log.exception(f"执行任务异常: {e}")
+            task_result.result = InterfaceAPIResultEnum.ERROR
+            return task_result
+
+        finally:
+            await self.starter.over(task_result.id)
+
+    async def _init_task_variables(self, variables: Any) -> None:
+        """
+        初始化任务变量
+
+        Args:
+            variables: 变量配置
+        """
+        try:
+            await self.starter.send(
+                f"🫳🫳 初始化任务变量 = {variables}"
+            )
+        except Exception as e:
+            log.error(f"初始化任务变量失败: {e}")
+
+    async def _execute_api_steps(
+        self,
+        interface_runner: InterfaceRunner,
+        task_result: Any,
+        params: TaskParams
+    ) -> None:
+        """
+        执行API步骤
+
+        Args:
+            interface_runner: 接口执行器
+            task_result: 任务结果
+            params: 任务参数
+        """
+        interfaces = await InterfaceTaskMapper.query_interfaces(
+            task_id=self.task.id
+        )
+
+        if not interfaces:
+            return
+
+        task_result.totalNumber += len(interfaces)
+
+        for interface in interfaces:
+            await self.starter.send(
+                f"✍️✍️  Execute API: {interface}"
+            )
+
+            success = await interface_runner.run_interface_by_task(
+                interface=interface,
+                task_result=task_result,
+                retry=params.retry,
+                retry_interval=params.retry_interval,
+                env=params.env
+            )
+
+            if success:
+                task_result.successNum += 1
+            else:
+                task_result.failNum += 1
+
+            await self.set_process(task_result)
+
+    async def _execute_case_steps(
+        self,
+        interface_runner: InterfaceRunner,
+        task_result: Any,
+        params: TaskParams
+    ) -> None:
+        """
+        执行用例步骤
+
+        Args:
+            interface_runner: 接口执行器
+            task_result: 任务结果
+            params: 任务参数
+        """
+        cases = await InterfaceTaskMapper.query_cases(task_id=self.task.id)
+
+        if not cases:
+            return
+
+        task_result.totalNumber += len(cases)
+
+        for case in cases:
+            await self.starter.send(
+                f"✍️✍️  Execute CASE: {case}"
+            )
+
+            success, _ = await interface_runner.run_interface_case(
+                interface_case_id=case.id,
+                env=params.env,
+                error_stop=self.task.error_stop,
+                task_result=task_result
+            )
+
+            if success:
+                task_result.successNum += 1
+            else:
+                task_result.failNum += 1
+
+            await self.set_process(task_result)
+
+    async def _finalize_task_result(self, task_result: Any) -> None:
+        """
+        完成任务结果
+
+        Args:
+            task_result: 任务结果
+        """
+        if task_result.failNum == 0:
+            task_result.result = InterfaceAPIResultEnum.SUCCESS
+        else:
+            task_result.result = InterfaceAPIResultEnum.ERROR
+
+        await write_interface_task_result(task_result)
+        await self.starter.send(
+            f"✍️✍️ 任务 {self.task.title} 执行结束"
+        )
+
+    async def _send_notification(
+        self,
+        notify_id: int,
+        task_result: Any
+    ) -> None:
+        """
+        发送通知
+
+        Args:
+            notify_id: 通知配置ID
+            task_result: 任务结果
+        """
+        try:
+            notify_manager = NotifyManager()
+            await notify_manager.send(
+                notify_id=notify_id,
+                task_result=task_result
+            )
+        except Exception as e:
+            log.error(f"发送通知失败: {e}")
