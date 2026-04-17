@@ -25,7 +25,6 @@ class InterfaceCase(BaseModel):
     module_id = Column(INTEGER, nullable=True, comment="所属模块")
     project_id = Column(INTEGER, ForeignKey("project.id", ondelete='set null'), nullable=True,
                         comment="所属产品")
-    error_stop = Column(INTEGER, default=0, comment="错误停止 1是 0否")
 
     
     def __repr__(self):

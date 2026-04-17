@@ -113,6 +113,9 @@ class RequestBuilder:
 
         # 添加全局请求头
         global_headers = await InterfaceGlobalHeaderMapper.query_all()
+        if not global_headers:
+            log.info(f"use global_headers {global_headers}")
+
         for header in global_headers:
             headers.update(header.map)
 

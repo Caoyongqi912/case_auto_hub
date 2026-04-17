@@ -79,7 +79,6 @@ class AddInterfaceCaseSchema(BaseModel):
     case_desc: Optional[str] = Field(None, max_length=200, description="用例描述")
     case_level: str = Field(default="P0", description="用例等级")
     case_status: str = Field(default="1", description="用例状态")
-    error_stop: int = Field(default=0, description="错误停止: 0否 1是")
 
     module_id: int = Field(..., description="模块ID")
     project_id: int = Field(..., description="项目ID")

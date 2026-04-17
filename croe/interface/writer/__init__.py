@@ -6,9 +6,9 @@
 # @Software: PyCharm
 # @Desc: 接口执行结果写入器
 
+import warnings
 from datetime import datetime
 from typing import Union, Optional, Any, TYPE_CHECKING
-
 
 from app.mapper.interfaceApi.interfaceResultMapper import (
     InterfaceResultMapper,
@@ -21,8 +21,6 @@ from app.model.interfaceAPIModel.interfaceResultModel import (
     InterfaceTaskResult,
     InterfaceCaseResult
 )
-from app.mapper.interfaceApi.interfaceResultMapper import InterfaceResultMapper
-
 from enums import InterfaceAPIStatusEnum, InterfaceAPIResultEnum
 from croe.interface.starter import APIStarter, log
 from utils import GenerateTools
@@ -31,17 +29,29 @@ if TYPE_CHECKING:
     from app.model.interface import InterfaceCase, InterfaceTask
     from app.model.base import EnvModel
 
+from .result_writer import ResultWriter
+
+result_writer = ResultWriter()
+
 
 async def write_interface_result(**kwargs) -> InterfaceResult:
     """
     写入API结果
-
+    
+    .. deprecated:: 2.0
+        请使用 result_writer.write_interface_result() 代替
+    
     Args:
         **kwargs: 接口结果参数
-
+    
     Returns:
         InterfaceResult: 接口结果实例
     """
+    warnings.warn(
+        "write_interface_result() 已废弃，请使用 result_writer.write_interface_result()",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return await InterfaceResultMapper.set_result(**kwargs)
 
 
@@ -50,13 +60,21 @@ async def write_case_result(
 ) -> InterfaceCaseResult:
     """
     写入用例进度
-
+    
+    .. deprecated:: 2.0
+        请使用 result_writer.update_case_progress() 代替
+    
     Args:
         case_result: 用例结果实例
-
+    
     Returns:
         InterfaceCaseResult: 更新后的用例结果实例
     """
+    warnings.warn(
+        "write_case_result() 已废弃，请使用 result_writer.update_case_progress()",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return await InterfaceCaseResultMapper.set_result_field(case_result)
 
 
@@ -65,13 +83,21 @@ async def write_task_process(
 ) -> InterfaceTaskResult:
     """
     写入任务进度
-
+    
+    .. deprecated:: 2.0
+        请使用 result_writer.update_task_progress() 代替
+    
     Args:
         task_result: 任务结果实例
-
+    
     Returns:
         InterfaceTaskResult: 更新后的任务结果实例
     """
+    warnings.warn(
+        "write_task_process() 已废弃，请使用 result_writer.update_task_progress()",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return await InterfaceTaskResultMapper.set_result_field(task_result)
 
 
@@ -80,13 +106,21 @@ async def write_interface_case_result(
 ) -> InterfaceCaseResult:
     """
     写入用例最终结果
-
+    
+    .. deprecated:: 2.0
+        请使用 result_writer.finalize_case_result() 代替
+    
     Args:
         case_result: 用例结果实例
-
+    
     Returns:
         InterfaceCaseResult: 更新后的用例结果实例
     """
+    warnings.warn(
+        "write_interface_case_result() 已废弃，请使用 result_writer.finalize_case_result()",
+        DeprecationWarning,
+        stacklevel=2
+    )
     if case_result.fail_num == 0:
         case_result.result = InterfaceAPIResultEnum.SUCCESS
     else:
@@ -108,16 +142,24 @@ async def init_interface_case_result(
 ) -> InterfaceCaseResult:
     """
     初始化业务流结果对象
-
+    
+    .. deprecated:: 2.0
+        请使用 result_writer.init_case_result() 代替
+    
     Args:
         starter: API启动器实例
         interface_case: 接口用例实例
         env: 环境配置实例
         task_result: 任务结果实例（可选）
-
+    
     Returns:
         InterfaceCaseResult: 创建的用例结果实例
     """
+    warnings.warn(
+        "init_interface_case_result() 已废弃，请使用 result_writer.init_case_result()",
+        DeprecationWarning,
+        stacklevel=2
+    )
     case_result = InterfaceCaseResult(
         interface_case_id=interface_case.id,
         interface_case_name=interface_case.title,
@@ -151,19 +193,23 @@ async def init_interface_task_result(
 ) -> InterfaceTaskResult:
     """
     初始化接口测试任务
-
-    该异步静态方法用于初始化一个接口测试任务，并将任务相关信息以及启动者信息
-    组织成一个字典，最后通过 InterfaceTaskResultMapper.init() 方法初始化并返回
-    接口测试任务结果模型。
-
+    
+    .. deprecated:: 2.0
+        请使用 result_writer.init_task_result() 代替
+    
     Args:
         interface_task: 接口任务实例
         starter: API启动器实例
         env: 环境配置实例（可选）
-
+    
     Returns:
         InterfaceTaskResult: 创建的任务结果实例
     """
+    warnings.warn(
+        "init_interface_task_result() 已废弃，请使用 result_writer.init_task_result()",
+        DeprecationWarning,
+        stacklevel=2
+    )
     init_task = InterfaceTaskResult(
         task_id=interface_task.id,
         task_uid=interface_task.uid,
@@ -188,13 +234,21 @@ async def write_interface_task_result(
 ) -> InterfaceTaskResult:
     """
     写入任务最终结果
-
+    
+    .. deprecated:: 2.0
+        请使用 result_writer.finalize_task_result() 代替
+    
     Args:
         task_result: 任务结果实例
-
+    
     Returns:
         InterfaceTaskResult: 更新后的任务结果实例
     """
+    warnings.warn(
+        "write_interface_task_result() 已废弃，请使用 result_writer.finalize_task_result()",
+        DeprecationWarning,
+        stacklevel=2
+    )
     task_result.progress = 100
     task_result.totalUseTime = GenerateTools.calculate_time_difference(
         task_result.map['start_time']
@@ -203,3 +257,16 @@ async def write_interface_task_result(
     task_result.end_time = datetime.now()
 
     return await InterfaceTaskResultMapper.set_result_field(task_result)
+
+
+__all__ = [
+    'ResultWriter',
+    'result_writer',
+    'write_interface_result',
+    'write_case_result',
+    'write_task_process',
+    'write_interface_case_result',
+    'init_interface_case_result',
+    'init_interface_task_result',
+    'write_interface_task_result',
+]

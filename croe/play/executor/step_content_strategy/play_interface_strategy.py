@@ -1,6 +1,6 @@
 import datetime
 
-from app.mapper.interface import InterfaceMapper
+from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from croe.interface.executor.interface_executor import InterfaceExecutor
 from croe.interface.writer import write_interface_result
 from croe.play.context import StepContentContext

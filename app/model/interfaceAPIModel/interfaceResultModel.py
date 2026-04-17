@@ -15,7 +15,6 @@ from app.model import BaseModel
 from enums.CaseEnum import CaseStepContentType
 
 
-
 def step_content_result_id_column():
     """子表主键生成器"""
     return Column(
@@ -36,7 +35,7 @@ class InterfaceResult(BaseModel):
     interface_uid = Column(String(20), comment="用例Uid")
     interface_desc = Column(String(250), comment="用例描述")
 
-    running_env_id = Column(INTEGER,nullable=True, comment="运行环境")
+    running_env_id = Column(INTEGER, nullable=True, comment="运行环境")
     running_env_name = Column(String(50), nullable=True, comment="运行环境名称")
 
     start_time = Column(DATETIME, default=datetime.now, comment="开始时间")
@@ -44,7 +43,11 @@ class InterfaceResult(BaseModel):
 
     request_url = Column(String(250), nullable=True, comment="请求URL")
     request_headers = Column(JSON, nullable=True, comment="请求头")
-    request_body = Column(TEXT, nullable=True, comment="请求报文")
+
+    request_body_type = Column(INTEGER, nullable=True, comment="请求类型")
+    request_json = Column(TEXT, nullable=True, comment="请求报文")
+    request_data = Column(TEXT, nullable=True, comment="请求报文")
+
     request_params = Column(JSON, nullable=True, comment="请求参数")
     request_method = Column(String(10), nullable=True, comment="请求方法")
 
@@ -68,7 +71,9 @@ class InterfaceResult(BaseModel):
     )
 
     def __repr__(self):
-        return f"<InterfaceResult(id={self.id}, name={self.interface_name}, result={self.result})>"
+        return (f"<InterfaceResult(id={self.id}, name={self.interface_name}, result={self.result})"
+                f"content_result_id = {self.content_result_id}"
+                f">")
 
 
 class InterfaceCaseResult(BaseModel):
@@ -81,7 +86,7 @@ class InterfaceCaseResult(BaseModel):
     interface_case_name = Column(String(20), comment="用例名称")
     interface_case_uid = Column(String(20), comment="用例Uid")
     interface_case_desc = Column(String(50), comment="用例描述")
-    
+
     project_id = Column(INTEGER, comment="所属项目")
     module_id = Column(INTEGER, comment="所属模块")
 
@@ -101,7 +106,7 @@ class InterfaceCaseResult(BaseModel):
     starter_id = Column(INTEGER, comment="运行人ID")
     starter_name = Column(String(20), comment="运行人姓名")
     status = Column(String(10), nullable=True, comment="运行状态")
-    result = Column(String(10), nullable=True, comment="运行结果")
+    result = Column(Boolean, nullable=True, comment="运行结果")
 
     interface_task_result_id = Column(
         INTEGER,
@@ -201,7 +206,7 @@ class InterfaceCaseContentResult(BaseModel):
         'with_polymorphic': '*',
     }
 
-    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
         """
         转换为结果字典 - 包含基类字段 + 子类字段
 
@@ -264,16 +269,15 @@ class APIStepContentResult(InterfaceCaseContentResult):
     )
 
     interface_result = relationship(
-        "InterfaceResult",
+        InterfaceResult,
         foreign_keys=[interface_result_id],
-        lazy="noload"
+        lazy="selectin"
     )
-
-    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+    #
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
         """返回完整的执行结果信息（包含 interface_result 详情）"""
-        result = super().to_result_dict(exclude)
-        if self.interface_result:
-            result['interface_result'] = self.interface_result.to_dict()
+        result = super().to_dict(exclude)
+        result['data'] = [self.interface_result]
         return result
 
     def __repr__(self):
@@ -295,20 +299,18 @@ class GroupStepContentResult(InterfaceCaseContentResult):
     success_api_num = Column(INTEGER, default=0, comment="成功接口数量")
     fail_api_num = Column(INTEGER, default=0, comment="失败接口数量")
 
-    def get_interface_results(self):
-        """获取所有关联的接口执行结果"""
-        from sqlalchemy.orm import object_session
-        session = object_session(self)
-        if session:
-            return session.query(InterfaceResult).filter(
-                InterfaceResult.content_result_id == self.id
-            ).all()
-        return []
+    interface_results = relationship(
+        InterfaceResult,
+        primaryjoin=result_id == InterfaceResult.content_result_id,
+        foreign_keys=[InterfaceResult.content_result_id],
+        lazy="selectin",
+        viewonly=True
+    )
 
-    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
-        """返回组执行结果（包含所有 interface_result 详情）"""
-        result = super().to_result_dict(exclude)
-        result['interface_results'] = [r.to_dict() for r in self.get_interface_results()]
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回组执行结果（interface_results 由查询层填充）"""
+        result = super().to_dict(exclude)
+        result['data'] = self.interface_results
         return result
 
     def __repr__(self):
@@ -334,20 +336,9 @@ class ConditionStepContentResult(InterfaceCaseContentResult):
     assert_data = Column(JSON, nullable=True, comment="断言信息")
     extract_data = Column(JSON, nullable=True, comment="提取变量")
 
-    def get_interface_results(self):
-        """获取所有关联的接口执行结果"""
-        from sqlalchemy.orm import object_session
-        session = object_session(self)
-        if session:
-            return session.query(InterfaceResult).filter(
-                InterfaceResult.content_result_id == self.id
-            ).all()
-        return []
-
-    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
-        """返回条件执行结果（包含断言信息和 interface_result 详情）"""
-        result = super().to_result_dict(exclude)
-        result['interface_results'] = [r.to_dict() for r in self.get_interface_results()]
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回条件执行结果（interface_results 由查询层填充）"""
+        result = super().to_dict(exclude)
         return result
 
     def __repr__(self):
@@ -423,20 +414,9 @@ class WhileStepContentResult(InterfaceCaseContentResult):
     max_loop = Column(INTEGER, default=0, comment="最大循环次数")
     break_reason = Column(String(250), nullable=True, comment="退出原因")
 
-    def get_interface_results(self):
-        """获取所有关联的接口执行结果"""
-        from sqlalchemy.orm import object_session
-        session = object_session(self)
-        if session:
-            return session.query(InterfaceResult).filter(
-                InterfaceResult.content_result_id == self.id
-            ).all()
-        return []
-
-    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
-        """返回循环执行结果"""
-        result = super().to_result_dict(exclude)
-        result['interface_results'] = [r.to_dict() for r in self.get_interface_results()]
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回循环执行结果（interface_results 由查询层填充）"""
+        result = super().to_dict(exclude)
         return result
 
     def __repr__(self):
@@ -480,26 +460,13 @@ class LoopStepContentResult(InterfaceCaseContentResult):
     success_count = Column(INTEGER, default=0, comment="成功次数")
     fail_count = Column(INTEGER, default=0, comment="失败次数")
 
-    def get_interface_results(self):
-        """获取所有关联的接口执行结果"""
-        from sqlalchemy.orm import object_session
-        session = object_session(self)
-        if session:
-            return session.query(InterfaceResult).filter(
-                InterfaceResult.content_result_id == self.id
-            ).all()
-        return []
-
-    def to_result_dict(self, exclude: Optional[Set[str]] = None) -> dict:
-        """返回循环执行结果"""
-        result = super().to_result_dict(exclude)
-        result['interface_results'] = [r.to_dict() for r in self.get_interface_results()]
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回循环执行结果（interface_results 由查询层填充）"""
+        result = super().to_dict(exclude)
         return result
 
     def __repr__(self):
         return f"<LoopStepContentResult(id={self.id}, loop_count={self.loop_count})>"
-
-
 
 
 __all__ = [
@@ -514,8 +481,5 @@ __all__ = [
     "DBStepContentResult",
     "ScriptStepContentResult",
     "APIStepContentResult",
-
-
-    
 
 ]

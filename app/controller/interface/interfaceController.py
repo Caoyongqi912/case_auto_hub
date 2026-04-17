@@ -150,7 +150,6 @@ async def try_interface(debug_params: TryInterfaceApiSchema, user: User = Depend
     response = await InterfaceRunner(
         starter=APIStarter(user),
     ).try_interface(**debug_params.model_dump())
-    log.info(f"接口调试结果: {response}")
     return Response.success([response])
 
 

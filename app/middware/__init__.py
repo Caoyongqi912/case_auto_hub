@@ -81,8 +81,7 @@ async def validation_exception_handler(
 ) -> JSONResponse:
     """处理请求验证异常"""
     LOG.warning(
-        f"参数验证失败: {exc}",
-        extra={"path": request.url.path}
+        "参数验证失败: {}", str(exc), path=request.url.path
     )
     
     return JSONResponse(

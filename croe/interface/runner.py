@@ -7,7 +7,7 @@
 # @Desc: 接口执行器
 
 import asyncio
-from typing import Union, Optional, Tuple, Any
+from typing import Union, Optional, Tuple, Any, Dict
 
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.mapper.interfaceApi.interfaceCaseMapper import InterfaceCaseMapper
@@ -19,13 +19,8 @@ from croe.interface.executor.context import CaseStepContext, ExecutionContext
 from croe.interface.executor.interface_executor import InterfaceExecutor
 from croe.interface.executor.step_content import get_step_strategy
 from croe.a_manager import VariableManager
-from croe.interface.writer import (
-    init_interface_case_result,
-    write_case_result,
-    write_interface_case_result,
-    write_interface_result
-)
-from enums import InterfaceCaseErrorStep
+from croe.interface.writer import result_writer
+from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.starter import APIStarter
 from croe.play.starter import UIStarter
 from utils import log
@@ -53,7 +48,7 @@ class InterfaceRunner:
         self,
         interface_id: int,
         env_id: int
-    ) -> Tuple[Any, bool]:
+    ) -> Dict[str, Any]:
         """
         执行单个接口请求调试
 
@@ -66,11 +61,10 @@ class InterfaceRunner:
         """
         interface = await InterfaceMapper.get_by_id(ident=interface_id)
         env = await EnvMapper.get_by_id(ident=env_id)
-        result, success = await self.interface_executor.execute(
+        result, _ = await self.interface_executor.execute(
             interface=interface, env=env
         )
-        log.debug(result)
-        return result, success
+        return result
 
     async def try_group(
         self,
@@ -156,15 +150,17 @@ class InterfaceRunner:
 
         case_success = True
 
-        case_result = await init_interface_case_result(
-            starter=self.starter,
+        case_result = await result_writer.init_case_result(
             interface_case=interface_case,
+            starter=self.starter,
             env=target_env,
             task_result=task_result
         )
+        log.debug(f"result_writer.init_case_result ={ case_result }")
+
 
         try:
-            context = ExecutionContext(
+            execution_context = ExecutionContext(
                 interface_case=interface_case,
                 env=target_env,
                 case_result=case_result,
@@ -177,26 +173,21 @@ class InterfaceRunner:
                     f"✍️✍️ {'=' * 20} EXECUTE_STEP {index} ： "
                     f"{step_content} {'=' * 20}"
                 )
-                case_result.progress = round(
-                    index / total_steps, 2
-                ) * 100
-
+                
+                # enable 仅在调试模式下生效 任务执行默认开启
                 if step_content.enable == 0 and not task_result:
                     await self.starter.send(
                         f"✍️✍️  EXECUTE_STEP {index} ： 调试禁用 跳过执行"
                     )
                     continue
-
-                if not case_success and error_stop:
-                    await self.starter.send(
-                        f"⏭️⏭️  SKIP_STEP {index} ： 遇到错误已停止"
-                    )
-                    continue
-
+                
+         
+                
+                # 执行步骤  
                 step_context = CaseStepContext(
                     index=index,
                     content=step_content,
-                    execution_context=context,
+                    execution_context=execution_context,
                     starter=self.starter,
                     variable_manager=self.variable_manager,
                 )
@@ -206,23 +197,34 @@ class InterfaceRunner:
                     self.interface_executor
                 )
                 step_success = await strategy.execute(step_context)
-                case_success &= step_success
-
-                if (not case_success and
-                        interface_case.error_stop == InterfaceCaseErrorStep.STOP):
+                
+                case_success = case_success and step_success                
+                
+                case_result.progress = (index * 100) // total_steps
+                
+                # 用例执行失败 且 配置了错误停止
+                if not case_success and error_stop:
+                    await self.starter.send(
+                        f"⏭️⏭️  SKIP_STEP {index} ： 遇到错误已停止"
+                    )
                     case_result.progress = 100
                     break
-
-                log.debug(f"case_result ===== {case_result}")
-                await write_case_result(case_result=case_result)
-                await self.starter.send("\n")
+                
+                await self.starter.send(
+                    f"✍️✍️  EXECUTE_STEP {index} ： FINISH"
+                )                
+                await result_writer.update_case_progress(case_result)
 
             await self.starter.send(
-                f"用例 {interface_case.title} 执行结束"
+                f"用例 {interface_case.case_title} 执行结束"
             )
             await self.starter.send(f"{'====' * 20}")
             case_result.interfaceLog = "".join(self.starter.logs)
-            await write_interface_case_result(case_result=case_result)
+            await result_writer.finalize_case_result(
+                case_result=case_result,
+                logs="".join(self.starter.logs)
+            )
+            
             return case_success, case_result
 
         except Exception as e:
@@ -262,11 +264,15 @@ class InterfaceRunner:
             )
 
             if success:
-                await write_interface_result(**result)
+                await result_writer.write_interface_result(
+                    interface_result=InterfaceResult(**result)
+                )
                 return True
 
             if attempt == retry:
-                await write_interface_result(**result)
+                await result_writer.write_interface_result(
+                    interface_result=InterfaceResult(**result)
+                )
                 await self.starter.send(
                     f"接口 {interface} 执行结果 FALSE"
                 )

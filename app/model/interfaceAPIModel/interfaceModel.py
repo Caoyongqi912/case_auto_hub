@@ -23,7 +23,7 @@ class Interface(BaseModel):
     interface_method = Column(String(10), nullable=True, comment="请求类型")
     interface_params = Column(JSON, nullable=True, comment="请求参数")
     interface_headers = Column(JSON, nullable=True, comment="请求头")
-    interface_body_type = Column(INTEGER, nullable=False, comment="0无 1raw 2data 3..")
+    interface_body_type = Column(INTEGER, nullable=False, comment="0无 1raw 2data 3raw")
     interface_raw_type = Column(String(10), nullable=True, comment="raw 类型 json text")
 
 

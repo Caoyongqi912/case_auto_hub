@@ -202,7 +202,8 @@ class Mapper(Generic[M]):
             if ident is None:
                 raise ValueError("id parameter is required")
 
-            kwargs = set_updater(update_user, **kwargs)
+            if update_user:
+                kwargs = set_updater(update_user, **kwargs)
 
             if session is None:
                 async with cls.transaction() as session:
@@ -273,17 +274,17 @@ class Mapper(Generic[M]):
             raise
 
     @classmethod
-    async def delete_by(cls, session: AsyncSession, **kwargs):
+    async def delete_by(cls, session: AsyncSession=None, **kwargs):
         """
         通过属性删除
         :param session: 会话对象
         :param kwargs: 查询条件
         """
         try:
-            model = await cls.get_by(session, **kwargs)
-            if model:
-                await session.delete(model)
-                await session.flush()
+            async with cls.session_scope(session) as session:
+                model = cls.__model__
+                log.debug(model)
+                await session.execute(delete(model).filter_by(**kwargs))
                 await session.commit()
         except Exception as e:
             log.error(f"delete_by error: {e}")
@@ -392,7 +393,7 @@ class Mapper(Generic[M]):
         :param model: 模型实例
         :return: 模型实例
         """
-        return await Mapper.flush_expunge(session, model, add=True, refresh=False)
+        return await Mapper.flush_expunge(session, model, add=True, refresh=True)
 
     @classmethod
     async def page_query(cls, current: int, pageSize: int, **kwargs):
@@ -692,18 +693,20 @@ class Mapper(Generic[M]):
             return 0
 
         model = cls.__model__
+        log.info(f"bulk_insert items: {items}")
         try:
             if session:
                 session.add_all([model(**item) for item in items])
                 await session.flush()
                 return len(items)
             else:
-                async with async_session() as session:
-                    session.add_all([model(**item) for item in items])
-                    await session.commit()
+                async with cls.transaction() as session:
+                    models =[model(**item) for item in items]
+                    log.info(f"bulk_insert models: {models}")
+                    session.add_all(models)
                     return len(items)
         except Exception as e:
-            log.error(f"bulk_insert error: {e}")
+            log.exception(f"bulk_insert error: {e}")
             raise
 
     @classmethod

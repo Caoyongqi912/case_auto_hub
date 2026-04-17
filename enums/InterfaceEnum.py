@@ -24,6 +24,9 @@ class InterfaceAPIResultEnum:
     SUCCESS = True
     ERROR = False
 
+class InterfaceCaseResultEnum:
+    SUCCESS = "SUCCESS"
+    ERROR = "ERROR"
 
 class InterfaceCaseErrorStep:
     STOP = 1

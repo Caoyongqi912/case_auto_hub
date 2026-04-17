@@ -6,19 +6,16 @@
 # @Software: PyCharm
 # @Desc: API步骤执行策略
 
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
-from app.mapper.interfaceApi.interfaceResultMapper import (
-    InterfaceContentStepResultMapper
-)
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
-from app.model.interfaceAPIModel import InterfaceResult
-from app.model.interfaceAPIModel.contents import InterfaceCaseContents
+from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
-from croe.interface.writer import write_interface_result
+from croe.interface.writer import result_writer
 from enums import InterfaceAPIResultEnum
 from enums.CaseEnum import CaseStepContentType
+from utils import log
 
 if TYPE_CHECKING:
     from croe.interface.executor.interface_executor import InterfaceExecutor
@@ -49,20 +46,31 @@ class APIStepContentStrategy(StepBaseStrategy):
 
         step_result, success = await self.interface_executor.execute(
             interface=interface,
-            env=step_context.execution_context.env,
-            case_result=step_context.execution_context.case_result,
-            task_result=step_context.execution_context.task_result,
+            env=step_context.execution_context.env
         )
 
-        interface_result = await write_interface_result(**step_result)
+        log.info(f"api step step_result {step_result}")
+        interface_result = await result_writer.write_interface_result(
+            interface_result=InterfaceResult(**step_result),
+            immediate=True
+        )
+        log.info(f"api step interface_result {interface_result}")
+        task_result_id = None
+        if step_context.execution_context.task_result:
+            task_result_id = step_context.execution_context.task_result.id
 
-        await write_case_step_content_api_result(
-            step_index=step_context.index,
-            interface_case_result_id=step_context.execution_context.case_result.id,
-            step_content=step_context.content,
-            interface_result=interface_result,
+        await result_writer.write_step_result(
+            content_type=CaseStepContentType.STEP_API,
+            case_result_id=step_context.execution_context.case_result.id,
+            task_result_id=task_result_id,
+            content_id=step_context.content.id,
+            content_name=step_context.content.resolved_content_name,
+            content_desc=step_context.content.content_desc,
+            content_step=step_context.index,
             success=success,
-            interface_task_result_id=step_context.task_result_id,
+            start_time=interface_result.start_time,
+            use_time=interface_result.use_time,
+            interface_result_id=interface_result.id,
         )
 
         case_result = step_context.execution_context.case_result
@@ -72,42 +80,6 @@ class APIStepContentStrategy(StepBaseStrategy):
             case_result.fail_num += 1
             case_result.result = InterfaceAPIResultEnum.ERROR
 
+        await result_writer.update_case_progress(case_result)
+
         return success
-
-
-async def write_case_step_content_api_result(
-    step_index: int,
-    interface_case_result_id: int,
-    step_content: InterfaceCaseContents,
-    interface_result: InterfaceResult,
-    success: bool,
-    interface_task_result_id: Optional[int] = None,
-) -> None:
-    """
-    写入API步骤内容结果
-
-    使用 InterfaceContentStepResultMapper.insert_result 方法，
-    根据 content_type 自动创建对应的子类实例
-
-    Args:
-        step_index: 步骤索引
-        interface_case_result_id: 用例执行结果ID
-        step_content: 步骤内容实例
-        interface_result: 接口执行结果实例
-        success: 是否成功
-        interface_task_result_id: 任务执行结果ID（可选）
-    """
-    await InterfaceContentStepResultMapper.insert_result(
-        content_type=CaseStepContentType.STEP_API,
-        case_result_id=interface_case_result_id,
-        task_result_id=interface_task_result_id,
-        content_id=step_content.id,
-        content_name=step_content.resolved_content_name,
-        content_desc=step_content.content_desc,
-        content_step=step_index,
-        result=success,
-        status="SUCCESS" if success else "FAIL",
-        start_time=interface_result.start_time,
-        use_time=interface_result.use_time,
-        interface_result_id=interface_result.id,
-    )

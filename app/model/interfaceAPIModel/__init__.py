@@ -5,35 +5,3 @@
 # @File : __init__.py
 # @Software: PyCharm
 # @Desc: interfaceAPIModel 导出
-
-from .caseResultModel import InterfaceCaseResult
-from .taskResultModel import TaskStepResult
-from .interfaceResultModel import InterfaceResult
-from .stepResultModel import (
-    BaseStepResult,
-    APIStepResult,
-    GroupStepResult,
-    ConditionStepResult,
-    LoopStepResult,
-    ScriptStepResult,
-    DBStepResult,
-    WaitStepResult,
-    AssertStepResult,
-    WhileStepResult,
-)
-
-__all__ = [
-    "InterfaceCaseResult",
-    "TaskStepResult",
-    "InterfaceResult",
-    "BaseStepResult",
-    "APIStepResult",
-    "GroupStepResult",
-    "ConditionStepResult",
-    "LoopStepResult",
-    "ScriptStepResult",
-    "DBStepResult",
-    "WaitStepResult",
-    "AssertStepResult",
-    "WhileStepResult",
-]

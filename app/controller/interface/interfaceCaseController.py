@@ -6,6 +6,8 @@ InterfaceCase Controller
 接口用例管理控制器
 提供用例的增删改查、关联接口、条件、循环等功能
 """
+import asyncio
+
 from fastapi import APIRouter
 from fastapi.params import Depends
 
@@ -43,6 +45,7 @@ from app.schema.interface import (
     RemoveAssociationLoopAPISchema,
     RemoveAssociationConditionAPISchema,
 )
+from croe.interface.runner import InterfaceRunner
 from croe.interface.starter import APIStarter
 from utils import log
 
@@ -455,3 +458,31 @@ async def remove_vars(varInfo: DeleteVarsSchema, _: User = Depends(Authenticatio
 async def query_vars(varsInfo: QueryVarsSchema, _: User = Depends(Authentication())):
     datas = await InterfaceVarsMapper.query_by(**varsInfo.model_dump())
     return Response.success(datas)
+
+
+
+
+@router.post("/execute/io", description="用例执行")
+async def execute_case_api(case: ExecuteInterfaceCaseSchema, starter: User = Depends(Authentication())):
+    _starter = APIStarter(starter)
+    # asyncio.create_task()
+    try:
+        await InterfaceRunner(starter=_starter,
+                              ).run_interface_case(interface_case_id=case.case_id,
+                                                   env=case.env_id,
+                                                   error_stop=case.error_stop
+                                                   )
+    except Exception as e:
+        log.exception(e)
+    return Response.success()
+
+
+@router.post("/execute/back", description="用例执行")
+async def execute_case_api(case: ExecuteInterfaceCaseSchema, starter: User = Depends(Authentication())):
+    _starter = APIStarter(starter)
+    asyncio.create_task(InterfaceRunner(starter=_starter,
+                                        ).run_interface_case(interface_case_id=case.case_id,
+                                                             env=case.env_id,
+                                                             error_stop=case.error_stop
+                                                             ))
+    return Response.success()

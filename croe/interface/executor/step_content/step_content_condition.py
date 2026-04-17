@@ -7,22 +7,16 @@
 # @Desc: 条件步骤执行策略
 
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
-from app.mapper.interfaceApi.interfaceResultMapper import (
-    InterfaceContentStepResultMapper
-)
-from app.mapper.interfaceApi.interfaceConditionMapper import (
-    InterfaceConditionMapper
-)
-from app.model.interfaceAPIModel.contents import InterfaceCaseContents
+from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
+from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 from croe.a_manager import ConditionManager
-from croe.interface.writer import write_interface_result
+from croe.interface.writer import result_writer
 from enums import InterfaceAPIResultEnum
 from enums.CaseEnum import CaseStepContentType
-from utils import GenerateTools
 
 if TYPE_CHECKING:
     from croe.interface.executor.interface_executor import InterfaceExecutor
@@ -34,12 +28,6 @@ class APIConditionContentStrategy(StepBaseStrategy):
     async def execute(self, step_context: CaseStepContext) -> bool:
         """
         执行条件步骤
-
-        设计说明：
-        1. 执行条件判断
-        2. 创建 ConditionStepContentResult
-        3. 如果条件通过，执行关联的API列表
-        4. 如果条件未通过，跳过子步骤
 
         Args:
             step_context: 步骤执行上下文
@@ -70,14 +58,21 @@ class APIConditionContentStrategy(StepBaseStrategy):
         if step_context.execution_context.task_result:
             task_result_id = step_context.execution_context.task_result.id
 
-        condition_content_result = await write_case_step_content_condition_result(
-            step_index=step_context.index,
-            interface_case_result_id=step_context.execution_context.case_result.id,
-            step_content=step_context.content,
-            content_condition=content_condition,
-            condition_result=condition_passed,
+        condition_content_result = await result_writer.write_step_result(
+            content_type=CaseStepContentType.STEP_API_CONDITION,
+            case_result_id=step_context.execution_context.case_result.id,
+            task_result_id=task_result_id,
+            content_id=step_context.content.id,
+            content_name=step_context.content.resolved_content_name,
+            content_desc=step_context.content.content_desc,
+            content_step=step_context.index,
+            success=False,
             start_time=start_time,
-            interface_task_result_id=task_result_id,
+            use_time="",
+            condition_result=condition_passed,
+            condition_key=content_condition.get("key"),
+            condition_value=content_condition.get("value"),
+            condition_operator=content_condition.get("operator"),
         )
 
         case_result = step_context.execution_context.case_result
@@ -92,9 +87,10 @@ class APIConditionContentStrategy(StepBaseStrategy):
             )
 
             if not condition_api_list:
-                await update_condition_content_result(
+                await result_writer.update_step_result(
                     result_id=condition_content_result.id,
-                    success=True,
+                    result=True,
+                    status="SUCCESS",
                 )
                 case_result.success_num += 1
                 return True
@@ -112,9 +108,9 @@ class APIConditionContentStrategy(StepBaseStrategy):
                     case_result=case_result
                 )
 
-                await write_interface_result(
-                    content_result_id=condition_content_result.id,
-                    **interface_result
+                await result_writer.write_interface_result(
+                    interface_result=InterfaceResult(**interface_result),
+                    content_result_id=condition_content_result.id
                 )
 
                 if not success:
@@ -124,15 +120,17 @@ class APIConditionContentStrategy(StepBaseStrategy):
                     case_result.result = InterfaceAPIResultEnum.ERROR
                     case_result.fail_num += 1
 
-                    await update_condition_content_result(
+                    await result_writer.update_step_result(
                         result_id=condition_content_result.id,
-                        success=False,
+                        result=False,
+                        status="FAIL",
                     )
                     return False
 
-            await update_condition_content_result(
+            await result_writer.update_step_result(
                 result_id=condition_content_result.id,
-                success=True,
+                result=True,
+                status="SUCCESS",
             )
             return True
         else:
@@ -141,71 +139,9 @@ class APIConditionContentStrategy(StepBaseStrategy):
             )
             case_result.success_num += 1
 
-            await update_condition_content_result(
+            await result_writer.update_step_result(
                 result_id=condition_content_result.id,
-                success=True,
+                result=True,
+                status="SUCCESS",
             )
             return True
-
-
-async def write_case_step_content_condition_result(
-    step_index: int,
-    interface_case_result_id: int,
-    step_content: InterfaceCaseContents,
-    content_condition: dict,
-    condition_result: bool,
-    start_time: datetime,
-    interface_task_result_id: Optional[int] = None,
-):
-    """
-    写入条件步骤内容结果（初始状态）
-
-    使用 InterfaceContentStepResultMapper.insert_result 方法，
-    根据 content_type 自动创建对应的子类实例
-
-    Args:
-        step_index: 步骤索引
-        interface_case_result_id: 用例执行结果ID
-        step_content: 步骤内容实例
-        content_condition: 条件内容
-        condition_result: 条件判断结果
-        start_time: 开始时间
-        interface_task_result_id: 任务执行结果ID（可选）
-
-    Returns:
-        ConditionStepContentResult: 创建的条件步骤内容结果实例
-    """
-    return await InterfaceContentStepResultMapper.insert_result(
-        content_type=CaseStepContentType.STEP_API_CONDITION,
-        case_result_id=interface_case_result_id,
-        task_result_id=interface_task_result_id,
-        content_id=step_content.id,
-        content_name=step_content.resolved_content_name,
-        content_desc=step_content.content_desc,
-        content_step=step_index,
-        result=None,
-        status="RUNNING",
-        start_time=start_time,
-        condition_result=condition_result,
-        condition_key=content_condition.get("key"),
-        condition_value=content_condition.get("value"),
-        condition_operator=content_condition.get("operator"),
-    )
-
-
-async def update_condition_content_result(
-    result_id: int,
-    success: bool,
-) -> None:
-    """
-    更新条件步骤内容结果
-
-    Args:
-        result_id: 步骤内容结果ID
-        success: 是否成功
-    """
-    await InterfaceContentStepResultMapper.update_result(
-        result_id=result_id,
-        result=success,
-        status="SUCCESS" if success else "FAIL",
-    )

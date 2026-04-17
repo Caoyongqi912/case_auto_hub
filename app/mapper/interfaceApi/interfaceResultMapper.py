@@ -5,13 +5,14 @@
 # @File : interfaceResultMapper
 # @Software: PyCharm
 # @Desc: 接口执行结果 Mapper
-import pstats
 from typing import Dict, Type, List, Optional
 
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
+from app.model import async_session
 from app.model.base.user import User
 from app.model.interfaceAPIModel.interfaceResultModel import (
     InterfaceResult,
@@ -38,7 +39,12 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
     __model__ = InterfaceCaseResult
 
     @classmethod
-    async def query_case_result(cls, case_id: int):
+    async def page_case_results(cls):
+        """业务流结果分页"""
+        pass
+
+    @classmethod
+    async def query_case_result(cls, case_result_id: int):
         pass
 
     @classmethod
@@ -65,6 +71,9 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
         except Exception as e:
             log.error(e)
             raise e
+
+
+
 class InterfaceResultMapper(Mapper[InterfaceResult]):
     __model__ = InterfaceResult
 
@@ -80,6 +89,32 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
             log.error(e)
             raise e
 
+    @classmethod
+    async def get_by_content_result_id(
+        cls,
+        content_result_id: int,
+        session: AsyncSession = None
+    ) -> List[InterfaceResult]:
+        """
+        通过 content_result_id 查询关联的 InterfaceResult
+
+        Args:
+            content_result_id: 步骤内容结果 ID
+            session: 可选的数据库会话
+
+        Returns:
+            List[InterfaceResult]: 关联的接口结果列表
+        """
+        try:
+            async with cls.session_scope(session) as session:
+                stmt = select(InterfaceResult).where(
+                    InterfaceResult.content_result_id == content_result_id
+                )
+                results = await session.scalars(stmt)
+                return results.all()
+        except Exception as e:
+            log.error(f"get_by_content_result_id error: {e}")
+            raise
 
     
 class InterfaceTaskResultMapper(Mapper[InterfaceTaskResult]):
@@ -137,15 +172,16 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         Returns:
             InterfaceCaseContentResult: 步骤内容结果实例（具体子类）
         """
-        if session:
-            result = await session.get(InterfaceCaseContentResult, ident)
-        else:
-            async with cls.session_scope() as session:
+        try:
+            async with cls.session_scope(session) as session:
                 result = await session.get(InterfaceCaseContentResult, ident)
+                if not result:
+                    raise ValueError(f"步骤内容结果不存在，id: {ident}")
+                return result
+        except Exception as e:
+            log.error(e)
+            raise e
 
-        if not result:
-            raise ValueError(f"步骤内容结果不存在，id: {ident}")
-        return result
 
     @classmethod
     async def query_by_case_result_id(
@@ -169,13 +205,14 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
             .order_by(InterfaceCaseContentResult.content_step)
         )
 
-        if session:
-            result = await session.scalars(stmt)
-            return result.all()
-        else:
-            async with cls.session_scope() as session:
+        try:
+            async with cls.session_scope(session) as session:
                 result = await session.scalars(stmt)
                 return result.all()
+        except Exception as e:
+            log.error(e)
+            raise e
+
 
     @classmethod
     async def query_by_task_result_id(
@@ -340,32 +377,38 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
             InterfaceCaseContentResult: 更新后的步骤内容结果实例
         """
         try:
-            if session:
-                target = await cls.get_by_id(result_id, session)
-            else:
+            if session is None:
                 async with cls.transaction() as session:
-                    target = await cls.get_by_id(result_id, session)
-
-            base_columns = set(InterfaceCaseContentResult.__table__.columns.keys())
-            child_columns = set(target.__class__.__table__.columns.keys())
-            valid_columns = base_columns | child_columns
-            update_fields = {k: v for k, v in kwargs.items() if k in valid_columns}
-
-            for field, value in update_fields.items():
-                if hasattr(target, field):
-                    setattr(target, field, value)
-
-            if session:
-                await session.flush()
-                session.expunge(target)
+                    return await cls._do_update(session, result_id, **kwargs)
             else:
-                await session.flush()
-                session.expunge(target)
-
-            return target
+                return await cls._do_update(session, result_id, **kwargs)
         except Exception as e:
             log.error(f"update_result {result_id} error: {e}")
             raise
+
+    @classmethod
+    async def _do_update(
+        cls,
+        session: AsyncSession,
+        result_id: int,
+        **kwargs
+    ) -> InterfaceCaseContentResult:
+        """执行更新逻辑"""
+        target = await cls.get_by_id(result_id, session)
+        await session.refresh(target)
+
+        base_columns = set(InterfaceCaseContentResult.__table__.columns.keys())
+        child_columns = set(target.__class__.__table__.columns.keys())
+        valid_columns = base_columns | child_columns
+        update_fields = {k: v for k, v in kwargs.items() if k in valid_columns}
+
+        for field, value in update_fields.items():
+            setattr(target, field, value)
+
+        await session.flush()
+        session.expunge(target)
+
+        return target
 
     @classmethod
     async def query_with_interface_results(
@@ -376,44 +419,34 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         """
         查询步骤内容结果并包含关联的 interface_result 信息
 
-        此方法会调用每个结果实例的 to_result_dict() 方法，
-        自动包含关联的 interface_result 详情
-
         Args:
             case_result_id: 用例执行结果 ID
             session: 可选的数据库会话
 
         Returns:
             List[dict]: 包含完整结果信息的字典列表
-
-        示例返回:
-            [
-                {
-                    "id": 1,
-                    "content_type": 1,
-                    "content_name": "登录接口",
-                    "result": true,
-                    "interface_result": {...}  # API 步骤特有
-                },
-                {
-                    "id": 2,
-                    "content_type": 2,
-                    "content_name": "用户操作组",
-                    "result": true,
-                    "interface_results": [...]  # Group 步骤特有
-                },
-                {
-                    "id": 3,
-                    "content_type": 3,
-                    "content_name": "条件判断",
-                    "result": true,
-                    "assert_data": {...},  # Condition 步骤特有
-                    "interface_results": [...]
-                }
-            ]
         """
         results = await cls.query_by_case_result_id(case_result_id, session)
-        return [result.to_result_dict() for result in results]
+        result_dicts = [result.to_dict() for result in results]
+
+        for result_dict in result_dicts:
+            content_id = result_dict['id']
+            content_type = result_dict['content_type']
+
+            if content_type == CaseStepContentType.STEP_API:
+                interface_results = await InterfaceResultMapper.get_by_content_result_id(content_id, session)
+                if interface_results:
+                    result_dict['interface_result'] = interface_results[0].to_dict()
+            elif content_type in (
+                CaseStepContentType.STEP_API_GROUP,
+                CaseStepContentType.STEP_API_CONDITION,
+                CaseStepContentType.STEP_API_WHILE,
+                CaseStepContentType.STEP_LOOP,
+            ):
+                interface_results = await InterfaceResultMapper.get_by_content_result_id(content_id, session)
+                result_dict['interface_results'] = [r.to_dict() for r in interface_results]
+
+        return result_dicts
 
     @classmethod
     async def delete_by_case_result_id(
@@ -491,3 +524,28 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
                 }
 
         return stats
+
+
+
+
+    @classmethod
+    async def query_steps_result(cls,case_result_id: int):
+
+        stmt = select(InterfaceCaseContentResult).options(
+            joinedload(APIStepContentResult.interface_result),
+            joinedload(GroupStepContentResult.interface_results),
+        ).where(
+            InterfaceCaseContentResult.case_result_id == case_result_id
+        ).order_by(
+            InterfaceCaseContentResult.content_step
+        )
+        async with async_session() as s:
+            result = await s.scalars(stmt)
+            steps = result.unique().all()
+        return steps
+
+__all__ = ["InterfaceCaseResultMapper",
+           "InterfaceResultMapper",
+           "InterfaceTaskResultMapper",
+           "InterfaceContentStepResultMapper"
+           ]

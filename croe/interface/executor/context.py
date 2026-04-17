@@ -14,6 +14,7 @@ from croe.interface.starter import APIStarter
 from croe.play.starter import UIStarter
 
 if TYPE_CHECKING:
+    from app.model.interfaceAPIModel.contents import InterfaceCaseContents
     from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
     from app.model.interfaceAPIModel.interfaceResultModel import (
         InterfaceCaseResult,
@@ -37,10 +38,10 @@ class CaseStepContext:
     """步骤执行上下文"""
 
     index: int
-    content: "InterfaceCaseContent"
-    execution_context: "ExecutionContext"
-    starter: Union["APIStarter", "UIStarter"]
-    variable_manager: "VariableManager"
+    content: "InterfaceCaseContents"
+    execution_context: ExecutionContext
+    starter: Union[APIStarter, UIStarter]
+    variable_manager: VariableManager
 
     @property
     def task_result_id(self) -> Optional[int]:

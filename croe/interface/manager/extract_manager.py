@@ -96,10 +96,10 @@ class ExtractManager:
 
             match opt:
                 case ExtraEnum.JMESPATH:
-                    return jp.jmespath()
+                    return jp.search()
                 case ExtraEnum.JSONPATH:
-                    return jp.jsonpath()
-                case ExtraEnum.REGEX:
+                    return await jp.value()
+                case ExtraEnum.RE:
                     return jp.regex()
                 case _:
                     log.warning(f"Unsupported extract option: {opt}")
