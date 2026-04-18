@@ -7,8 +7,6 @@
 # @Desc: 条件步骤执行策略
 
 from datetime import datetime
-from typing import TYPE_CHECKING
-
 from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.context import CaseStepContext
@@ -18,8 +16,6 @@ from croe.interface.writer import result_writer
 from enums import InterfaceAPIResultEnum
 from enums.CaseEnum import CaseStepContentType
 
-if TYPE_CHECKING:
-    from croe.interface.executor.interface_executor import InterfaceExecutor
 
 
 class APIConditionContentStrategy(StepBaseStrategy):
@@ -99,13 +95,12 @@ class APIConditionContentStrategy(StepBaseStrategy):
             for index, interface in enumerate(condition_api_list, start=1):
                 await step_context.starter.send(
                     f"✍️✍️  {'-' * 20} 执行条件步骤 "
-                    f"{index}/{total_apis}: {interface.name} {'-' * 20}"
+                    f"{index}/{total_apis}: {interface.interface_name} {'-' * 20}"
                 )
 
                 interface_result, success = await self.interface_executor.execute(
                     interface=interface,
                     env=step_context.execution_context.env,
-                    case_result=case_result
                 )
 
                 await result_writer.write_interface_result(

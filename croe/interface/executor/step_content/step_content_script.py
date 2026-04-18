@@ -8,7 +8,7 @@
 
 import json
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from app.mapper.interfaceApi.interfaceResultMapper import (
     InterfaceContentStepResultMapper
@@ -17,12 +17,10 @@ from app.model.interfaceAPIModel.contents import InterfaceCaseContents
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 from croe.a_manager import ScriptManager, ScriptSecurityError
-from enums import ExtractTargetVariablesEnum
 from enums.CaseEnum import CaseStepContentType
 from utils import log
 
-if TYPE_CHECKING:
-    from croe.interface.executor.interface_executor import InterfaceExecutor
+
 
 
 class APIScriptContentStrategy(StepBaseStrategy):

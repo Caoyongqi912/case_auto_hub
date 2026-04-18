@@ -52,9 +52,9 @@ class LocalConfig(BaseConfig):
     Record_Proxy = False
     # 硬编码MySQL配置
     MYSQL_SERVER = "127.0.0.1"
-    MYSQL_PASSWORD = "sdkjfhsdkjhfsdkhfksd"
-    # MYSQL_PASSWORD = "qq23qq"
-    MYSQL_DATABASE = 'autoHub'
+    # MYSQL_PASSWORD = "sdkjfhsdkjhfsdkhfksd"
+    MYSQL_PASSWORD = "qq23qq"
+    MYSQL_DATABASE = 'caseHub'
     MYSQL_PORT: int = 3306
 
     SQLALCHEMY_DATABASE_URI = 'mysql+mysqlconnector://{}:{}@{}/{}'.format(

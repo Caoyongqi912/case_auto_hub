@@ -311,6 +311,9 @@ class GroupStepContentResult(InterfaceCaseContentResult):
         """返回组执行结果（interface_results 由查询层填充）"""
         result = super().to_dict(exclude)
         result['data'] = self.interface_results
+        result['total_api_num'] = self.total_api_num
+        result['fail_api_num'] = self.fail_api_num
+        result['success_api_num'] = self.success_api_num
         return result
 
     def __repr__(self):
@@ -333,12 +336,29 @@ class ConditionStepContentResult(InterfaceCaseContentResult):
     condition_value = Column(String(100), nullable=True, comment="条件值")
     condition_operator = Column(INTEGER, nullable=True, comment="条件操作符")
 
+    interface_results = relationship(
+        InterfaceResult,
+        primaryjoin=result_id == InterfaceResult.content_result_id,
+        foreign_keys=[InterfaceResult.content_result_id],
+        lazy="selectin",
+        viewonly=True
+    )
+
     assert_data = Column(JSON, nullable=True, comment="断言信息")
     extract_data = Column(JSON, nullable=True, comment="提取变量")
 
     def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
         """返回条件执行结果（interface_results 由查询层填充）"""
         result = super().to_dict(exclude)
+        result['data'] = self.interface_results
+        result['assert_data'] = self.assert_data
+        result['extract_data'] = self.extract_data
+        result["content_condition"] = {
+            "key": self.condition_key,
+            "value": self.condition_value,
+            "operator": self.condition_operator,
+            "result":self.condition_result
+        }
         return result
 
     def __repr__(self):

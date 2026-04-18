@@ -534,6 +534,7 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         stmt = select(InterfaceCaseContentResult).options(
             joinedload(APIStepContentResult.interface_result),
             joinedload(GroupStepContentResult.interface_results),
+            joinedload(ConditionStepContentResult.interface_results),
         ).where(
             InterfaceCaseContentResult.case_result_id == case_result_id
         ).order_by(
