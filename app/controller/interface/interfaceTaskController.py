@@ -23,6 +23,8 @@ from app.schema.api.interfaceTaskSchema import (
     AssociationInterfacesSchema,
     RemoveAssociationInterfacesSchema,
 )
+from croe.interface.starter import APIStarter
+from croe.interface.task import TaskRunner, TaskParams
 
 router = APIRouter(prefix="/interface/task", tags=['自动化接口步骤'])
 
@@ -203,21 +205,13 @@ async def execute_task(task: ExecuteTask, starter: User = Depends(Authentication
 
     - **task**: 包含任务ID和环境ID
     """
-    from common.redis_worker_pool import r_pool, register_interface_task_Handle
 
-    task_job = await InterfaceTaskMapper.get_by_id(task.task_id)
-
-    await r_pool.submit_to_redis(
-        func=register_interface_task_Handle,
-        job_id=task_job.uid,
-        job_name=task_job.interface_task_title,
-        job_kwargs={
-            "task_id": task_job.id,
-            "env_id": task.env_id,
-            "options": task.options,
-            "user": starter
-        }
+    _starter = APIStarter(starter)
+    params = TaskParams(
+        **task.model_dump()
     )
+
+    await TaskRunner(starter=_starter).execute_task(params)
     return Response.success()
 
 

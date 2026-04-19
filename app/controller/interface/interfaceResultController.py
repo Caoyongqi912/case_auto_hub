@@ -21,8 +21,8 @@ router = APIRouter(prefix="/interfaceResult", tags=['自动化接口接结果'])
 
 
 @router.post("/pageCaseResult", description="用例case结果分页")
-async def case_interface_page_results_page(pageinfo: PageInterfaceCaseResultSchema, _=Depends(Authentication)):
-    data = await InterfaceCaseResultMapper.page_query(**pageinfo.model_dump(
+async def case_interface_page_results_page(page_info: PageInterfaceCaseResultSchema, _=Depends(Authentication)):
+    data = await InterfaceCaseResultMapper.page_query(**page_info.model_dump(
         exclude_none=True,
         exclude_unset=True,
     ))
@@ -48,6 +48,42 @@ async def query_step_results(case_result_id: int, _=Depends(Authentication())):
     return Response.success(data)
 
 
+
+
+
+# ===== task result =====
+@router.post('/task/pageResults',description="任务结果分页查询")
+async def page_task_result(page_info: PageInterfaceTaskResultSchema, _=Depends(Authentication())):
+    data = await InterfaceTaskResultMapper.page_query(**page_info.model_dump(
+        exclude_none=True,
+        exclude_unset=True,
+    ))
+
+    return Response.success(data)
+
+
+@router.get('/task/removeResults',description="任务结果分页查询")
+async def remove_task_result(task_id: int, _=Depends(Authentication())):
+    await InterfaceTaskResultMapper.delete_by(task_id=task_id)
+    return Response.success()
+
+
+@router.get('/task/resultDetail',description="任务结果分页查询")
+async def get_task_result(task_result_id: int, _=Depends(Authentication())):
+    data = await InterfaceTaskResultMapper.get_by_id(ident=task_result_id)
+    return Response.success(data)
+
+
+@router.post('/task/interface/pageResult',description='查询任务关联api结果')
+async def page_task_interface_results(page_info: PageInterfaceResultSchema, _=Depends(Authentication())):
+    data = await InterfaceResultMapper.page_query(**page_info.model_dump(
+        exclude_none=True,
+        exclude_unset=True,
+    ))
+    return Response.success(data)
+
+
+
 @router.post("/queryBy", description="接口结果字段查询")
 async def query_interface_api_result(queryBy, _=Depends(Authentication())):
     results = await InterfaceResultMapper.query_by(**queryBy.model_dump(
@@ -57,36 +93,10 @@ async def query_interface_api_result(queryBy, _=Depends(Authentication())):
     return Response.success(results)
 
 
-@router.get("/queryByCaseResultId", description="接口结果字段查询")
-async def query_interface_api_result_by_case_result(caseResultId: int, _=Depends(Authentication())):
-    return Response.success()
 
 
-@router.post("/case/queryBy", description="查询用例结果")
-async def case_interface_api_results(byInfo, _=Depends(Authentication())):
-    return Response.success()
 
-
-@router.get("/case/detail/{uid}", description="查询用例结果")
-async def case_interface_api_result(uid: int, _=Depends(Authentication())):
-    return Response.success()
-
-
-@router.post("/case/removeAll", description="删除全部用例结果")
-async def remove_all_case_interface_api_result(result, _=Depends(Authentication())):
-    return Response.success()
-
-
-@router.post("/inter/page", description="用例api结果分页")
-async def api_interface_page_results_page(pageinfo, _=Depends(Authentication)):
-    return Response.success()
-
-
-@router.get("/task/resultDetail", description="任务详情")
-async def get_task_detail_result(result=Depends(), _=Depends(Authentication())):
-    return Response.success()
-
-
-@router.post("/task/removeAll", description="删除全部用例结果")
-async def remove_all_case_interface_api_result(result, _=Depends(Authentication())):
+@router.get("/task/removeResult", description="删除结果")
+async def remove_task_result(result_id:int, _=Depends(Authentication())):
+    await InterfaceTaskResultMapper.delete_by_id(ident=result_id)
     return Response.success()

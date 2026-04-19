@@ -15,6 +15,7 @@ from app.mapper.interfaceApi.interfaceTaskMapper import (
 )
 
 from app.mapper.project.env import EnvMapper
+from app.model.interfaceAPIModel.interfaceResultModel import InterfaceTaskResult
 from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
 from common.notifyManager import NotifyManager
 from enums import InterfaceAPIResultEnum
@@ -84,9 +85,9 @@ class TaskRunner:
 
         if should_update:
             task_result.progress = round(
-                (self.progress / task_result.totalNumber) * 100, 1
+                (self.progress / task_result.total_num) * 100, 1
             )
-            await result_writer.write_task_process(task_result=task_result)
+            await result_writer.update_task_progress(task_result=task_result)
             self._last_progress_update = current_time
 
     async def execute_task(
@@ -102,6 +103,7 @@ class TaskRunner:
         Returns:
             任务结果
         """
+        log.info(f"execute_task  params {params} ")
         self.task = await InterfaceTaskMapper.get_by_id(ident=params.task_id)
         log.info(f"查询到任务 {self.task}")
 
@@ -122,8 +124,8 @@ class TaskRunner:
             f"查询到关联Step x {self.task.interface_task_total_apis_num} ..."
         )
 
-        task_result = await result_writer.init_interface_task_result(
-            interfaceTask=self.task,
+        task_result = await result_writer.init_task_result(
+            task=self.task,
             starter=self.starter,
             env=params.env
         )
@@ -176,7 +178,7 @@ class TaskRunner:
     async def _execute_api_steps(
         self,
         interface_runner: InterfaceRunner,
-        task_result: Any,
+        task_result: InterfaceTaskResult,
         params: TaskParams
     ) -> None:
         """
@@ -190,11 +192,12 @@ class TaskRunner:
         interfaces = await InterfaceTaskMapper.query_association_interfaces(
             task_id=self.task.id
         )
+        log.info(f'_execute_api_steps {interfaces}')
 
         if not interfaces:
             return
 
-        task_result.totalNumber += len(interfaces)
+        task_result.total_num += len(interfaces)
 
         for interface in interfaces:
             await self.starter.send(
@@ -203,23 +206,23 @@ class TaskRunner:
 
             success = await interface_runner.run_interface_by_task(
                 interface=interface,
-                task_result=task_result,
+                task_result_id=task_result.id,
                 retry=params.retry,
                 retry_interval=params.retry_interval,
                 env=params.env
             )
 
             if success:
-                task_result.successNum += 1
+                task_result.success_num += 1
             else:
-                task_result.failNum += 1
+                task_result.fail_num += 1
 
             await self.set_process(task_result)
 
     async def _execute_case_steps(
         self,
         interface_runner: InterfaceRunner,
-        task_result: Any,
+        task_result: InterfaceTaskResult,
         params: TaskParams
     ) -> None:
         """
@@ -235,7 +238,7 @@ class TaskRunner:
         if not cases:
             return
 
-        task_result.totalNumber += len(cases)
+        task_result.total_num += len(cases)
 
         for case in cases:
             await self.starter.send(
@@ -250,25 +253,25 @@ class TaskRunner:
             )
 
             if success:
-                task_result.successNum += 1
+                task_result.success_num += 1
             else:
-                task_result.failNum += 1
+                task_result.fail_num += 1
 
             await self.set_process(task_result)
 
-    async def _finalize_task_result(self, task_result: Any) -> None:
+    async def _finalize_task_result(self, task_result: InterfaceTaskResult) -> None:
         """
         完成任务结果
 
         Args:
             task_result: 任务结果
         """
-        if task_result.failNum == 0:
+        if task_result.fail_num == 0:
             task_result.result = InterfaceAPIResultEnum.SUCCESS
         else:
             task_result.result = InterfaceAPIResultEnum.ERROR
 
-        await result_writer.write_interface_task_result(task_result)
+        await result_writer.finalize_task_result(task_result)
         await self.starter.send(
             f"✍️✍️ 任务 {self.task.interface_task_title} 执行结束"
         )

@@ -51,9 +51,9 @@ class InterfaceRunner:
         )
 
     async def try_interface(
-        self,
-        interface_id: int,
-        env_id: int
+            self,
+            interface_id: int,
+            env_id: int
     ) -> Dict[str, Any]:
         """
         执行单个接口请求调试
@@ -74,9 +74,9 @@ class InterfaceRunner:
         return result
 
     async def try_group(
-        self,
-        group_id: int,
-        env_id: int
+            self,
+            group_id: int,
+            env_id: int
     ) -> list:
         """
         执行接口组
@@ -91,7 +91,7 @@ class InterfaceRunner:
         interfaces = await InterfaceGroupMapper.query_association_interfaces(
             group_id=group_id
         )
-        
+
         await self.init_global_headers()
         env = await self._get_running_env(env=env_id)
         results = []
@@ -104,11 +104,11 @@ class InterfaceRunner:
         return results
 
     async def run_interface_case(
-        self,
-        interface_case_id: int,
-        env: Union[int, Any],
-        error_stop: bool,
-        task_result: Optional[Any] = None
+            self,
+            interface_case_id: int,
+            env: Union[int, Any],
+            error_stop: bool,
+            task_result: Optional[Any] = None
     ) -> Tuple[bool, Optional[Any]]:
         """
         执行接口业务流用例
@@ -160,8 +160,7 @@ class InterfaceRunner:
             env=target_env,
             task_result=task_result
         )
-        log.debug(f"result_writer.init_case_result ={ case_result }")
-
+        log.debug(f"result_writer.init_case_result ={case_result}")
 
         try:
             execution_context = ExecutionContext(
@@ -177,7 +176,7 @@ class InterfaceRunner:
                     f"✍️✍️ {'=' * 20} EXECUTE_STEP {index} ： "
                     f"{step_content} {'=' * 20}"
                 )
-                
+
                 # enable 仅在调试模式下生效 任务执行默认开启
                 if step_content.enable == 0 and not task_result:
                     await self.starter.send(
@@ -186,9 +185,7 @@ class InterfaceRunner:
                     case_result.progress = (index * 100) // total_steps
                     await result_writer.update_case_progress(case_result)
                     continue
-                
-         
-                
+
                 # 执行步骤  
                 step_context = CaseStepContext(
                     index=index,
@@ -203,11 +200,11 @@ class InterfaceRunner:
                     self.interface_executor
                 )
                 step_success = await strategy.execute(step_context)
-                
-                case_success = case_success and step_success                
-                
+
+                case_success = case_success and step_success
+
                 case_result.progress = (index * 100) // total_steps
-                
+
                 # 用例执行失败 且 配置了错误停止
                 if not case_success and error_stop:
                     await self.starter.send(
@@ -216,7 +213,7 @@ class InterfaceRunner:
                     case_result.progress = 100
                     await result_writer.update_case_progress(case_result)
                     break
-                
+
                 await self.starter.send(
                     f"✍️✍️  EXECUTE_STEP {index} ： FINISH"
                 )
@@ -230,7 +227,7 @@ class InterfaceRunner:
                 case_result=case_result,
                 logs="".join(self.starter.logs)
             )
-            
+
             return case_success, case_result
 
         except Exception as e:
@@ -242,19 +239,19 @@ class InterfaceRunner:
             await self.starter.over(case_result.id)
 
     async def run_interface_by_task(
-        self,
-        interface: Any,
-        task_result: Any,
-        retry: int = 0,
-        retry_interval: int = 0,
-        env: Optional[Any] = None
+            self,
+            interface: Any,
+            task_result_id: int,
+            retry: int = 0,
+            retry_interval: int = 0,
+            env: Optional[Any] = None
     ) -> bool:
         """
         执行接口任务
 
         Args:
             interface: 接口对象
-            task_result: 接口任务结果对象
+            task_result_id: 接口任务结果对象
             retry: 重试次数
             retry_interval: 重试间隔
             env: 环境对象
@@ -265,19 +262,20 @@ class InterfaceRunner:
         for attempt in range(retry + 1):
             result, success = await self.interface_executor.execute(
                 interface=interface,
-                task_result=task_result,
                 env=env
             )
 
             if success:
                 await result_writer.write_interface_result(
-                    interface_result=InterfaceResult(**result)
+                    interface_result=InterfaceResult(**result,
+                                                     task_result_id=task_result_id)
                 )
                 return True
 
             if attempt == retry:
                 await result_writer.write_interface_result(
-                    interface_result=InterfaceResult(**result)
+                    interface_result=InterfaceResult(**result,
+                                                     task_result_id=task_result_id)
                 )
                 await self.starter.send(
                     f"接口 {interface} 执行结果 FALSE"
@@ -317,9 +315,7 @@ class InterfaceRunner:
         except Exception as e:
             log.error(f"初始化业务流用例变量失败: {e}")
 
-
-
-    async def init_global_headers(self)->Optional[List[InterfaceGlobalHeader]]:
+    async def init_global_headers(self) -> Optional[List[InterfaceGlobalHeader]]:
         """
         初始化g headers
         """
@@ -333,7 +329,6 @@ class InterfaceRunner:
                 f"🫳🫳 全局Headers已加载: {len(self.global_headers)} 条"
             )
             self.interface_executor.g_headers = global_headers or []
-
 
     async def _get_running_env(self, env: Union[int, EnvModel]) -> Optional[EnvModel]:
         """

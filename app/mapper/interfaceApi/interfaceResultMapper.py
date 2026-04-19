@@ -128,10 +128,7 @@ class InterfaceTaskResultMapper(Mapper[InterfaceTaskResult]):
             log.error(e)
             raise e
     
-    @classmethod
-    async def delete_by_task_id(cls, task_id: int):
-        """删除"""
-        pass
+
     
 class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
     """

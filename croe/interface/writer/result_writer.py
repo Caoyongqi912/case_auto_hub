@@ -23,6 +23,7 @@ from app.model.interfaceAPIModel.interfaceResultModel import (
     InterfaceCaseContentResult
 )
 from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
+from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
 from enums import InterfaceAPIStatusEnum, InterfaceAPIResultEnum
 from enums.CaseEnum import CaseStepContentType
 from utils import GenerateTools, log
@@ -56,9 +57,9 @@ class ResultWriter:
 
     async def init_task_result(
             self,
-            task,
-            starter,
-            env=None
+            task:InterfaceTask,
+            starter:APIStarter,
+            env:EnvModel=None
     ) -> InterfaceTaskResult:
         """
         初始化任务结果
@@ -74,12 +75,13 @@ class ResultWriter:
         task_result = InterfaceTaskResult(
             task_id=task.id,
             task_uid=task.uid,
-            task_name=task.title,
+            task_name=task.interface_task_title,
             project_id=task.project_id,
             module_id=task.module_id,
             start_by=starter.startBy,
             starter_name=starter.username,
             starter_id=starter.userId,
+
         )
 
         if env:
@@ -126,7 +128,9 @@ class ResultWriter:
         case_result.fail_num = 0
 
         if task_result:
-            case_result.task_result_id = task_result.id
+            case_result.interface_task_result_id = task_result.id
+            log.info("task_result {}".format(case_result))
+            log.info("task_result {}".format(task_result))
 
         return await InterfaceCaseResultMapper.insert(case_result)
 
@@ -428,6 +432,8 @@ class ResultWriter:
         Args:
             task_result: 任务结果对象
         """
+        await self._flush_cache()
+
         if task_result.fail_num == 0:
             task_result.result = InterfaceAPIResultEnum.SUCCESS
         else:

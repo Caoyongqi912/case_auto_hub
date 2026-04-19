@@ -28,9 +28,7 @@ class InterfaceResult(BaseModel):
     """接口执行结果"""
     __tablename__ = "interface_result"
 
-    interface_id = Column(
-        INTEGER, ForeignKey("interface.id", ondelete="CASCADE"), comment="所属用例"
-    )
+
     interface_name = Column(String(50), comment="用例名称")
     interface_uid = Column(String(20), comment="用例Uid")
     interface_desc = Column(String(250), comment="用例描述")
@@ -63,13 +61,24 @@ class InterfaceResult(BaseModel):
 
     result = Column(Boolean, nullable=True, comment="运行结果")
 
+    interface_id = Column(
+        INTEGER, ForeignKey("interface.id", ondelete="CASCADE"), comment="所属用例"
+    )
+
     content_result_id = Column(
         INTEGER,
-        ForeignKey("interface_case_content_result.id", ondelete="SET NULL"),
+        ForeignKey("interface_case_content_result.id", ondelete="CASCADE"),
         nullable=True,
         comment="所属步骤内容结果ID"
     )
 
+
+    task_result_id = Column(
+        INTEGER,
+        ForeignKey("interface_task_result.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="任务执行关联"
+    )
     def __repr__(self):
         return (f"<InterfaceResult(id={self.id}, name={self.interface_name}, result={self.result})"
                 f"content_result_id = {self.content_result_id}"
@@ -125,7 +134,7 @@ class InterfaceTaskResult(BaseModel):
     status = Column(String(10), default="RUNNING", comment="状态")  # "RUNNING","DONE"
     result = Column(String(10), nullable=True, comment="运行结果")  # SUCCESS FAIL
 
-    total_num = Column(INTEGER, comment="总运行数量")
+    total_num = Column(INTEGER, default=0, comment="总运行数量")
     success_num = Column(INTEGER, default=0, comment="成功数量")
     fail_num = Column(INTEGER, default=0, comment="失败数量")
 

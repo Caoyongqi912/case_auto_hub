@@ -21,4 +21,4 @@ class InterfaceTask(BaseModel):
     
     
     def __repr__(self):
-        return f"InterfaceTask id=\"{self.id}\" uid=\"{self.uid}\" name=\"{self.interface_task_title}\" desc=\"{self.interface_task_desc}\" method=\"{self.interface_task_switch}\" project={self.project_id} module={self.module_id}..."   
+        return f"InterfaceTask id=\"{self.id}\" uid=\"{self.uid}\" name=\"{self.interface_task_title}\" desc=\"{self.interface_task_desc}\"  project={self.project_id} module={self.module_id}..."

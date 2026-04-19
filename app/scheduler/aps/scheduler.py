@@ -10,7 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
 from app.model.base.job import AutoJob
 from app.model.playUI.playTask import PlayTask
-from app.model.interface.interfaceModel import InterfaceTask
+from app.model.interfaceAPIModel.interfaceTaskModel import   InterfaceTask
 from app.scheduler.aps.trigger import Trigger
 from common import RedisClient
 from config import Config
