@@ -542,6 +542,74 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
             steps = result.unique().all()
         return steps
 
+    @classmethod
+    async def bulk_insert_results(
+        cls,
+        items: List[Dict],
+        session: AsyncSession = None
+    ) -> int:
+        """
+        批量插入步骤内容结果（支持多态）
+
+        设计说明：
+        - 由于 InterfaceCaseContentResult 使用 Joined Table Inheritance
+        - 不同子类映射到不同的表（基类表 + 子类表）
+        - 需要按 content_type 分组后，使用对应的子类模型批量插入
+        - SQLAlchemy 会自动处理基类表和子类表的插入
+
+        Args:
+            items: 数据字典列表，每个字典必须包含 content_type 字段
+            session: 可选的数据库会话
+
+        Returns:
+            int: 插入的记录数
+        """
+        if not items:
+            return 0
+
+        from collections import defaultdict
+        grouped_items: Dict[CaseStepContentType, List[Dict]] = defaultdict(list)
+
+        for item in items:
+            content_type = item.get('content_type')
+            if content_type is None:
+                log.error(f"bulk_insert_results: 缺少 content_type 字段: {item}")
+                continue
+            grouped_items[content_type].append(item)
+
+        total_inserted = 0
+
+        try:
+            if session:
+                for content_type, type_items in grouped_items.items():
+                    result_model = cls.RESULT_TYPE_MAP.get(content_type)
+                    if not result_model:
+                        log.error(f"bulk_insert_results: 不支持的 content_type: {content_type}")
+                        continue
+
+                    models = [result_model(**item) for item in type_items]
+                    session.add_all(models)
+                    total_inserted += len(models)
+
+                await session.flush()
+                return total_inserted
+            else:
+                async with cls.transaction() as session:
+                    for content_type, type_items in grouped_items.items():
+                        result_model = cls.RESULT_TYPE_MAP.get(content_type)
+                        if not result_model:
+                            log.error(f"bulk_insert_results: 不支持的 content_type: {content_type}")
+                            continue
+
+                        models = [result_model(**item) for item in type_items]
+                        session.add_all(models)
+                        total_inserted += len(models)
+
+                    return total_inserted
+        except Exception as e:
+            log.error(f"bulk_insert_results error: {e}")
+            raise
+
 __all__ = ["InterfaceCaseResultMapper",
            "InterfaceResultMapper",
            "InterfaceTaskResultMapper",

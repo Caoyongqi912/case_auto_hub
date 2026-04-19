@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from app.mapper import Mapper
 from app.mapper.interfaceApi.dynamicMapper import InterfaceTaskDynamicMapper
+from app.model import async_session
 from app.model.base import User
 from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
 from app.model.interfaceAPIModel.interfaceModel import Interface
@@ -82,37 +83,30 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
     async def query_association_interfaces(
             cls,
             task_id: int,
-            session: Optional[AsyncSession] = None
     ) -> List[Interface]:
         """
         查询任务关联的接口列表
 
         Args:
             task_id: 任务ID
-            session: 可选数据库会话
         """
-        async def _query(s: AsyncSession):
-            result = await s.scalars(
-                select(Interface)
-                .join(
+        try:
+            async with async_session() as session:
+                stmt = select(Interface).join(
                     InterfaceAPITaskAssociation,
                     InterfaceAPITaskAssociation.interface_api_id == Interface.id
-                )
-                .where(InterfaceAPITaskAssociation.interface_task_id == task_id)
-                .order_by(InterfaceAPITaskAssociation.step_order)
-            )
-            return result.all()
+                ).where(InterfaceAPITaskAssociation.interface_task_id == task_id).order_by(InterfaceAPITaskAssociation.step_order)
+                result = await session.scalars(stmt)
+                return result.all()
+        except Exception as e:
+            log.error(f"query_association_interfaces error: {e}")
+            raise
 
-        if session:
-            return await _query(session)
-        async with cls.transaction() as s:
-            return await _query(s)
 
     @classmethod
     async def query_association_interface_cases(
             cls,
             task_id: int,
-            session: Optional[AsyncSession] = None
     ) -> List[InterfaceCase]:
         """
         查询任务关联的用例列表
@@ -121,22 +115,20 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
             task_id: 任务ID
             session: 可选数据库会话
         """
-        async def _query(s: AsyncSession):
-            result = await s.scalars(
-                select(InterfaceCase)
-                .join(
+
+        try:
+            async with async_session() as session:
+                stmt = select(InterfaceCase).join(
                     InterfaceCaseTaskAssociation,
                     InterfaceCaseTaskAssociation.interface_case_id == InterfaceCase.id
-                )
-                .where(InterfaceCaseTaskAssociation.interface_task_id == task_id)
-                .order_by(InterfaceCaseTaskAssociation.step_order)
-            )
-            return result.all()
+                ).where(InterfaceCaseTaskAssociation.interface_task_id == task_id
+                        ).order_by(InterfaceCaseTaskAssociation.step_order)
+                result = await session.scalars(stmt)
+                return result.all()
 
-        if session:
-            return await _query(session)
-        async with cls.transaction() as s:
-            return await _query(s)
+        except Exception as e:
+            log.error(f"query_association_interface_cases error: {e}")
+            raise
 
     @classmethod
     async def association_interfaces(
@@ -170,7 +162,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                 task.interface_task_total_apis_num += len(interface_ids)
                 return True
         except Exception as e:
-            log.error(f"association_interfaces error: {e}")
+            log.exception(f"association_interfaces error: {e}")
             raise
 
     @classmethod

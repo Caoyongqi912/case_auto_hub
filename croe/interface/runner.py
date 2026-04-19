@@ -15,6 +15,7 @@ from app.mapper.interfaceApi.interfaceCaseMapper import InterfaceCaseMapper
 from app.mapper.interfaceApi.interfaceGroupMapper import InterfaceGroupMapper
 from app.mapper.interfaceApi.interfaceVarsMapper import InterfaceVarsMapper
 from app.mapper.project.env import EnvMapper
+from app.model.base.env import EnvModel
 from app.model.interfaceAPIModel.interfaceGlobalModel import InterfaceGlobalHeader
 
 from croe.interface.executor.context import CaseStepContext, ExecutionContext
@@ -65,8 +66,7 @@ class InterfaceRunner:
             接口执行结果
         """
         interface = await InterfaceMapper.get_by_id(ident=interface_id)
-        env = await EnvMapper.get_by_id(ident=env_id)
-
+        env = await self._get_running_env(env=env_id)
         await self.init_global_headers()
         result, _ = await self.interface_executor.execute(
             interface=interface, env=env
@@ -93,7 +93,7 @@ class InterfaceRunner:
         )
         
         await self.init_global_headers()
-        env = await EnvMapper.get_by_id(env_id)
+        env = await self._get_running_env(env=env_id)
         results = []
         for interface in interfaces:
             await self.starter.send(f"✍️✍️  Execute    {interface}")
@@ -149,16 +149,9 @@ class InterfaceRunner:
             return await self.starter.over()
 
         await self.init_interface_case_vars(interface_case_id)
-
-        if isinstance(env, int):
-            target_env = await EnvMapper.get_by_id(ident=env)
-        else:
-            target_env = env
-
-        await self.starter.send(f"✍️✍️ 使用环境 {target_env}")
         await self.init_global_headers()
 
-
+        target_env = await self._get_running_env(env=env)
         case_success = True
 
         case_result = await result_writer.init_case_result(
@@ -190,6 +183,8 @@ class InterfaceRunner:
                     await self.starter.send(
                         f"✍️✍️  EXECUTE_STEP {index} ： 调试禁用 跳过执行"
                     )
+                    case_result.progress = (index * 100) // total_steps
+                    await result_writer.update_case_progress(case_result)
                     continue
                 
          
@@ -219,12 +214,12 @@ class InterfaceRunner:
                         f"⏭️⏭️  SKIP_STEP {index} ： 遇到错误已停止"
                     )
                     case_result.progress = 100
+                    await result_writer.update_case_progress(case_result)
                     break
                 
                 await self.starter.send(
                     f"✍️✍️  EXECUTE_STEP {index} ： FINISH"
-                )                
-                await result_writer.update_case_progress(case_result)
+                )
 
             await self.starter.send(
                 f"用例 {interface_case.case_title} 执行结束"
@@ -338,3 +333,15 @@ class InterfaceRunner:
                 f"🫳🫳 全局Headers已加载: {len(self.global_headers)} 条"
             )
             self.interface_executor.g_headers = global_headers or []
+
+
+    async def _get_running_env(self, env: Union[int, EnvModel]) -> Optional[EnvModel]:
+        """
+        获取当前环境
+        """
+        if isinstance(env, int):
+            target_env = await EnvMapper.get_by_id(ident=env)
+        else:
+            target_env = env
+        await self.starter.send(f"✍️✍️ 使用环境 {target_env}")
+        return target_env

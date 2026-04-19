@@ -16,6 +16,7 @@ from app.mapper.project.dbConfigMapper import DbConfigMapper, DBExecuteMapper
 from app.model.interfaceAPIModel.contents import InterfaceCaseContents
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
+from croe.interface.writer import result_writer
 from enums import ExtractTargetVariablesEnum
 from enums.CaseEnum import CaseStepContentType
 from utils import log
@@ -101,6 +102,10 @@ class APIDBContentStrategy(StepBaseStrategy):
             success=success,
             interface_task_result_id=task_result_id,
         )
+
+        case_result = step_context.execution_context.case_result
+        case_result.success_num += 1
+        await result_writer.update_case_progress(case_result)
 
         return True
 

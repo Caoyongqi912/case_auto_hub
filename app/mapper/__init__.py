@@ -710,6 +710,34 @@ class Mapper(Generic[M]):
             raise
 
     @classmethod
+    async def bulk_insert_models(cls, models: List[M], session: AsyncSession = None) -> int:
+        """
+        批量插入模型实例
+
+        与 bulk_insert 不同，此方法直接接受模型实例列表，
+        适用于已经创建好模型实例的场景
+
+        :param models: 模型实例列表
+        :param session: 可选的会话对象
+        :return: 插入的记录数
+        """
+        if not models:
+            return 0
+
+        try:
+            if session:
+                session.add_all(models)
+                await session.flush()
+                return len(models)
+            else:
+                async with cls.transaction() as session:
+                    session.add_all(models)
+                    return len(models)
+        except Exception as e:
+            log.exception(f"bulk_insert_models error: {e}")
+            raise
+
+    @classmethod
     async def bulk_update(cls, updates: List[Dict[str, Any]], id_field: str = "id", session: AsyncSession = None) -> int:
         """
         批量更新数据

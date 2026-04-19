@@ -415,3 +415,5 @@ class APILoopContentStrategy(StepBaseStrategy):
         else:
             case_result.fail_num += 1
             case_result.result = InterfaceAPIResultEnum.ERROR
+
+        await result_writer.update_case_progress(case_result)

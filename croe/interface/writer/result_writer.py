@@ -6,7 +6,6 @@
 # @Software: PyCharm
 # @Desc: 统一结果写入器
 
-import time
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from app.model.base import EnvModel
@@ -48,11 +47,12 @@ class ResultWriter:
         CaseStepContentType.STEP_LOOP,
     }
 
+    MAX_CACHE_SIZE = 1000
+
     def __init__(self):
         self.api_result_cache: List[InterfaceResult] = []
         self.content_result_cache: List[Dict[str, Any]] = []
         self._progress_update_cache: Dict[int, Dict[str, Any]] = {}
-        self._last_progress_time: Dict[int, float] = {}
 
     async def init_task_result(
             self,
@@ -154,6 +154,8 @@ class ResultWriter:
             return await InterfaceResultMapper.insert(interface_result)
         else:
             self.api_result_cache.append(interface_result)
+            if len(self.api_result_cache) >= self.MAX_CACHE_SIZE:
+                await self._flush_cache()
             return interface_result
 
     async def write_step_result(
@@ -214,6 +216,8 @@ class ResultWriter:
             return await InterfaceContentStepResultMapper.insert_result(**result_data)
         else:
             self.content_result_cache.append(result_data)
+            if len(self.content_result_cache) >= self.MAX_CACHE_SIZE:
+                await self._flush_cache()
             return None
 
     async def update_step_result(
@@ -238,8 +242,7 @@ class ResultWriter:
 
     async def update_case_progress(
             self,
-            case_result: InterfaceCaseResult,
-            force: bool = False
+            case_result: InterfaceCaseResult
     ):
         """
         更新用例进度
@@ -248,16 +251,7 @@ class ResultWriter:
 
         Args:
             case_result: 用例结果对象
-            force: 是否强制更新（忽略节流）
         """
-        current_time = time.time()
-        last_time = self._last_progress_time.get(case_result.id, 0)
-
-        if not force and (current_time - last_time < 0.5):
-            return
-
-        self._last_progress_time[case_result.id] = current_time
-
         await InterfaceCaseResultMapper.update_by_id(
             id=case_result.id,
             progress=case_result.progress,
@@ -316,66 +310,96 @@ class ResultWriter:
         重要：
         - content_result_cache 中存储的是字典，需要先转换成模型
         - api_result_cache 中存储的是 InterfaceResult 模型
+        - 添加异常处理，批量插入失败时降级为逐条插入
         """
         if self.api_result_cache or self.content_result_cache:
             log.info(
                 f"开始刷新缓存: api_result={len(self.api_result_cache)}, content_result={len(self.content_result_cache)}")
 
         if self.api_result_cache:
-            await self._bulk_insert_api_results()
+            try:
+                await self._bulk_insert_api_results()
+            except Exception as e:
+                log.error(f"批量插入 api_result 失败: {e}，尝试逐条插入")
+                await self._fallback_insert_api_results()
 
         if self.content_result_cache:
-            await self._bulk_insert_content_results()
+            try:
+                await self._bulk_insert_content_results()
+            except Exception as e:
+                log.error(f"批量插入 content_result 失败: {e}，尝试逐条插入")
+                await self._fallback_insert_content_results()
 
         self.api_result_cache.clear()
         self.content_result_cache.clear()
 
     async def _bulk_insert_api_results(self):
-        """批量插入 API 结果"""
-        items = []
-        for result in self.api_result_cache:
-            item = {
-                'interface_id': result.interface_id,
-                'interface_name': result.interface_name,
-                'interface_uid': result.interface_uid,
-                'interface_desc': result.interface_desc,
-                'running_env_id': result.running_env_id,
-                'running_env_name': result.running_env_name,
-                'start_time': result.start_time,
-                'use_time': result.use_time,
-                'request_url': result.request_url,
-                'request_headers': result.request_headers,
-                'request_json': result.request_json,
-                'request_data': result.request_data,
-                "request_body_type":result.request_body_type,
-                'request_params': result.request_params,
-                'request_method': result.request_method,
-                'response_text': result.response_text,
-                'response_status': result.response_status,
-                'response_headers': result.response_headers,
-                'extracts': result.extracts,
-                'asserts': result.asserts,
-                'starter_id': result.starter_id,
-                'starter_name': result.starter_name,
-                'result': result.result,
-                'content_result_id': result.content_result_id,
-            }
-            items.append(item)
+        """
+        批量插入 API 结果
 
-        if items:
-            await InterfaceResultMapper.bulk_insert(items)
-            log.info(f"批量插入 api_result: {len(items)} 条")
+        优化说明：
+        - 直接使用模型实例列表调用 bulk_insert_models
+        - 移除手动构建字典的逻辑
+        - 缓存中已存储 InterfaceResult 模型实例
+        """
+        if not self.api_result_cache:
+            return
+
+        count = await InterfaceResultMapper.bulk_insert_models(self.api_result_cache)
+        log.info(f"批量插入 api_result: {count} 条")
 
     async def _bulk_insert_content_results(self):
-        """批量插入步骤内容结果"""
+        """
+        批量插入步骤内容结果
+
+        优化说明：
+        - 使用 InterfaceContentStepResultMapper.bulk_insert_results 方法
+        - 该方法支持 Joined Table Inheritance，按 content_type 分组后批量插入
+        - SQLAlchemy 自动处理基类表和子类表的插入
+        """
+        if not self.content_result_cache:
+            return
+
+        count = await InterfaceContentStepResultMapper.bulk_insert_results(self.content_result_cache)
+        log.info(f"批量插入 content_result: {count} 条")
+
+    async def _fallback_insert_api_results(self):
+        """
+        逐条插入 API 结果（降级方案）
+
+        当批量插入失败时，尝试逐条插入以确保数据不丢失
+        """
+        success_count = 0
+        fail_count = 0
+
+        for api_result in self.api_result_cache:
+            try:
+                await InterfaceResultMapper.insert(api_result)
+                success_count += 1
+            except Exception as e:
+                fail_count += 1
+                log.error(f"逐条插入 api_result 失败: {e}, api_name={getattr(api_result, 'api_name', 'unknown')}")
+
+        log.info(f"逐条插入 api_result 完成: 成功={success_count}, 失败={fail_count}")
+
+    async def _fallback_insert_content_results(self):
+        """
+        逐条插入步骤内容结果（降级方案）
+
+        当批量插入失败时，尝试逐条插入以确保数据不丢失
+        """
+        success_count = 0
+        fail_count = 0
+
         for result_data in self.content_result_cache:
             try:
                 await InterfaceContentStepResultMapper.insert_result(**result_data)
+                success_count += 1
             except Exception as e:
-                log.error(f"批量插入 content_result 失败: {e}, data={result_data}")
-                raise
+                fail_count += 1
+                log.error(f"逐条插入 content_result 失败: {e}, content_name={result_data.get('content_name', 'unknown')}")
 
-        log.info(f"批量插入 content_result: {len(self.content_result_cache)} 条")
+        log.info(f"逐条插入 content_result 完成: 成功={success_count}, 失败={fail_count}")
 
     async def update_task_progress(
             self,
@@ -387,14 +411,6 @@ class ResultWriter:
         Args:
             task_result: 任务结果对象
         """
-        current_time = time.time()
-        last_time = self._last_progress_time.get(task_result.id, 0)
-
-        if current_time - last_time < 1.0:
-            return
-
-        self._last_progress_time[task_result.id] = current_time
-
         await InterfaceTaskResultMapper.update_by_id(
             id=task_result.id,
             progress=task_result.progress,
@@ -440,7 +456,6 @@ class ResultWriter:
         self.api_result_cache.clear()
         self.content_result_cache.clear()
         self._progress_update_cache.clear()
-        self._last_progress_time.clear()
 
     async def flush(self):
         """公开的刷新接口"""

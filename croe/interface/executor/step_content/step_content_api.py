@@ -6,7 +6,6 @@
 # @Software: PyCharm
 # @Desc: API步骤执行策略
 
-from typing import TYPE_CHECKING
 
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
@@ -17,8 +16,6 @@ from enums import InterfaceAPIResultEnum
 from enums.CaseEnum import CaseStepContentType
 from utils import log
 
-if TYPE_CHECKING:
-    from croe.interface.executor.interface_executor import InterfaceExecutor
 
 
 class APIStepContentStrategy(StepBaseStrategy):

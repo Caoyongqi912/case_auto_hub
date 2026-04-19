@@ -16,6 +16,7 @@ from app.model.interfaceAPIModel.contents import InterfaceCaseContents
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 from croe.a_manager.assert_manager import AssertManager
+from croe.interface.writer import result_writer
 from enums.CaseEnum import CaseStepContentType
 from utils import log
 
@@ -74,6 +75,8 @@ class APIAssertsContentStrategy(StepBaseStrategy):
                 case_result.success_num += 1
             else:
                 case_result.fail_num += 1
+
+            await result_writer.update_case_progress(case_result)
 
             return True
 

@@ -6,7 +6,6 @@
 # @Software: PyCharm
 # @Desc: 任务执行模块
 
-import asyncio
 import time
 from dataclasses import dataclass
 from typing import List, Union, Optional, Any
@@ -21,11 +20,8 @@ from common.notifyManager import NotifyManager
 from enums import InterfaceAPIResultEnum
 from croe.interface.runner import InterfaceRunner
 from croe.interface.starter import APIStarter, log
-from croe.interface.writer import (
-    write_task_process,
-    init_interface_task_result,
-    write_interface_task_result
-)
+from croe.interface.writer import result_writer
+
 
 CASE = "CASE"
 API = "API"
@@ -90,7 +86,7 @@ class TaskRunner:
             task_result.progress = round(
                 (self.progress / task_result.totalNumber) * 100, 1
             )
-            await write_task_process(task_result=task_result)
+            await result_writer.write_task_process(task_result=task_result)
             self._last_progress_update = current_time
 
     async def execute_task(
@@ -119,14 +115,14 @@ class TaskRunner:
             params.env = await EnvMapper.get_by_id(ident=params.env_id)
 
         await self.starter.send(
-            f"✍️✍️ 任务 {self.task.title} 执行开始。"
+            f"✍️✍️ 任务 {self.task.interface_task_title} 执行开始。"
             f"执行人 {self.starter.username}"
         )
         await self.starter.send(
-            f"查询到关联Step x {self.task.stepNum} ..."
+            f"查询到关联Step x {self.task.interface_task_total_apis_num} ..."
         )
 
-        task_result = await init_interface_task_result(
+        task_result = await result_writer.init_interface_task_result(
             interfaceTask=self.task,
             starter=self.starter,
             env=params.env
@@ -191,7 +187,7 @@ class TaskRunner:
             task_result: 任务结果
             params: 任务参数
         """
-        interfaces = await InterfaceTaskMapper.query_interfaces(
+        interfaces = await InterfaceTaskMapper.query_association_interfaces(
             task_id=self.task.id
         )
 
@@ -234,7 +230,7 @@ class TaskRunner:
             task_result: 任务结果
             params: 任务参数
         """
-        cases = await InterfaceTaskMapper.query_cases(task_id=self.task.id)
+        cases = await InterfaceTaskMapper.query_association_interface_cases(task_id=self.task.id)
 
         if not cases:
             return
@@ -249,7 +245,7 @@ class TaskRunner:
             success, _ = await interface_runner.run_interface_case(
                 interface_case_id=case.id,
                 env=params.env,
-                error_stop=self.task.error_stop,
+                error_stop=True,
                 task_result=task_result
             )
 
@@ -272,13 +268,13 @@ class TaskRunner:
         else:
             task_result.result = InterfaceAPIResultEnum.ERROR
 
-        await write_interface_task_result(task_result)
+        await result_writer.write_interface_task_result(task_result)
         await self.starter.send(
-            f"✍️✍️ 任务 {self.task.title} 执行结束"
+            f"✍️✍️ 任务 {self.task.interface_task_title} 执行结束"
         )
 
+    @staticmethod
     async def _send_notification(
-        self,
         notify_id: int,
         task_result: Any
     ) -> None:
@@ -290,9 +286,9 @@ class TaskRunner:
             task_result: 任务结果
         """
         try:
-            notify_manager = NotifyManager()
-            await notify_manager.send(
-                notify_id=notify_id,
+            notify_manager = NotifyManager(notify_id=notify_id)
+            await notify_manager.push(
+                flag="API",
                 task_result=task_result
             )
         except Exception as e:

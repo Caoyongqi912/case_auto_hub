@@ -17,6 +17,7 @@ from app.model.interfaceAPIModel.contents import InterfaceCaseContents
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 from croe.a_manager import ScriptManager, ScriptSecurityError
+from croe.interface.writer import result_writer
 from enums.CaseEnum import CaseStepContentType
 from utils import log
 
@@ -90,6 +91,14 @@ class APIScriptContentStrategy(StepBaseStrategy):
             success=success,
             interface_task_result_id=task_result_id,
         )
+
+        case_result = step_context.execution_context.case_result
+        if success:
+            case_result.success_num += 1
+        else:
+            case_result.fail_num += 1
+
+        await result_writer.update_case_progress(case_result)
 
         return success
 

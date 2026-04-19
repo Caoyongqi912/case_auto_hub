@@ -89,6 +89,7 @@ class APIConditionContentStrategy(StepBaseStrategy):
                     status="SUCCESS",
                 )
                 case_result.success_num += 1
+                await result_writer.update_case_progress(case_result)
                 return True
 
             total_apis = len(condition_api_list)
@@ -120,6 +121,7 @@ class APIConditionContentStrategy(StepBaseStrategy):
                         result=False,
                         status="FAIL",
                     )
+                    await result_writer.update_case_progress(case_result)
                     return False
 
             await result_writer.update_step_result(
@@ -127,6 +129,8 @@ class APIConditionContentStrategy(StepBaseStrategy):
                 result=True,
                 status="SUCCESS",
             )
+            case_result.success_num += 1
+            await result_writer.update_case_progress(case_result)
             return True
         else:
             await step_context.starter.send(
@@ -139,4 +143,5 @@ class APIConditionContentStrategy(StepBaseStrategy):
                 result=True,
                 status="SUCCESS",
             )
+            await result_writer.update_case_progress(case_result)
             return True
