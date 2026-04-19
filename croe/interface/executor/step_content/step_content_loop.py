@@ -9,7 +9,7 @@
 import asyncio
 import json
 from datetime import datetime
-from typing import List, Optional, Any, TYPE_CHECKING
+from typing import List, Optional, Any, Dict, Tuple
 
 from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
@@ -24,9 +24,6 @@ from enums import (
 from enums.CaseEnum import LoopTypeEnum, CaseStepContentType
 from utils import log
 from utils.assertsUtil import MyAsserts
-
-if TYPE_CHECKING:
-    from croe.interface.executor.interface_executor import InterfaceExecutor
 
 MAX_LOOP_LIMIT = 20
 
@@ -47,35 +44,23 @@ class APILoopContentStrategy(StepBaseStrategy):
         loop = await InterfaceLoopMapper.get_by_id(
             ident=step_context.content.target_id
         )
-
+        log.info(f'loop info {loop}')
         if not loop:
             await step_context.starter.send(
                 f"未找到循环配置: id={step_context.content.target_id}"
             )
             return False
 
-        loop_steps = await InterfaceLoopMapper.query_interfaces_by_loop_id(
-            loop_id=step_context.content.target_id
-        )
-
-        if not loop_steps:
-            return True
-
         start_time = datetime.now()
-
-        task_result_id = None
-        if step_context.execution_context.task_result:
-            task_result_id = step_context.execution_context.task_result.id
-
         loop_content_result = await result_writer.write_step_result(
             content_type=CaseStepContentType.STEP_LOOP,
-            case_result_id=step_context.execution_context.case_result.id,
-            task_result_id=task_result_id,
+            case_result_id=step_context.case_result_id,
+            task_result_id=step_context.task_result_id,
             content_id=step_context.content.id,
             content_name=step_context.content.resolved_content_name,
             content_desc=step_context.content.content_desc,
             content_step=step_context.index,
-            success=False,
+            success=True,
             start_time=start_time,
             use_time="",
             loop_count=0,
@@ -83,7 +68,12 @@ class APILoopContentStrategy(StepBaseStrategy):
             success_count=0,
             fail_count=0,
         )
-
+        loop_steps = await InterfaceLoopMapper.query_interfaces_by_loop_id(
+            loop_id=step_context.content.target_id
+        )
+        log.info(f'loop_steps info {loop_steps}')
+        if not loop_steps:
+            return True
         match loop.loop_type:
             case LoopTypeEnum.LoopTimes:
                 return await self._execute_loop_times(
@@ -110,6 +100,61 @@ class APILoopContentStrategy(StepBaseStrategy):
                 log.warning(f"未知的循环类型: {loop.loop_type}")
                 return False
 
+    async def _execute_api_step(
+        self,
+        step_context: CaseStepContext,
+        interface: Any,
+        step_num: int,
+        total_steps: int,
+        prefix: str,
+        content_result: Any,
+    ) -> Tuple[bool, int, int]:
+        """
+        执行单个API步骤并记录结果
+
+        Args:
+            step_context: 步骤执行上下文
+            interface: 接口对象
+            step_num: 当前步骤序号
+            total_steps: 总步骤数
+            prefix: 日志前缀描述
+            content_result: 循环步骤结果ID
+            temp_var: 临时变量（用于数组循环）
+
+        Returns:
+            (是否成功, success_count, fail_count)
+        """
+        success_count = 0
+        fail_count = 0
+        all_success = True
+
+        await step_context.starter.send(
+            f"✍️✍️  {'-' * 20} {prefix} "
+            f"{step_num}/{total_steps}: "
+            f"{interface.interface_name} {'-' * 20}"
+        )
+
+        interface_result, success = await self.interface_executor.execute(
+            interface=interface,
+            env=step_context.execution_context.env
+        )
+
+        try:
+            await result_writer.write_interface_result(
+                interface_result=InterfaceResult(**interface_result),
+                content_result_id=content_result.id
+            )
+        except Exception as e:
+            log.error(f"写入接口结果失败: {e}")
+
+        if success:
+            success_count = 1
+        else:
+            fail_count = 1
+            all_success = False
+
+        return all_success, success_count, fail_count
+
     async def _execute_loop_times(
         self,
         step_context: CaseStepContext,
@@ -117,57 +162,53 @@ class APILoopContentStrategy(StepBaseStrategy):
         api_steps: List[Any],
         content_result: Any
     ) -> bool:
-        """次数循环"""
+        """
+        次数循环 - 按照指定次数循环执行API步骤
+
+        Args:
+            step_context: 步骤执行上下文
+            loop: 循环配置对象
+            api_steps: API步骤列表
+            content_result: 循环步骤结果
+
+        Returns:
+            是否全部执行成功
+        """
         all_success = True
         case_result = step_context.execution_context.case_result
         loop_count = 0
         success_count = 0
         fail_count = 0
 
-        loop_times = min(loop.loop_times, MAX_LOOP_LIMIT)
 
-        for i in range(1, loop_times + 1):
+        for i in range(1, loop.loop_times+1):
             for index, interface in enumerate(api_steps, start=1):
-                await step_context.starter.send(
-                    f"✍️✍️  {'-' * 20} 次数循环步骤 次数{i}   "
-                    f"{interface.name} {'-' * 20}"
-                )
-
-                interface_result, success = await self.interface_executor.execute(
+                success, sc, fc = await self._execute_api_step(
+                    step_context=step_context,
                     interface=interface,
-                    env=step_context.execution_context.env,
-                    case_result=case_result
-                )
-
-                await result_writer.write_interface_result(
-                    interface_result=InterfaceResult(**interface_result),
-                    content_result_id=content_result.id
+                    step_num=index,
+                    total_steps=len(api_steps),
+                    prefix=f"次数循环步骤 次数{i}",
+                    content_result=content_result
                 )
 
                 loop_count += 1
-                if success:
-                    success_count += 1
-                else:
-                    fail_count += 1
+                success_count += sc
+                fail_count += fc
+                if not success:
                     all_success = False
 
                 if loop.loop_interval > 0:
                     await asyncio.sleep(loop.loop_interval)
 
-        await result_writer.update_step_result(
-            result_id=content_result.id,
-            result=all_success,
-            status="SUCCESS" if all_success else "FAIL",
+        await self._update_loop_result(
+            content_result=content_result,
+            all_success=all_success,
             loop_count=loop_count,
             success_count=success_count,
             fail_count=fail_count,
+            case_result=case_result
         )
-
-        if all_success:
-            case_result.success_num += 1
-        else:
-            case_result.fail_num += 1
-            case_result.result = InterfaceAPIResultEnum.ERROR
 
         return all_success
 
@@ -178,7 +219,18 @@ class APILoopContentStrategy(StepBaseStrategy):
         api_steps: List[Any],
         content_result: Any
     ) -> bool:
-        """数组遍历循环"""
+        """
+        数组遍历循环 - 遍历数组元素执行API步骤
+
+        Args:
+            step_context: 步骤执行上下文
+            loop: 循环配置对象
+            api_steps: API步骤列表
+            content_result: 循环步骤结果
+
+        Returns:
+            是否全部执行成功
+        """
         all_success = True
         case_result = step_context.execution_context.case_result
         loop_count = 0
@@ -193,59 +245,56 @@ class APILoopContentStrategy(StepBaseStrategy):
                 for item in loop.loop_items.split(',')
                 if item.strip()
             ]
+        log.info(f'_execute_loop_items {items}')
+        if not items:
+            await self._update_loop_result(
+                content_result=content_result,
+                all_success=True,
+                loop_count=0,
+                success_count=0,
+                fail_count=0,
+                case_result=case_result
+            )
+            return True
 
-        if items:
-            total_apis = len(api_steps)
-            for item in items:
-                item_key = loop.loop_item_key
-                for index, interface in enumerate(api_steps, start=1):
-                    await step_context.starter.send(
-                        f"✍️✍️  {'-' * 20} 执行数组循环步骤 "
-                        f"[{item_key}:{item}] {index}/{total_apis}: "
-                        f"{interface.name} {'-' * 20}"
-                    )
+        item_key = loop.loop_item_key
+        total_apis = len(api_steps)
 
-                    interface_result, success = await self.interface_executor.execute(
-                        interface=interface,
-                        env=step_context.execution_context.env,
-                        case_result=case_result,
-                        temp_var={
-                            ExtractTargetVariablesEnum.KEY: item_key,
-                            ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.LOOP,
-                            ExtractTargetVariablesEnum.VALUE: item
-                        }
-                    )
+        for item in items:
+            for index, interface in enumerate(api_steps, start=1):
+                temp_var = {
+                    ExtractTargetVariablesEnum.KEY: item_key,
+                    ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.LOOP,
+                    ExtractTargetVariablesEnum.VALUE: item
+                }
 
-                    await result_writer.write_interface_result(
-                        interface_result=InterfaceResult(**interface_result),
-                        content_result_id=content_result.id
-                    )
+                success, sc, fc = await self._execute_api_step(
+                    step_context=step_context,
+                    interface=interface,
+                    step_num=index,
+                    total_steps=total_apis,
+                    prefix=f"执行数组循环步骤 [{item_key}:{item}]",
+                    content_result=content_result,
+                )
 
-                    loop_count += 1
-                    if success:
-                        success_count += 1
-                    else:
-                        fail_count += 1
-                        all_success = False
+                loop_count += 1
+                success_count += sc
+                fail_count += fc
+                if not success:
+                    all_success = False
 
-                    if loop.loop_interval > 0:
-                        await asyncio.sleep(loop.loop_interval)
+                if loop.loop_interval > 0:
+                    await asyncio.sleep(loop.loop_interval)
 
-        await result_writer.update_step_result(
-            result_id=content_result.id,
-            result=all_success,
-            status="SUCCESS" if all_success else "FAIL",
+        await self._update_loop_result(
+            content_result=content_result,
+            all_success=all_success,
             loop_count=loop_count,
             success_count=success_count,
             fail_count=fail_count,
-            loop_items=items,
+            case_result=case_result,
+            loop_items=items
         )
-
-        if all_success:
-            case_result.success_num += 1
-        else:
-            case_result.fail_num += 1
-            case_result.result = InterfaceAPIResultEnum.ERROR
 
         return all_success
 
@@ -256,12 +305,19 @@ class APILoopContentStrategy(StepBaseStrategy):
         api_steps: List[Any],
         content_result: Any
     ) -> bool:
-        """条件循环"""
-        exec_condition = ConditionManager(
-            step_context.variable_manager.vars
-        )
-        n = 0
-        loop_success = True
+        """
+        条件循环 - 根据条件判断是否继续循环
+
+        Args:
+            step_context: 步骤执行上下文
+            loop: 循环配置对象
+            api_steps: API步骤列表
+            content_result: 循环步骤结果
+
+        Returns:
+            是否全部执行成功
+        """
+        all_success = True
         case_result = step_context.execution_context.case_result
         loop_count = 0
         success_count = 0
@@ -269,32 +325,22 @@ class APILoopContentStrategy(StepBaseStrategy):
 
         max_loop = min(loop.max_loop, MAX_LOOP_LIMIT)
 
-        while n < max_loop:
-            n += 1
-
+        for _ in range(max_loop):
             for index, interface in enumerate(api_steps, start=1):
-                await step_context.starter.send(
-                    f"✍️✍️  {'-' * 20} 执行循环步骤  {n} times: "
-                    f"{interface.name} {'-' * 20}"
-                )
-
-                interface_result, success = await self.interface_executor.execute(
+                success, sc, fc = await self._execute_api_step(
+                    step_context=step_context,
                     interface=interface,
-                    env=step_context.execution_context.env,
-                    case_result=case_result
-                )
-
-                await result_writer.write_interface_result(
-                    interface_result=InterfaceResult(**interface_result),
-                    content_result_id=content_result.id
+                    step_num=index,
+                    total_steps=len(api_steps),
+                    prefix=f"执行循环步骤 {loop_count + 1} times",
+                    content_result=content_result
                 )
 
                 loop_count += 1
-                if success:
-                    success_count += 1
-                else:
-                    fail_count += 1
-                    loop_success = False
+                success_count += sc
+                fail_count += fc
+                if not success:
+                    all_success = False
 
                 if loop.loop_interval > 0:
                     await asyncio.sleep(loop.loop_interval)
@@ -311,29 +357,61 @@ class APILoopContentStrategy(StepBaseStrategy):
                     expect=key,
                     actual=value
                 )
-                loop_success = True
+                all_success = True
                 break
             except AssertionError:
                 await step_context.starter.send(
-                    f"✍️✍️  执行循环步骤  {n} times: 断言失败 "
+                    f"✍️✍️  执行循环步骤 {loop_count} times: 断言失败 "
                     f"key = {key} type = {type(key)}  "
                     f"value = {value} type = {type(value)}"
                 )
                 continue
 
-        await result_writer.update_step_result(
-            result_id=content_result.id,
-            result=loop_success,
-            status="SUCCESS" if loop_success else "FAIL",
+        await self._update_loop_result(
+            content_result=content_result,
+            all_success=all_success,
             loop_count=loop_count,
             success_count=success_count,
             fail_count=fail_count,
+            case_result=case_result
         )
 
-        if loop_success:
+        return all_success
+
+    async def _update_loop_result(
+        self,
+        content_result: Any,
+        all_success: bool,
+        loop_count: int,
+        success_count: int,
+        fail_count: int,
+        case_result: Any,
+        loop_items: Optional[List] = None
+    ) -> None:
+        """
+        更新循环步骤结果并更新用例执行结果
+
+        Args:
+            content_result: 循环步骤结果对象
+            all_success: 是否全部成功
+            loop_count: 循环总次数
+            success_count: 成功次数
+            fail_count: 失败次数
+            case_result: 用例执行结果
+            loop_items: 数组循环的items列表（可选）
+        """
+        await result_writer.update_step_result(
+            result_id=content_result.id,
+            result=all_success,
+            status="SUCCESS" if all_success else "FAIL",
+            loop_count=loop_count,
+            success_count=success_count,
+            fail_count=fail_count,
+            loop_items=loop_items
+        )
+
+        if all_success:
             case_result.success_num += 1
         else:
             case_result.fail_num += 1
             case_result.result = InterfaceAPIResultEnum.ERROR
-
-        return loop_success

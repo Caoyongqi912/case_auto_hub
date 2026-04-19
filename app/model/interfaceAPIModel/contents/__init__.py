@@ -16,7 +16,6 @@ from .conditionStepContentModel import ConditionStepContent
 from .scriptStepContentModel import ScriptStepContent
 from .dbStepContentModel import DBStepContent
 from .waitStepContentModel import WaitStepContent
-from .whileStepContentModel import WhileStepContent
 from .assertStepContentModel import AssertStepContent
 from .loopStepContentModel import LoopStepContent
 
@@ -29,7 +28,6 @@ __all__ = [
     "ScriptStepContent",
     "DBStepContent",
     "WaitStepContent",
-    "WhileStepContent",
     "AssertStepContent",
     "LoopStepContent",
 ]

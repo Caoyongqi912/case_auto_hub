@@ -8,7 +8,7 @@
 
 import asyncio
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
 from app.mapper.interfaceApi.interfaceResultMapper import (
     InterfaceContentStepResultMapper
@@ -18,8 +18,6 @@ from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 from enums.CaseEnum import CaseStepContentType
 
-if TYPE_CHECKING:
-    from croe.interface.executor.interface_executor import InterfaceExecutor
 
 
 class APIWaitContentStrategy(StepBaseStrategy):
@@ -39,7 +37,7 @@ class APIWaitContentStrategy(StepBaseStrategy):
         Returns:
             是否执行成功（等待步骤总是返回True）
         """
-        wait_time = step_context.content.api_wait_time
+        wait_time = step_context.content.wait_time
 
         if wait_time is None or wait_time < 0:
             wait_time = 0

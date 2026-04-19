@@ -7,13 +7,15 @@
 # @Desc: 接口执行器
 
 import asyncio
-from typing import Union, Optional, Tuple, Any, Dict
+from typing import Union, Optional, Tuple, Any, Dict, List
 
+from app.mapper.interfaceApi.interfaceGlobalMapper import InterfaceGlobalHeaderMapper
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.mapper.interfaceApi.interfaceCaseMapper import InterfaceCaseMapper
 from app.mapper.interfaceApi.interfaceGroupMapper import InterfaceGroupMapper
 from app.mapper.interfaceApi.interfaceVarsMapper import InterfaceVarsMapper
 from app.mapper.project.env import EnvMapper
+from app.model.interfaceAPIModel.interfaceGlobalModel import InterfaceGlobalHeader
 
 from croe.interface.executor.context import CaseStepContext, ExecutionContext
 from croe.interface.executor.interface_executor import InterfaceExecutor
@@ -29,7 +31,7 @@ from utils import log
 class InterfaceRunner:
     """接口执行入口类"""
 
-    __slots__ = ("starter", "variable_manager", "interface_executor")
+    __slots__ = ("starter", "variable_manager", "interface_executor", "global_headers")
 
     def __init__(self, starter: Union[UIStarter, APIStarter]) -> None:
         """
@@ -40,8 +42,11 @@ class InterfaceRunner:
         """
         self.starter = starter
         self.variable_manager = VariableManager()
+        self.global_headers: List[InterfaceGlobalHeader] = []
         self.interface_executor = InterfaceExecutor(
-            self.starter, self.variable_manager
+            starter=self.starter,
+            variable_manager=self.variable_manager,
+            global_headers=self.global_headers,
         )
 
     async def try_interface(
@@ -61,6 +66,8 @@ class InterfaceRunner:
         """
         interface = await InterfaceMapper.get_by_id(ident=interface_id)
         env = await EnvMapper.get_by_id(ident=env_id)
+
+        await self.init_global_headers()
         result, _ = await self.interface_executor.execute(
             interface=interface, env=env
         )
@@ -84,6 +91,8 @@ class InterfaceRunner:
         interfaces = await InterfaceGroupMapper.query_association_interfaces(
             group_id=group_id
         )
+        
+        await self.init_global_headers()
         env = await EnvMapper.get_by_id(env_id)
         results = []
         for interface in interfaces:
@@ -147,6 +156,8 @@ class InterfaceRunner:
             target_env = env
 
         await self.starter.send(f"✍️✍️ 使用环境 {target_env}")
+        await self.init_global_headers()
+
 
         case_success = True
 
@@ -310,3 +321,20 @@ class InterfaceRunner:
                 )
         except Exception as e:
             log.error(f"初始化业务流用例变量失败: {e}")
+
+
+
+    async def init_global_headers(self)->Optional[List[InterfaceGlobalHeader]]:
+        """
+        初始化g headers
+        """
+        # 添加全局请求头
+        global_headers = await InterfaceGlobalHeaderMapper.query_all()
+        if not global_headers:
+            log.info(f"use global_headers {global_headers}")
+            return None
+        if global_headers:
+            await self.starter.send(
+                f"🫳🫳 全局Headers已加载: {len(self.global_headers)} 条"
+            )
+            self.interface_executor.g_headers = global_headers or []

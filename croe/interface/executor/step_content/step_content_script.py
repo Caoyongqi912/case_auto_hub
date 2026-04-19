@@ -8,7 +8,7 @@
 
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
 from app.mapper.interfaceApi.interfaceResultMapper import (
     InterfaceContentStepResultMapper
@@ -42,7 +42,7 @@ class APIScriptContentStrategy(StepBaseStrategy):
             是否执行成功
         """
         script = step_context.content.script_text
-        script_output = None
+        extracted_vars = None
         script_error = None
         success = True
 
@@ -52,9 +52,7 @@ class APIScriptContentStrategy(StepBaseStrategy):
                 extracted_vars = script_manager.execute(script)
                 log.debug(f"脚本执行结果: {extracted_vars}")
 
-                script_output = json.dumps(
-                    extracted_vars, ensure_ascii=False
-                )
+
 
                 await step_context.variable_manager.add_vars(extracted_vars)
                 await step_context.starter.send(
@@ -82,7 +80,12 @@ class APIScriptContentStrategy(StepBaseStrategy):
             step_index=step_context.index,
             interface_case_result_id=step_context.execution_context.case_result.id,
             step_content=step_context.content,
-            script_output=script_output,
+            script_vars=[
+                {"key":k,
+                 "value":v,
+                 "target":11}
+                for k ,v in extracted_vars.items() if extracted_vars
+            ],
             script_error=script_error,
             success=success,
             interface_task_result_id=task_result_id,
@@ -95,10 +98,11 @@ async def write_case_step_content_script_result(
     step_index: int,
     interface_case_result_id: int,
     step_content: InterfaceCaseContents,
-    script_output: Optional[str],
     script_error: Optional[str],
     success: bool,
-    interface_task_result_id: Optional[int] = None,
+    script_vars: Optional[List[Dict[str, Any]]] = None,
+
+        interface_task_result_id: Optional[int] = None,
 ) -> None:
     """
     写入脚本步骤内容结果
@@ -110,7 +114,7 @@ async def write_case_step_content_script_result(
         step_index: 步骤索引
         interface_case_result_id: 用例执行结果ID
         step_content: 步骤内容实例
-        script_output: 脚本输出
+        script_vars: 脚本变量
         script_error: 脚本错误
         success: 是否成功
         interface_task_result_id: 任务执行结果ID（可选）
@@ -126,6 +130,6 @@ async def write_case_step_content_script_result(
         result=success,
         status="SUCCESS" if success else "FAIL",
         start_time=datetime.now(),
-        script_output=script_output,
+        script_vars=script_vars,
         script_error=script_error,
     )

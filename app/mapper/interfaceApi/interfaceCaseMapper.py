@@ -27,7 +27,6 @@ from app.model.interfaceAPIModel.contents import (
     LoopStepContent,
     GroupStepContent,
     DBStepContent,
-    WhileStepContent,
 )
 from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
@@ -630,7 +629,6 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 joinedload(LoopStepContent.interface_loop),
                 joinedload(GroupStepContent.interface_group),
                 joinedload(DBStepContent.db_execute),
-                joinedload(WhileStepContent.interface_condition),
             )
             .where(InterfaceCaseStepContentAssociation.interface_case_id == case_id)
             .order_by(InterfaceCaseStepContentAssociation.step_order)

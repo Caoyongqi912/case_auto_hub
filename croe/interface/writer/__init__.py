@@ -25,9 +25,9 @@ from enums import InterfaceAPIStatusEnum, InterfaceAPIResultEnum
 from croe.interface.starter import APIStarter, log
 from utils import GenerateTools
 
-if TYPE_CHECKING:
-    from app.model.interface import InterfaceCase, InterfaceTask
-    from app.model.base import EnvModel
+from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
+from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
+from app.model.base import EnvModel
 
 from .result_writer import ResultWriter
 
@@ -53,29 +53,6 @@ async def write_interface_result(**kwargs) -> InterfaceResult:
         stacklevel=2
     )
     return await InterfaceResultMapper.set_result(**kwargs)
-
-
-async def write_case_result(
-    case_result: InterfaceCaseResult
-) -> InterfaceCaseResult:
-    """
-    写入用例进度
-    
-    .. deprecated:: 2.0
-        请使用 result_writer.update_case_progress() 代替
-    
-    Args:
-        case_result: 用例结果实例
-    
-    Returns:
-        InterfaceCaseResult: 更新后的用例结果实例
-    """
-    warnings.warn(
-        "write_case_result() 已废弃，请使用 result_writer.update_case_progress()",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    return await InterfaceCaseResultMapper.set_result_field(case_result)
 
 
 async def write_task_process(
@@ -162,12 +139,12 @@ async def init_interface_case_result(
     )
     case_result = InterfaceCaseResult(
         interface_case_id=interface_case.id,
-        interface_case_name=interface_case.title,
+        interface_case_name=interface_case.case_title,
         interface_case_uid=interface_case.uid,
-        interface_case_desc=interface_case.desc,
+        interface_case_desc=interface_case.case_desc,
         project_id=interface_case.project_id,
         module_id=interface_case.module_id,
-        total_num=interface_case.apiNum,
+        total_num=interface_case.case_api_num,
         starter_id=starter.userId,
         starter_name=starter.username,
         status=InterfaceAPIStatusEnum.RUNNING,
@@ -213,7 +190,7 @@ async def init_interface_task_result(
     init_task = InterfaceTaskResult(
         task_id=interface_task.id,
         task_uid=interface_task.uid,
-        task_name=interface_task.title,
+        task_name=interface_task.interface_task_title,
         project_id=interface_task.project_id,
         module_id=interface_task.module_id
     )
@@ -263,7 +240,6 @@ __all__ = [
     'ResultWriter',
     'result_writer',
     'write_interface_result',
-    'write_case_result',
     'write_task_process',
     'write_interface_case_result',
     'init_interface_case_result',

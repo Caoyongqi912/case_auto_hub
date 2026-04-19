@@ -6,7 +6,6 @@
 # @Software: PyCharm
 # @Desc:
 import enum
-from re import T
 
 
 class InterfaceResponseStatusCodeEnum:

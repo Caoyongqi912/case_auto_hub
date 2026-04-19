@@ -25,7 +25,6 @@ from app.model.interfaceAPIModel.interfaceResultModel import (
     ScriptStepContentResult,
     DBStepContentResult,
     WaitStepContentResult,
-    WhileStepContentResult,
     AssertStepContentResult,
     LoopStepContentResult,
 )
@@ -47,20 +46,20 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
     async def query_case_result(cls, case_result_id: int):
         pass
 
-    @classmethod
-    async def init_case_result(cls, user: User, case: InterfaceCase, env: EnvModel):
-
-        try:
-            async with cls.transaction() as session:
-                case_result = InterfaceCaseResult(
-                    case_id=case.id,
-                    env_id=env.id,
-                    starter_id=user.id,
-                    starter_name=user.username,
-                )
-
-        except Exception:
-            pass
+    # @classmethod
+    # async def init_case_result(cls, user: User, case: InterfaceCase, env: EnvModel):
+    #
+    #     try:
+    #         async with cls.transaction() as session:
+    #             case_result = InterfaceCaseResult(
+    #                 case_id=case.id,
+    #                 env_id=env.id,
+    #                 starter_id=user.id,
+    #                 starter_name=user.username,
+    #             )
+    #
+    #     except Exception:
+    #         pass
 
     
     @classmethod
@@ -121,7 +120,7 @@ class InterfaceTaskResultMapper(Mapper[InterfaceTaskResult]):
     __model__ = InterfaceTaskResult
 
     @classmethod
-    async def set_result_field(cls, caseResult: InterfaceCaseResult):
+    async def set_result_field(cls, caseResult: InterfaceTaskResult):
         try:
             async with cls.transaction() as session:
                 await cls.add_flush_expunge(session, caseResult)
@@ -152,7 +151,6 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         CaseStepContentType.STEP_API_SCRIPT: ScriptStepContentResult,
         CaseStepContentType.STEP_API_DB: DBStepContentResult,
         CaseStepContentType.STEP_API_WAIT: WaitStepContentResult,
-        CaseStepContentType.STEP_API_WHILE: WhileStepContentResult,
         CaseStepContentType.STEP_API_ASSERT: AssertStepContentResult,
         CaseStepContentType.STEP_LOOP: LoopStepContentResult,
     }
@@ -440,7 +438,6 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
             elif content_type in (
                 CaseStepContentType.STEP_API_GROUP,
                 CaseStepContentType.STEP_API_CONDITION,
-                CaseStepContentType.STEP_API_WHILE,
                 CaseStepContentType.STEP_LOOP,
             ):
                 interface_results = await InterfaceResultMapper.get_by_content_result_id(content_id, session)

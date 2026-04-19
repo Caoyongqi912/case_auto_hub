@@ -376,8 +376,15 @@ class ScriptStepContentResult(InterfaceCaseContentResult):
 
     result_id = step_content_result_id_column()
 
-    script_output = Column(TEXT, nullable=True, comment="脚本输出")
     script_error = Column(TEXT, nullable=True, comment="脚本错误")
+    script_vars = Column(JSON,nullable=True,comment="脚本变量")
+
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回条件执行结果（interface_results 由查询层填充）"""
+        result = super().to_dict(exclude)
+        result["script_error"] = self.script_error
+        result["script_vars"] = self.script_vars
+        return result
 
     def __repr__(self):
         return f"<ScriptStepContentResult(id={self.id}, result={self.result})>"
@@ -395,11 +402,16 @@ class DBStepContentResult(InterfaceCaseContentResult):
     result_id = step_content_result_id_column()
 
     db_query_result = Column(JSON, nullable=True, comment="查询结果")
-    db_affected_rows = Column(INTEGER, default=0, comment="影响行数")
-    db_error = Column(TEXT, nullable=True, comment="数据库错误")
 
+
+
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回条件执行结果（interface_results 由查询层填充）"""
+        result = super().to_dict(exclude)
+        result['db_query_result'] = self.db_query_result
+        return result
     def __repr__(self):
-        return f"<DBStepContentResult(id={self.id}, affected_rows={self.db_affected_rows})>"
+        return f"<DBStepContentResult(id={self.id},db_query_result={self.db_query_result})> )>"
 
 
 class WaitStepContentResult(InterfaceCaseContentResult):
@@ -415,32 +427,13 @@ class WaitStepContentResult(InterfaceCaseContentResult):
 
     wait_seconds = Column(INTEGER, default=0, comment="等待秒数")
 
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回条件执行结果（interface_results 由查询层填充）"""
+        result = super().to_dict(exclude)
+        result["wait_seconds"] = self.wait_seconds
+        return result
     def __repr__(self):
         return f"<WaitStepContentResult(id={self.id}, wait_seconds={self.wait_seconds})>"
-
-
-class WhileStepContentResult(InterfaceCaseContentResult):
-    """
-    While循环步骤执行结果
-
-    特点：循环执行直到条件满足
-    """
-    __tablename__ = "interface_case_content_result_while"
-    __mapper_args__ = {'polymorphic_identity': CaseStepContentType.STEP_API_WHILE}
-
-    result_id = step_content_result_id_column()
-
-    loop_count = Column(INTEGER, default=0, comment="循环次数")
-    max_loop = Column(INTEGER, default=0, comment="最大循环次数")
-    break_reason = Column(String(250), nullable=True, comment="退出原因")
-
-    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
-        """返回循环执行结果（interface_results 由查询层填充）"""
-        result = super().to_dict(exclude)
-        return result
-
-    def __repr__(self):
-        return f"<WhileStepContentResult(id={self.id}, loop_count={self.loop_count})>"
 
 
 class AssertStepContentResult(InterfaceCaseContentResult):
@@ -457,6 +450,14 @@ class AssertStepContentResult(InterfaceCaseContentResult):
     assert_data = Column(JSON, nullable=True, comment="断言数据")
     assert_result = Column(Boolean, nullable=True, comment="断言结果")
     assert_error = Column(TEXT, nullable=True, comment="断言错误信息")
+
+
+    def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
+        """返回条件执行结果（interface_results 由查询层填充）"""
+        result = super().to_dict(exclude)
+        result["assert_data"] = self.assert_data
+        result["assert_result"] = self.assert_result
+        return result
 
     def __repr__(self):
         return f"<AssertStepContentResult(id={self.id}, assert_result={self.assert_result})>"
@@ -480,9 +481,22 @@ class LoopStepContentResult(InterfaceCaseContentResult):
     success_count = Column(INTEGER, default=0, comment="成功次数")
     fail_count = Column(INTEGER, default=0, comment="失败次数")
 
+    interface_results = relationship(
+        InterfaceResult,
+        primaryjoin=result_id == InterfaceResult.content_result_id,
+        foreign_keys=[InterfaceResult.content_result_id],
+        lazy="selectin",
+        viewonly=True
+    )
     def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:
         """返回循环执行结果（interface_results 由查询层填充）"""
         result = super().to_dict(exclude)
+        result["loop_count"] = self.loop_count
+        result["loop_type"] = self.loop_type
+        result["loop_items"] = self.loop_items
+        result["success_count"] = self.success_count
+        result["fail_count"] = self.fail_count
+        result["data"] = self.interface_results
         return result
 
     def __repr__(self):
@@ -495,11 +509,12 @@ __all__ = [
     "InterfaceCaseResult",
     "LoopStepContentResult",
     "AssertStepContentResult",
-    "WhileStepContentResult",
     "WaitStepContentResult",
     "InterfaceCaseContentResult",
     "DBStepContentResult",
     "ScriptStepContentResult",
     "APIStepContentResult",
+    "GroupStepContentResult",
+    "ConditionStepContentResult"
 
 ]

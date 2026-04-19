@@ -7,7 +7,7 @@
 # @Desc: 断言步骤执行策略
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Dict, Any
 
 from app.mapper.interfaceApi.interfaceResultMapper import (
     InterfaceContentStepResultMapper
@@ -18,9 +18,6 @@ from croe.interface.executor.step_content.base import StepBaseStrategy
 from croe.a_manager.assert_manager import AssertManager
 from enums.CaseEnum import CaseStepContentType
 from utils import log
-
-if TYPE_CHECKING:
-    from croe.interface.executor.interface_executor import InterfaceExecutor
 
 VARS = List[Dict[str, Any]]
 

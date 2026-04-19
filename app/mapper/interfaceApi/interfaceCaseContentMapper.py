@@ -25,7 +25,6 @@ from app.model.interfaceAPIModel.contents import (
     ScriptStepContent,
     DBStepContent,
     WaitStepContent,
-    WhileStepContent,
     AssertStepContent,
     LoopStepContent,
 )
@@ -48,7 +47,6 @@ class InterfaceCaseContentMapper(Mapper):
         CaseStepContentType.STEP_API_SCRIPT: ScriptStepContent,
         CaseStepContentType.STEP_API_DB: DBStepContent,
         CaseStepContentType.STEP_API_WAIT: WaitStepContent,
-        CaseStepContentType.STEP_API_WHILE: WhileStepContent,
         CaseStepContentType.STEP_API_ASSERT: AssertStepContent,
         CaseStepContentType.STEP_LOOP: LoopStepContent,
     }

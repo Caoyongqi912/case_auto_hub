@@ -7,7 +7,7 @@
 # @Desc: 数据库步骤执行策略
 
 from datetime import datetime
-from typing import Optional, Dict, Any, TYPE_CHECKING
+from typing import Optional, Dict, Any, List
 
 from app.mapper.interfaceApi.interfaceResultMapper import (
     InterfaceContentStepResultMapper
@@ -20,9 +20,6 @@ from enums import ExtractTargetVariablesEnum
 from enums.CaseEnum import CaseStepContentType
 from utils import log
 from utils.execDBScript import ExecDBScript
-
-if TYPE_CHECKING:
-    from croe.interface.executor.interface_executor import InterfaceExecutor
 
 
 class APIDBContentStrategy(StepBaseStrategy):
@@ -43,6 +40,9 @@ class APIDBContentStrategy(StepBaseStrategy):
         Returns:
             是否执行成功
         """
+
+        db_query_result = []
+        success = True
         content_sql = await DBExecuteMapper.get_by_id(
             ident=step_context.content.target_id
         )
@@ -67,31 +67,27 @@ class APIDBContentStrategy(StepBaseStrategy):
             extracts=content_sql.sql_extracts
         )
 
-        try:
-            result = await db_script.invoke(
-                db_config.db_type, **db_config.config
-            )
-        except Exception as e:
-            log.exception(f"数据库执行异常: {e}")
-            await step_context.starter.send(f"数据库执行异常: {e}")
-            result = None
 
+        result = await db_script.invoke(
+            db_config.db_type, **db_config.config
+        )
         await step_context.starter.send(
             f"🫳🫳    数据库读取 = {result}"
         )
 
-        db_query_result = None
-        db_affected_rows = 0
-        db_error = None
-        success = True
+
 
         if result:
             await step_context.variable_manager.add_vars(result)
-            db_query_result = result
-            db_affected_rows = len(result) if isinstance(result, list) else 1
-        else:
-            db_query_result = {}
-            db_affected_rows = 0
+            db_query_result = [
+                {
+                    ExtractTargetVariablesEnum.KEY:k,
+                    ExtractTargetVariablesEnum.VALUE:v,
+                    ExtractTargetVariablesEnum.Target:ExtractTargetVariablesEnum.ContentSQL
+                }
+                for k,v in result.items()
+            ]
+
 
         task_result_id = None
         if step_context.execution_context.task_result:
@@ -102,8 +98,6 @@ class APIDBContentStrategy(StepBaseStrategy):
             interface_case_result_id=step_context.execution_context.case_result.id,
             step_content=step_context.content,
             db_query_result=db_query_result,
-            db_affected_rows=db_affected_rows,
-            db_error=db_error,
             success=success,
             interface_task_result_id=task_result_id,
         )
@@ -115,9 +109,7 @@ async def write_case_step_content_db_result(
     step_index: int,
     interface_case_result_id: int,
     step_content: InterfaceCaseContents,
-    db_query_result: Dict[str, Any],
-    db_affected_rows: int,
-    db_error: Optional[str],
+    db_query_result:List[Dict[str, Any]],
     success: bool,
     interface_task_result_id: Optional[int] = None,
 ) -> None:
@@ -149,6 +141,4 @@ async def write_case_step_content_db_result(
         status="SUCCESS" if success else "FAIL",
         start_time=datetime.now(),
         db_query_result=db_query_result,
-        db_affected_rows=db_affected_rows,
-        db_error=db_error,
     )

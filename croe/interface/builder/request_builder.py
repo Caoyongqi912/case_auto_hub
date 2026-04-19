@@ -10,7 +10,7 @@ HTTP 请求构建器
 import asyncio
 import json
 import os
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 
 import aiofiles
 import mimetypes
@@ -18,6 +18,7 @@ from base64 import b64encode
 from httpx._utils import to_bytes
 
 from app.mapper.interfaceApi.interfaceGlobalMapper import InterfaceGlobalHeaderMapper
+from app.model.interfaceAPIModel.interfaceGlobalModel import InterfaceGlobalHeader
 from app.model.interfaceAPIModel.interfaceModel import Interface
 from croe.a_manager.variable_manager import VariableManager
 from enums import InterfaceAuthType, InterfaceRequestMethodEnum, InterfaceRequestTBodyTypeEnum
@@ -42,7 +43,7 @@ class RequestBuilder:
 
     """
 
-    def __init__(self, variables: VariableManager):
+    def __init__(self, variables: VariableManager, global_headers:List[InterfaceGlobalHeader]=None):
         """
         初始化请求构建器
 
@@ -50,6 +51,7 @@ class RequestBuilder:
             variables: 变量管理器，用于变量替换
         """
         self.variables = variables
+        self.g_headers = global_headers
 
     # ==================== 公共接口 ====================
 
@@ -96,8 +98,7 @@ class RequestBuilder:
 
     # ==================== 私有方法 - 请求头处理 ====================
 
-    @staticmethod
-    async def _prepare_headers(interface: Interface) -> Dict[str, str]:
+    async def _prepare_headers(self,interface: Interface) -> Dict[str, str]:
         """
         准备请求头
 
@@ -112,12 +113,9 @@ class RequestBuilder:
         headers = {}
 
         # 添加全局请求头
-        global_headers = await InterfaceGlobalHeaderMapper.query_all()
-        if not global_headers:
-            log.info(f"use global_headers {global_headers}")
-
-        for header in global_headers:
-            headers.update(header.map)
+        if self.g_headers:
+            for header in self.g_headers:
+                headers.update(header.map)
 
         # 添加接口特定请求头
         if interface.interface_headers:

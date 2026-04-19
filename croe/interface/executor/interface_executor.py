@@ -13,10 +13,10 @@ from typing import Union, Tuple, Any, Dict, List, Optional
 
 import httpx
 
-from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.mapper.project.dbConfigMapper import DbConfigMapper
 from app.mapper.project.env import EnvMapper
 from app.model.base import EnvModel
+from app.model.interfaceAPIModel.interfaceGlobalModel import InterfaceGlobalHeader
 from app.model.interfaceAPIModel.interfaceModel import Interface
 from common.httpxClient import HttpxClient
 from croe.a_manager import ScriptManager, VariableManager
@@ -62,7 +62,10 @@ class InterfaceExecutor:
     - 提取变量
     """
 
-    def __init__(self, starter: Union[UIStarter, APIStarter], variable_manager: VariableManager) -> None:
+    def __init__(self, starter: Union[UIStarter, APIStarter],
+                 variable_manager: VariableManager,
+                 global_headers:List[InterfaceGlobalHeader]=None,
+                 ):
         """
         初始化接口执行器
 
@@ -73,6 +76,7 @@ class InterfaceExecutor:
         self.variable_manager: VariableManager = variable_manager
         self.starter: Union[UIStarter, APIStarter] = starter
         self.http: HttpxClient = HttpxClient(logger=self.starter.send)
+        self.g_headers: List[InterfaceGlobalHeader] = global_headers or []
 
     async def execute(
         self,
@@ -124,7 +128,8 @@ class InterfaceExecutor:
         # 构建并返回结果
         return self._build_result(ctx)
 
-    async def _parse_url(self, interface: Interface) -> Tuple[str, str]:
+    @staticmethod
+    async def _parse_url(interface: Interface) -> Tuple[str, str]:
         """
         解析 URL，返回 host 和 path
 
@@ -165,19 +170,17 @@ class InterfaceExecutor:
         ctx.variables.extend(await self._execute_before_handlers(ctx.interface))
 
         # 构建请求信息（headers, body, params 等）
-        builder = RequestBuilder(self.variable_manager)
+        builder = RequestBuilder(self.variable_manager, self.g_headers)
         ctx.request_info = await builder.set_req_info(ctx.interface)
 
         # 变量替换
         ctx.resolved_url = await self.variable_manager.trans(origin_url)
         log.info(f"resolved_url = {ctx.resolved_url}")
         ctx.request_info['url'] = ctx.resolved_url
-        
         log.debug(ctx.request_info)
 
         # 发送 HTTP 请求
         ctx.response = await self.http(
-            # url=ctx.resolved_url,
             method=ctx.interface.interface_method,
             **ctx.request_info
         )
@@ -476,7 +479,8 @@ class InterfaceExecutor:
 
         return result, ctx.success
 
-    def _normalize_temp_variables(self, temp_var: Optional[Union[Dict, List]]) -> List:
+    @staticmethod
+    def _normalize_temp_variables(temp_var: Optional[Union[Dict, List]]) -> List:
         """
         标准化临时变量
 

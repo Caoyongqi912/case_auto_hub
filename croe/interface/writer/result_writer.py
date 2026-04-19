@@ -46,7 +46,6 @@ class ResultWriter:
         CaseStepContentType.STEP_API_GROUP,
         CaseStepContentType.STEP_API_CONDITION,
         CaseStepContentType.STEP_LOOP,
-        CaseStepContentType.STEP_API_WHILE,
     }
 
     def __init__(self):
