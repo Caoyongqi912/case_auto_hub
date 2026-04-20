@@ -34,7 +34,7 @@ class APIStepContent(InterfaceCaseContents):
     step_content_id = step_content_id_column()
     target_id = Column(INTEGER, ForeignKey('interface.id', ondelete='CASCADE'), nullable=True, comment="关联接口ID")
 
-    interface_api = relationship(Interface, foreign_keys=[target_id], lazy="noload")
+    interface_api = relationship(Interface, foreign_keys=[target_id], lazy="selectin")
 
     def _get_default_name(self) -> str:
         if self.interface_api:
@@ -61,3 +61,7 @@ class APIStepContent(InterfaceCaseContents):
 
     def __repr__(self):
         return f"<APIStepContent(id={self.id}, target_id={self.target_id}>"
+
+    @property
+    def dynamic(self) -> str:
+        return f"接口 {self.interface_api.interface_name}"

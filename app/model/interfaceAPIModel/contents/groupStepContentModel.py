@@ -30,12 +30,12 @@ class GroupStepContent(InterfaceCaseContents):
     step_content_id = step_content_id_column()
     target_id = Column(INTEGER, ForeignKey('interface_group.id', ondelete='CASCADE'), nullable=True, comment="关联接口组ID")
 
-    interface_group = relationship(InterfaceGroup, foreign_keys=[target_id], lazy="noload")
+    interface_group = relationship(InterfaceGroup, foreign_keys=[target_id], lazy="select",)
 
     def _get_default_name(self) -> str:
         if self.interface_group:
             return self.interface_group.interface_group_name
-        return "未知接口组"
+        return ""
 
     @property
     def content_desc(self) -> str:
@@ -59,3 +59,7 @@ class GroupStepContent(InterfaceCaseContents):
 
     def __repr__(self):
         return f"<GroupStepContent(id={self.id}, target_id={self.target_id})>"
+
+    @property
+    def dynamic(self) -> str:
+        return f"用例组 {self._get_default_name()}"

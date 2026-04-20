@@ -12,6 +12,7 @@ from fastapi import APIRouter
 from fastapi.params import Depends
 
 from app.controller import Authentication
+from app.mapper.interfaceApi.dynamicMapper import InterfaceCaseDynamicMapper
 from app.mapper.interfaceApi.interfaceCaseContentMapper import InterfaceCaseContentMapper
 from app.mapper.interfaceApi.interfaceCaseMapper import InterfaceCaseMapper
 from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
@@ -118,6 +119,12 @@ async def remove_case(info: OptInterfaceCaseSchema, _: User = Depends(Authentica
     return Response.success()
 
 
+@router.get("/queryDynamicHis",description="变更查询")
+async def query_dynamic_his(case_id: int, _=Depends(Authentication())):
+    data = await InterfaceCaseDynamicMapper.query_dynamic(case_id)
+    return Response.success(data)
+
+
 @router.post("/copy", description="复制用例")
 async def copy_case(info: OptInterfaceCaseSchema, user: User = Depends(Authentication())):
     """
@@ -177,13 +184,13 @@ async def copy_step(info: CopyContentStepSchema, user: User = Depends(Authentica
 
 
 @router.post("/content/remove_step", description="从用例中移除步骤")
-async def remove_step(remove_info: RemoveCaseContentSchema, _=Depends(Authentication())):
+async def remove_step(remove_info: RemoveCaseContentSchema, user=Depends(Authentication())):
     """
     从用例中移除指定的步骤
 
     - **remove_info**: 包含用例ID和内容步骤ID
     """
-    await InterfaceCaseMapper.remove_step(**remove_info.model_dump())
+    await InterfaceCaseMapper.remove_step(**remove_info.model_dump(),user=user)
     return Response.success()
 
 
@@ -199,13 +206,14 @@ async def query_contents(case_id: int, _=Depends(Authentication())):
 
 
 @router.post("/content/reorder_contents", description="重新排序用例内容步骤")
-async def reorder_content(order_info: ReorderContentStepSchema, _=Depends(Authentication())):
+async def reorder_content(order_info: ReorderContentStepSchema, user=Depends(Authentication())):
     """
     重新排序用例中的步骤顺序
 
     - **order_info**: 包含用例ID和新的步骤顺序列表
     """
-    await InterfaceCaseMapper.reorder_steps(**order_info.model_dump())
+    await InterfaceCaseMapper.reorder_steps(**order_info.model_dump(),
+                                            user=user)
     return Response.success()
 
 

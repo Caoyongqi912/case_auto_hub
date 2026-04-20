@@ -97,7 +97,7 @@ async def validation_exception_handler(
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """通用异常处理器 - 处理未捕获的异常"""
     LOG.error(
-        f"未处理的异常: {exc}",
+        f"未处理的异常: {str(exc)}",
         exc_info=True,
         extra={"path": request.url.path}
     )

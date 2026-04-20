@@ -46,6 +46,12 @@ def transform_value(field_key: str, value: Any, value_mappings: Dict[str, Dict])
         return value_mappings[field_key][value]
 
     if isinstance(value, list):
+        if value and isinstance(value[0], dict):
+            items = []
+            for v in value:
+                item_strs = [f"{kk}={vv}" for kk, vv in v.items()]
+                items.append("{" + ", ".join(item_strs) + "}")
+            return "、".join(items) if items else "空"
         return "、".join(str(v) for v in value) if value else "空"
 
     if isinstance(value, bool):
@@ -129,11 +135,11 @@ class BaseDynamicMapper(Mapper):
 
     @classmethod
     async def new_dynamic(
-        cls,
-        entity_name: str,
-        entity_id: int,
-        user: User,
-        session: AsyncSession
+            cls,
+            entity_name: str,
+            entity_id: int,
+            user: User,
+            session: AsyncSession
     ):
         """
         记录创建实体的动态
@@ -157,12 +163,12 @@ class BaseDynamicMapper(Mapper):
 
     @classmethod
     async def append_dynamic(
-        cls,
-        entity_id: int,
-        user: User,
-        old_info: Dict[str, Any],
-        new_info: Dict[str, Any],
-        session: AsyncSession
+            cls,
+            entity_id: int,
+            user: User,
+            old_info: Dict[str, Any],
+            new_info: Dict[str, Any],
+            session: AsyncSession
     ):
         """
         记录更新实体的动态
@@ -183,20 +189,19 @@ class BaseDynamicMapper(Mapper):
                 return
 
             model = cls.__model__(
-                    description=f"{user.username} 更新了{cls.ENTITY_TYPE}:\n{diff_info}",
-                    creator=user.id,
-                    creatorName=user.username,
-                    **{cls.FK_FIELD: entity_id}
-                )
+                description=f"{user.username} 更新了{cls.ENTITY_TYPE}:\n{diff_info}",
+                creator=user.id,
+                creatorName=user.username,
+                **{cls.FK_FIELD: entity_id}
+            )
             log.debug(f"{cls.__name__}.append_dynamic model: {model}")
-            await cls.add_flush_expunge(session=session,model=model)
+            await cls.add_flush_expunge(session=session, model=model)
         except Exception as e:
             log.error(f'{cls.__name__}.append_dynamic error: {e}')
             raise
 
 
 class InterfaceDynamicMapper(BaseDynamicMapper):
-
     """
     接口变更记录 Mapper
     """
@@ -256,17 +261,34 @@ class InterfaceCaseDynamicMapper(BaseDynamicMapper):
         "case_desc": "用例描述",
         "case_level": "用例等级",
         "case_status": "用例状态",
-        "case_api_num": "接口数量",
         "module_id": "所属模块",
         "project_id": "所属项目",
-        "error_stop": "错误停止",
     }
 
     VALUE_MAPPINGS: ClassVar[Dict[str, Dict]] = {
         "case_level": {"P0": "P0-最高", "P1": "P1-高", "P2": "P2-中", "P3": "P3-低"},
         "case_status": {"DEBUG": "调试中", "READY": "就绪", "ARCHIVED": "已归档"},
-        "error_stop": {0: "否", 1: "是"},
     }
+
+    @classmethod
+    async def append_dynamic_detail(
+            cls,
+            case_id:int,
+            user: User,
+            description: str,
+            session: AsyncSession,
+    ):
+        try:
+            model = cls.__model__(
+                interface_case_id=case_id,
+                description=f"{user.username} {description}",
+                creator=user.id,
+                creatorName=user.username,
+            )
+            await cls.add_flush_expunge(session=session, model=model)
+        except Exception as e:
+            log.error(f'{cls.__name__}.append_dynamic error: {e}')
+            raise
 
 
 class InterfaceTaskDynamicMapper(BaseDynamicMapper):

@@ -30,7 +30,7 @@ class DBStepContent(InterfaceCaseContents):
     step_content_id = step_content_id_column()
     target_id = Column(INTEGER, ForeignKey('db_execute.id', ondelete='SET NULL'), nullable=True, comment="关联数据库执行配置ID")
 
-    db_execute = relationship(DBExecuteModel, foreign_keys=[target_id], lazy="noload")
+    db_execute = relationship(DBExecuteModel, foreign_keys=[target_id], lazy="select", cascade="delete")
 
     def _get_default_name(self) -> str:
         return "数据库操作"
@@ -44,3 +44,7 @@ class DBStepContent(InterfaceCaseContents):
 
     def __repr__(self):
         return f"<DBStepContent(id={self.id}, target_id={self.target_id})>"
+
+    @property
+    def dynamic(self) -> str:
+        return f"数据库执行 {self._get_default_name()}"

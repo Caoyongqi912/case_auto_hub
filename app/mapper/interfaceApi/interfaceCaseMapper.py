@@ -7,9 +7,9 @@
 # @Desc: 用例 Mapper - 处理用例及其步骤内容的管理
 
 import asyncio
-from typing import List, Sequence, Dict, Callable, Any, AsyncIterator
+from typing import List, Sequence, Dict, Callable, Any
 
-from sqlalchemy import select, insert, delete
+from sqlalchemy import select, insert, delete, update
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper.interfaceApi.dynamicMapper import InterfaceCaseDynamicMapper
@@ -133,6 +133,14 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     step_order=last_index + 1,
                     case_id=case_id
                 )
+
+                # dynamic
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_id,
+                    user=user,
+                    session=session,
+                    description=f"添加私有接口步骤  {empty_interface.interface_name}"
+                )
                 return empty_interface
         except Exception as e:
             log.error(f"associate_interface error: {e}")
@@ -179,7 +187,11 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 else:
                     interface_ids_to_add = interface_id_list[:]
 
-                case.case_api_num += len(interface_ids_to_add)
+                await session.execute(
+                    update(InterfaceCase)
+                    .where(InterfaceCase.id == case_id)
+                    .values(case_api_num=InterfaceCase.case_api_num + len(interface_ids_to_add))
+                )
 
                 contents = [
                     await InterfaceCaseContentMapper.insert_content(
@@ -196,6 +208,14 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     content_ids=[content.id for content in contents],
                     start_index=last_index + 1,
                     case_id=case_id
+                )
+
+                # dynamic
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_id,
+                    user=user,
+                    session=session,
+                    description=f"关联接口步骤  {''.join([content.dynamic for content in contents])}"
                 )
                 return contents
         except Exception as e:
@@ -225,8 +245,11 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
         try:
             async with cls.transaction() as session:
-                case = await cls.get_by_id(session=session, ident=case_id)
-                case.case_api_num += len(group_id_list)
+                await session.execute(
+                    update(InterfaceCase)
+                    .where(InterfaceCase.id == case_id)
+                    .values(case_api_num=InterfaceCase.case_api_num + len(group_id_list))
+                )
 
                 case_step_content_group_apis = []
                 for group_id in group_id_list:
@@ -244,6 +267,13 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     content_ids=content_ids,
                     start_index=last_index + 1,
                     case_id=case_id
+                )
+                # dynamic
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_id,
+                    user=user,
+                    session=session,
+                    description=f"关联接口组步骤  {''.join([content.content_name if content.content_name else '' for content in case_step_content_group_apis])}"
                 )
         except Exception as e:
             log.error(f"associate_groups error {e}")
@@ -265,8 +295,11 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         """
         try:
             async with cls.transaction() as session:
-                case = await cls.get_by_id(session=session, ident=case_id)
-                case.case_api_num += 1
+                await session.execute(
+                    update(InterfaceCase)
+                    .where(InterfaceCase.id == case_id)
+                    .values(case_api_num=InterfaceCase.case_api_num + 1)
+                )
 
                 condition = await InterfaceConditionMapper.add_empty_condition(
                     session=session, user=user
@@ -280,6 +313,13 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
                 last_index = await cls._get_last_step_order(case_id, session)
                 await cls._create_association(session, case_id, content.id, last_index + 1)
+                # dynamic
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_id,
+                    user=user,
+                    session=session,
+                    description=f"添加条件步骤  {content.dynamic}"
+                )
         except Exception as e:
             log.error(f"associate_condition error {e}")
             raise
@@ -304,8 +344,11 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         """
         try:
             async with cls.transaction() as session:
-                case = await cls.get_by_id(session=session, ident=case_id)
-                case.case_api_num += 1
+                await session.execute(
+                    update(InterfaceCase)
+                    .where(InterfaceCase.id == case_id)
+                    .values(case_api_num=InterfaceCase.case_api_num + 1)
+                )
 
                 loop = await InterfaceLoopMapper.save(
                     creator_user=user,
@@ -321,21 +364,30 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
                 last_index = await cls._get_last_step_order(case_id, session)
                 await cls._create_association(session, case_id, content.id, last_index + 1)
+                # dynamic
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_id,
+                    user=user,
+                    session=session,
+                    description=f"添加步骤  {content.dynamic}"
+                )
         except Exception as e:
             log.error(f"associate_loop error : {e}")
             raise
 
-
     @classmethod
-    async def associate_db(cls,user:User,case_id:int):
+    async def associate_db(cls, user: User, case_id: int):
         """
         关联DB操作
         """
         try:
             async with cls.transaction() as session:
-                case = await cls.get_by_id(session=session, ident=case_id)
-                case.case_api_num += 1
-                db_execute = await DBExecuteMapper.init_empty(creator_user=user,session=session)
+                await session.execute(
+                    update(InterfaceCase)
+                    .where(InterfaceCase.id == case_id)
+                    .values(case_api_num=InterfaceCase.case_api_num + 1)
+                )
+                db_execute = await DBExecuteMapper.init_empty(creator_user=user, session=session)
                 content = await InterfaceCaseContentMapper.insert_content(
                     session=session,
                     content_type=CaseStepContentType.STEP_API_DB,
@@ -344,10 +396,16 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 )
                 last_index = await cls._get_last_step_order(case_id, session)
                 await cls._create_association(session, case_id, content.id, last_index + 1)
+                # dynamic
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_id,
+                    user=user,
+                    session=session,
+                    description=f"添加步骤  {content.dynamic}"
+                )
         except Exception as e:
             log.error(f"associate_db error {e}")
             raise
-
 
     @classmethod
     async def associate_content(
@@ -357,7 +415,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             content_type: int,
     ):
         try:
-            content =None
+            content = None
             async with cls.transaction() as session:
                 match content_type:
                     case CaseStepContentType.STEP_API_WAIT:
@@ -391,11 +449,17 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 if not content:
                     log.error(f"associate_content error {content}")
                     return
-
-                await cls._create_association(session, case_id,content.id, last_index + 1)
+                # dynamic
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_id,
+                    user=user,
+                    session=session,
+                    description=f"关联了步骤： {content.dynamic}"
+                )
+                await cls._create_association(session, case_id, content.id, last_index + 1)
 
         except Exception as e:
-            log.error(f"associate_wait error {e}")
+            log.error(f"associate_content error {e}")
             raise
 
     # ==================== 步骤管理 ====================
@@ -404,13 +468,15 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
     async def reorder_steps(
             cls,
             case_id: int,
-            content_step_order: List[int]
+            content_step_order: List[int],
+            user: User
     ):
         """
         重新排序用例步骤（先删后插策略）
 
         Args:
             case_id: 用例 ID
+            user: 操作人
             content_step_order: 步骤内容 ID 列表（新顺序）
         """
         if not content_step_order:
@@ -435,6 +501,14 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 await session.execute(
                     insert(InterfaceCaseStepContentAssociation).values(values)
                 )
+
+                # dynamic
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_id,
+                    user=user,
+                    session=session,
+                    description=f"进行了排序"
+                )
         except Exception as e:
             log.error(f"reorder_steps error: {e}")
             raise
@@ -451,8 +525,11 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         """
         try:
             async with cls.transaction() as session:
-                case = await cls.get_by_id(session=session, ident=case_id)
-                case.case_api_num += 1
+                await session.execute(
+                    update(InterfaceCase)
+                    .where(InterfaceCase.id == case_id)
+                    .values(case_api_num=InterfaceCase.case_api_num + 1)
+                )
                 origin_content = await InterfaceCaseContentMapper.get_by_id(session=session, ident=content_id)
                 content = await InterfaceCaseContentMapper.copy_content(
                     content=origin_content,
@@ -465,6 +542,13 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     session, case_id, content.id, last_index + 1
                 )
 
+                # dynamic
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_id,
+                    user=user,
+                    session=session,
+                    description=f"复制了步骤 {origin_content.content_name}"
+                )
         except Exception as e:
             log.error(f"copy_step error: {e}")
             raise
@@ -497,7 +581,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 if contents:
                     # 按原顺序串行复制（或并发后保持顺序）
                     new_contents = []
-                    for content in contents:  # ✅ 串行，保持顺序
+                    for content in contents: 
                         new_content = await InterfaceCaseContentMapper.copy_content(
                             content=content,
                             session=session,
@@ -505,7 +589,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                         )
                         new_contents.append(new_content)
 
-                    # ✅ 用 new_case.id 和 new_contents，按索引顺序设置 step_order
+                    #  用 new_case.id 和 new_contents，按索引顺序设置 step_order
                     assoc_values = [
                         {
                             "interface_case_id": new_case.id,
@@ -556,47 +640,42 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             raise
 
     @classmethod
-    async def remove_step(cls, case_id: int, content_id: int) -> None:
+    async def remove_step(cls, case_id: int, content_id: int, user: User) -> None:
         """
         移除用例步骤
 
         Args:
             case_id: 用例 ID
+            user: 操作人
             content_id: 步骤内容 ID（来自 step_content_id，即子表主键）
         """
         try:
             async with cls.transaction() as session:
-                case = await cls.get_by_id(session=session, ident=case_id)
-
                 content = await InterfaceCaseContentMapper.get_by_id(
                     ident=content_id, session=session
                 )
 
-                log.info(f"=== remove_step debug ===")
-                log.info(f"content type: {type(content)}")
-                log.info(f"content class: {type(content).__name__}")
-                log.info(f"content __dict__: {content.__dict__}")
-                log.info(f"has content_type attr: {hasattr(content, 'content_type')}")
-                log.info(f"content_type via getattr: {getattr(content, 'content_type', 'NOT_FOUND')}")
-                log.info(f"content_type direct access: {content.content_type}")
-                log.info(f"========================")
-
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_id,
+                    user=user,
+                    session=session,
+                    description=f"移除条件步骤  {content.dynamic}"
+                )
                 content_type = CaseStepContentType(content.content_type)
                 target_id = content.target_id
 
                 strategy_func = STEP_DELETE_STRATEGIES.get(content_type)
-                log.info(f"strategy_func: {strategy_func}")
                 if strategy_func:
-                    flag = await strategy_func(target_id, session)
-                    log.info(f"strategy_func 删除: {flag}")
+                    await strategy_func(target_id, session)
 
-                #
                 await session.delete(content)
-                if case.case_api_num > 0:
-                    case.case_api_num -= 1
+                await session.execute(
+                    update(InterfaceCase)
+                    .where(InterfaceCase.id == case_id)
+                    .values(case_api_num=InterfaceCase.case_api_num - 1)
+                )
         except Exception as e:
             log.error(f"remove_step error: {e}")
-            log.exception(e)
             raise
 
     # ==================== 查询操作 ====================
@@ -705,7 +784,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             "interface_case_id": case_id,
             "interface_case_content_id": content_id,
             "step_order": index
-        } for index, content_id in enumerate(content_ids, start=start_index + 1)]
+        } for index, content_id in enumerate(content_ids, start=start_index)]
 
         if values:
             await session.execute(

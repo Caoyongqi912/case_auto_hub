@@ -43,3 +43,7 @@ class WaitStepContent(InterfaceCaseContents):
 
     def __repr__(self):
         return f"<WaitStepContent(id={self.id}, wait_time={self.wait_time})>"
+
+    @property
+    def dynamic(self):
+        return f"等待步骤 时间 {self.wait_time}"

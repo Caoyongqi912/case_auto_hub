@@ -44,3 +44,7 @@ class AssertStepContent(InterfaceCaseContents):
 
     def __repr__(self):
         return f"<AssertStepContent(id={self.id}, assert_count={len(self.assert_list) if self.assert_list else 0})>"
+
+    @property
+    def dynamic(self) -> str:
+        return f"{self._get_default_name()}"

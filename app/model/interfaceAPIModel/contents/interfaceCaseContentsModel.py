@@ -106,3 +106,7 @@ class InterfaceCaseContents(BaseModel):
 
     def __repr__(self):
         return f"<InterfaceCaseContents(id={self.id}, type={self.content_type}, enable={self.enable})>"
+
+    @property
+    def dynamic(self):
+        return ""

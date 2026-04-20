@@ -41,3 +41,7 @@ class ConditionStepContent(InterfaceCaseContents):
 
     def __repr__(self):
         return f"<ConditionStepContent(id={self.id}, target_id={self.target_id})>"
+
+    @property
+    def dynamic(self) -> str:
+        return f"条件判断执行 {self._get_default_name()}"

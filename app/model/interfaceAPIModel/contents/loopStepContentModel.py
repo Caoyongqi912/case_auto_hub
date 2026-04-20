@@ -50,3 +50,7 @@ class LoopStepContent(InterfaceCaseContents):
 
     def __repr__(self):
         return f"<LoopStepContent(id={self.id}, target_id={self.target_id})>"
+
+    @property
+    def dynamic(self):
+        return f"{self._get_default_name()}步骤"

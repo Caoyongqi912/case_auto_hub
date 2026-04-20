@@ -10,6 +10,7 @@ import yaml
 from fastapi import APIRouter, Depends, Response as FastResponse
 
 from app.controller import Authentication
+from app.mapper.interfaceApi.dynamicMapper import InterfaceDynamicMapper
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.mapper.interfaceApi.interfaceScriptMapper import InterfaceScriptMapper
 from app.model.base import User
@@ -136,6 +137,13 @@ async def copy_interfaces_to_module(copy_info: CopyInterfaceToModuleSchema, user
     """
     await InterfaceMapper.copy_to_module(user=user, **copy_info.model_dump())
     return Response.success()
+
+
+
+@router.get("/query_dynamic_his",description='查询变更历史')
+async def query_dynamic_his(interface_id: int, _: User = Depends(Authentication())):
+    data = await InterfaceDynamicMapper.query_dynamic(interface_id)
+    return Response.success(data)
 
 
 # ==================== 接口调试执行 ====================

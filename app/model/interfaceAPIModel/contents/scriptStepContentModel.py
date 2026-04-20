@@ -44,6 +44,9 @@ class ScriptStepContent(InterfaceCaseContents):
             result['script_text'] = self.script_text
         return result
 
-
     def __repr__(self):
         return f"<ScriptStepContent(id={self.id}, script_len={len(self.script_text) if self.script_text else 0})>"
+
+    @property
+    def dynamic(self):
+        return f"脚本步骤 {self.script_text[:10] if self.script_text else ''}"
