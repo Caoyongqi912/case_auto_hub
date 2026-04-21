@@ -484,7 +484,7 @@ class RedisWorkerPool:
         try:
             log.info("[RedisMonitor] 启动")
             while self.is_running:
-                await asyncio.sleep(300)
+                await asyncio.sleep(5)
                 try:
                     stats = await self.get_stats()
                     log.info(
@@ -558,10 +558,13 @@ class RedisWorkerPool:
 
             servers = set()
             for key in processing_keys:
-                parts = key.decode('utf-8').split(':')
-                if len(parts) >= 3:
-                    server_worker = parts[2]
-                    server_id = '_'.join(server_worker.split('_')[:-2])
+                    parts = key.decode('utf-8').split(':') if isinstance(key, bytes) else key.split(':')
+                    if len(parts) >= 3:
+                        server_worker = parts[2]
+                        if len(parts) >= 3:
+                            server_id = '_'.join(server_worker.split('_')[:-2])
+                        else:
+                            server_id = '_'.join(server_worker.split('_')[:-2])
                     servers.add(server_id)
 
             return {
@@ -798,13 +801,14 @@ r_pool = RedisWorkerPool.get_instance()
 
 @r_pool.register_function
 async def register_interface_task_RoBot(**kwargs):
-    """
-    接口任务注册执行
-    定时执行
-    """
-    runner = TaskRunner(APIStarter(StarterEnum.RoBot))
-    await runner.handler_execute_task(params=TaskParams(**kwargs))
-
+    log.info("=== register_interface_task_RoBot 开始 ===")  # 添加
+    try:
+        runner = TaskRunner(APIStarter(StarterEnum.RoBot))
+        log.info(f"=== runner created: {runner} ===")  # 添加
+        await runner.execute_task(params=TaskParams(**kwargs))
+        log.info("=== register_interface_task_RoBot 结束 ===")  # 添加
+    except Exception as e:
+        log.error(f"=== register_interface_task_RoBot 异常: {e} ===")  # 添加
 
 @r_pool.register_function
 async def register_interface_task_Handle(user: User, **kwargs):
@@ -813,7 +817,7 @@ async def register_interface_task_Handle(user: User, **kwargs):
     接口调用执行
     """
     runner = TaskRunner(APIStarter(user))
-    await runner.handler_execute_task(params=TaskParams(**kwargs))
+    await runner.execute_task(params=TaskParams(**kwargs))
 
 
 @r_pool.register_function

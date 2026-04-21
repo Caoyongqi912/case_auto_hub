@@ -34,7 +34,7 @@ async def lifespanApp(app: FastAPI):
 
     await init_db()
     redis_client = await init_redis()
-    pool = await init_worker_pool()
+    pool = await init_worker_pool(redis_client)
     aps = await init_aps(redis_client)
     await init_proxy()
     await init_ui_browser()
@@ -139,6 +139,7 @@ async def init_proxy():
         except Exception as e:
             log.error(f"record 代理启动失败: {e}")
 
+
 async def start_proxy():
     """
     启动代理不好用
@@ -157,16 +158,13 @@ async def start_proxy():
     dm.addons.add(InterfaceRecoder())
     await dm.run()
 
-async def init_worker_pool():
+
+async def init_worker_pool(rc):
     from common.redis_worker_pool import r_pool
-    from common import rc
-    
+
     await r_pool.set_redis_client(rc)
     await r_pool.start()
     return r_pool
-
-
-
 
 
 async def init_ui_browser():
@@ -183,10 +181,9 @@ async def init_ui_methods():
     """
     初始化UI 方法API入库
     """
-    from script.init_method import init_play_method,init_play_locator
+    from script.init_method import init_play_method, init_play_locator
     await init_play_method()
     await init_play_locator()
-
 
 
 hub = caseHub()

@@ -15,7 +15,7 @@ if __name__ == "__main__":
                 port=Config.SERVER_PORT,
                 reload=True,
                 forwarded_allow_ips="*",
-                workers=4)
+                workers=1)
 
 
 # todo

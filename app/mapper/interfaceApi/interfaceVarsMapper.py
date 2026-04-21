@@ -12,9 +12,11 @@ from sqlalchemy import and_, select, delete
 
 from app.exception import NotFind
 from app.mapper import Mapper
+from app.mapper.interfaceApi.dynamicMapper import InterfaceCaseDynamicMapper
 from app.model import async_session
 from app.model.base import User
 from app.model.interfaceAPIModel.interfaceCaseVarsModel import InterfaceCaseVars
+from utils import log
 
 
 class InterfaceVarsMapper(Mapper[InterfaceCaseVars]):
@@ -27,11 +29,11 @@ class InterfaceVarsMapper(Mapper[InterfaceCaseVars]):
 
     @classmethod
     async def insert_vars(
-        cls,
-        user: User,
-        case_id: int,
-        key: str,
-        value: str
+            cls,
+            user: User,
+            case_id: int,
+            key: str,
+            value: str
     ) -> InterfaceCaseVars:
         """
         插入变量
@@ -45,29 +47,42 @@ class InterfaceVarsMapper(Mapper[InterfaceCaseVars]):
         :return: 创建的变量对象
         :raises NotFind: 当 key 已存在时抛出
         """
-        async with cls.transaction() as session:
-            key_exists = await session.execute(
-                select(InterfaceCaseVars).where(and_(
-                    InterfaceCaseVars.key == key,
-                    InterfaceCaseVars.case_id == case_id
-                ))
-            )
-            if key_exists.scalar():
-                raise NotFind(f"变量 key '{key}' 已存在")
+        try:
+            async with cls.transaction() as session:
+                key_exists = await session.execute(
+                    select(InterfaceCaseVars).where(and_(
+                        InterfaceCaseVars.key == key,
+                        InterfaceCaseVars.case_id == case_id
+                    ))
+                )
+                if key_exists.scalar():
+                    raise NotFind(f"变量 key '{key}' 已存在")
 
-            return await cls.save(
-                key=key,
-                value=value,
-                case_id=case_id,
-                creator_user=user
-            )
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_id,
+                    description=f"添加前置变量 {key} {value}",
+                    user=user,
+                    session=session
+                )
+                model = InterfaceCaseVars(
+                    case_id=case_id,
+                    key=key,
+                    value=value,
+                    creator=user.id,
+                    creatorName=user.username
+                )
+                return await cls.add_flush_expunge(model=model, session=session)
+
+        except Exception as e:
+            log.error(e)
+            raise
 
     @classmethod
     async def query_by(
-        cls,
-        case_id: Optional[int] = None,
-        key: Optional[str] = None,
-        uid: Optional[str] = None
+            cls,
+            case_id: Optional[int] = None,
+            key: Optional[str] = None,
+            uid: Optional[str] = None
     ) -> List[InterfaceCaseVars]:
         """
         根据条件查询变量
@@ -96,54 +111,31 @@ class InterfaceVarsMapper(Mapper[InterfaceCaseVars]):
             return list(result.scalars().all())
 
     @classmethod
-    async def update_by_uid(
-        cls,
-        update_user: User,
-        uid: str,
-        key: Optional[str] = None,
-        value: Optional[str] = None
-    ) -> InterfaceCaseVars:
-        """
-        根据 uid 更新变量
-
-        :param update_user: 更新用户
-        :param uid: 变量唯一标识
-        :param key: 新的变量键名（可选）
-        :param value: 新的变量值（可选）
-        :return: 更新后的变量对象
-        :raises NotFind: 当变量不存在时抛出
-        """
-        async with cls.transaction() as session:
-            var = await session.execute(
-                select(InterfaceCaseVars).where(InterfaceCaseVars.uid == uid)
-            )
-            var_obj = var.scalar()
-
-            if not var_obj:
-                raise NotFind(f"变量 uid '{uid}' 不存在")
-
-            if key is not None:
-                var_obj.key = key
-            if value is not None:
-                var_obj.value = value
-
-            await cls.flush(var_obj)
-
-            return var_obj
-
-    @classmethod
-    async def delete_by_uid(cls, uid: str) -> bool:
+    async def delete_var(cls, uid: str, user: User) -> bool:
         """
         根据 uid 删除变量
 
         :param uid: 变量唯一标识
+        :param user: 删除人
         :return: 是否删除成功
         """
-        async with cls.transaction() as session:
-            result = await session.execute(
-                delete(InterfaceCaseVars).where(InterfaceCaseVars.uid == uid)
-            )
-            return result.rowcount > 0
+        try:
+            async with cls.transaction() as session:
+                case_var = await cls.get_by_uid(uid=uid, session=session)
+                await InterfaceCaseDynamicMapper.append_dynamic_detail(
+                    case_id=case_var.case_id,
+                    description=f"添加前置变量 {case_var}",
+                    user=user,
+                    session=session
+                )
+                result = await session.execute(
+                    delete(InterfaceCaseVars).where(InterfaceCaseVars.uid == uid)
+                )
+
+                return result.rowcount > 0
+        except Exception as e:
+            log.error(e)
+            raise
 
     @classmethod
     async def get_by_case_id(cls, case_id: int) -> List[InterfaceCaseVars]:

@@ -21,6 +21,7 @@ async def aps_submit_interface_task(job: AutoJob):
         raise RuntimeError("任务池未启动")
     ## 添加到多个任务
     ##
+    log.debug(f"aps_submit_interface_task {job}")
     for task_id in job.job_task_id_list:
         await r_pool.submit_to_redis(
             func=register_interface_task_RoBot,

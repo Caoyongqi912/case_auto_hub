@@ -152,7 +152,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             user: User,
             case_id: int,
             interface_id_list: List[int] = None,
-            copy: bool = False
+            is_copy: bool = False
     ) -> List[InterfaceCaseContents]:
         """
         批量关联接口到用例
@@ -175,7 +175,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 case = await cls.get_by_id(session=session, ident=case_id)
                 last_index = await cls._get_last_step_order(case_id, session)
 
-                if copy:
+                if is_copy:
                     interface_ids_to_add = []
                     for interface_id in interface_id_list:
                         new_interface = await InterfaceMapper.copy_one(

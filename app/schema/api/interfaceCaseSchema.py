@@ -146,7 +146,7 @@ class AssociationApisSchema(BaseModel):
     """
     case_id: int = Field(..., description="用例ID")
     interface_id_list: List[int] = Field(..., description="接口ID列表")
-    copy: bool = Field(..., description="复制添加")
+    is_copy: bool = Field(..., description="复制添加")
 
 
 class AddInterfaceApi2CaseSchema(BaseModel):
@@ -258,7 +258,7 @@ class AssociationConditionAPISchema(BaseModel):
     """
     condition_id: int = Field(..., description="条件ID")
     interface_id_list: List[int] = Field(..., description="接口ID列表")
-    copy: bool = Field(..., description="是否复制")
+    is_copy: bool = Field(..., description="是否复制")
 
 
 class CreateConditionAPISchema(BaseModel):
@@ -324,7 +324,7 @@ class AssociationLoopAPISchema(BaseModel):
     """
     loop_id: int = Field(..., description="循环ID")
     interface_id_list: List[int] = Field(..., description="接口ID列表")
-    copy:bool = Field(...,description="复制添加？")
+    is_copy:bool = Field(...,description="复制添加？")
 
 class CopyContentStepSchema(BaseModel):
     """

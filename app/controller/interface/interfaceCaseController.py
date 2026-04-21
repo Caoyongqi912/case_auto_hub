@@ -119,7 +119,7 @@ async def remove_case(info: OptInterfaceCaseSchema, _: User = Depends(Authentica
     return Response.success()
 
 
-@router.get("/queryDynamicHis",description="变更查询")
+@router.get("/queryDynamicHis", description="变更查询")
 async def query_dynamic_his(case_id: int, _=Depends(Authentication())):
     data = await InterfaceCaseDynamicMapper.query_dynamic(case_id)
     return Response.success(data)
@@ -163,7 +163,7 @@ async def update_content(info: UpdateCaseContentStepSchema, _: User = Depends(Au
 
     - **info**: 包含用例ID和内容步骤ID
     """
-    content =  await InterfaceCaseContentMapper.update_content(
+    content = await InterfaceCaseContentMapper.update_content(
         **info.model_dump(exclude_none=True, exclude_unset=True),
     )
     return Response.success(content)
@@ -190,7 +190,7 @@ async def remove_step(remove_info: RemoveCaseContentSchema, user=Depends(Authent
 
     - **remove_info**: 包含用例ID和内容步骤ID
     """
-    await InterfaceCaseMapper.remove_step(**remove_info.model_dump(),user=user)
+    await InterfaceCaseMapper.remove_step(**remove_info.model_dump(), user=user)
     return Response.success()
 
 
@@ -254,15 +254,16 @@ async def associate_group(group: AssociationGroupSchema, user: User = Depends(Au
 # =================  db ==============
 
 @router.post("/associate/associate_db")
-async def associate_db(db_info:AssociationDBSchema, user: User = Depends(Authentication())):
-    await InterfaceCaseMapper.associate_db(user=user,**db_info.model_dump())
+async def associate_db(db_info: AssociationDBSchema, user: User = Depends(Authentication())):
+    await InterfaceCaseMapper.associate_db(user=user, **db_info.model_dump())
     return Response.success()
 
 
 @router.post("/associate/update_db")
-async def update_db(db_info:UpdateAssociationDBSchema, user: User = Depends(Authentication())):
-    await DBExecuteMapper.update_by_id(user=user,**db_info.model_dump(exclude_none=True))
+async def update_db(db_info: UpdateAssociationDBSchema, user: User = Depends(Authentication())):
+    await DBExecuteMapper.update_by_id(user=user, **db_info.model_dump(exclude_none=True))
     return Response.success()
+
 
 # ==================== 循环管理 ====================
 
@@ -435,8 +436,6 @@ async def reorder_condition_apis(association_condition: ReorderAssociationCondit
     return Response.success()
 
 
-
-
 # === vars ====
 
 
@@ -457,8 +456,8 @@ async def update_vars(varInfo: UpdateVarsSchema, user: User = Depends(Authentica
 
 
 @router.post('/vars/remove', description='删除变量')
-async def remove_vars(varInfo: DeleteVarsSchema, _: User = Depends(Authentication())):
-    await InterfaceVarsMapper.delete_by_uid(**varInfo.model_dump())
+async def remove_vars(varInfo: DeleteVarsSchema, user: User = Depends(Authentication())):
+    await InterfaceVarsMapper.delete_var(**varInfo.model_dump(), user=user)
     return Response.success()
 
 
@@ -466,8 +465,6 @@ async def remove_vars(varInfo: DeleteVarsSchema, _: User = Depends(Authenticatio
 async def query_vars(varsInfo: QueryVarsSchema, _: User = Depends(Authentication())):
     datas = await InterfaceVarsMapper.query_by(**varsInfo.model_dump())
     return Response.success(datas)
-
-
 
 
 @router.post("/execute/io", description="用例执行")

@@ -53,7 +53,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
             cls,
             loop_id: int,
             interface_id_list: List[int],
-            copy: bool,
+            is_copy: bool,
             user: User,
     ) -> None:
         """
@@ -61,7 +61,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
 
         Args:
             loop_id: 循环 ID
-            copy:是否复制添加
+            is_copy:是否复制添加
             interface_id_list: 接口 ID 列表
             user: 用户
         """
@@ -69,7 +69,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
             return
         try:
             async with cls.transaction() as session:
-                if copy:
+                if is_copy:
                     interface_ids_to_add = []
                     for interface_id in interface_id_list:
                         new_interface = await InterfaceMapper.copy_one(

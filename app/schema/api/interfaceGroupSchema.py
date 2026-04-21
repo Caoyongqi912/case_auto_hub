@@ -58,7 +58,7 @@ class AssociationInterfacesToGroupSchema(BaseModel):
     """关联多个接口到组模型"""
     interface_ids: List[int] = Field(..., description="API ID列表")
     group_id: int = Field(..., description="组ID")
-    copy: bool = Field(..., description="复制添加？")
+    is_copy: bool = Field(..., description="复制添加？")
 
 
 

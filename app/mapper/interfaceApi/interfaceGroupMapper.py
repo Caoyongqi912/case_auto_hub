@@ -42,7 +42,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
             raise e
 
     @classmethod
-    async def association_interfaces(cls, group_id: int, interface_ids: list[int], copy: bool) -> None:
+    async def association_interfaces(cls, group_id: int, interface_ids: list[int], is_copy: bool) -> None:
         """
         关联多个接口到分组
         """
@@ -53,7 +53,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                     raise ValueError("分组不存在")
                 last_index = await cls.get_last_index(session=session, group_id=group_id)
 
-                if copy:
+                if is_copy:
                     interface_ids_to_add = []
                     for interface_id in interface_ids:
                         new_interface = await InterfaceMapper.copy_one(
