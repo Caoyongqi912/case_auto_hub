@@ -185,6 +185,7 @@ class RedisWorkerPool:
         self.function_registry: Dict[str, Callable] = {}
 
         self._get_job_sha = None
+        self._raw_redis = None
 
         self.job_timeout = 3600
 
@@ -279,9 +280,20 @@ class RedisWorkerPool:
         """
         连接redis
         """
-        if self._redis_connected and self.redis_client:
+        if self._redis_connected and self._raw_redis:
             return
 
+        from config import Config
+        from redis.asyncio import Redis as AsyncRedis
+        
+        self._raw_redis = AsyncRedis(
+            host=Config.REDIS_SERVER,
+            port=Config.REDIS_PORT,
+            db=Config.REDIS_DB,
+            decode_responses=False,
+            max_connections=20
+        )
+        
         from common import rc
         self.redis_client = rc
         self._redis_connected = True
@@ -295,7 +307,7 @@ class RedisWorkerPool:
     async def _load_scripts(self):
         """加载 Lua 脚本"""
         try:
-            self._get_job_sha = await self.redis.script_load(self._GET_JOB_SCRIPT)
+            self._get_job_sha = await self._raw_redis.script_load(self._GET_JOB_SCRIPT)
         except Exception as e:
             log.warning(f"加载 Lua 脚本失败: {e}")
 
@@ -322,12 +334,13 @@ class RedisWorkerPool:
         """
         if not self.check_pool_ready():
             raise RuntimeError("任务池未启动或 Redis 未连接")
-
+        log.debug(f"submit_to_redis. job_kwargs = {job_kwargs} job_name={job_name}")
         if not job_kwargs:
             job_kwargs = {}
         func_name = func.__name__
         job = JOB(id=job_id, name=job_name, func_name=func_name, args=job_args, kwargs=job_kwargs)
         job_data = job.to_dict()
+        log.info(f"submit_to_redis. {job_data} ")
         serialized_job = pickle.dumps(job_data)
 
         await self.redis.hset(
@@ -442,7 +455,7 @@ class RedisWorkerPool:
         """使用 Lua 脚本原子性获取任务"""
         try:
             if self._get_job_sha:
-                result = await self.redis.evalsha(
+                result = await self._raw_redis.evalsha(
                     self._get_job_sha,
                     3,
                     self.queue_key,
@@ -450,7 +463,7 @@ class RedisWorkerPool:
                     processing_key
                 )
             else:
-                result = await self.redis.eval(
+                result = await self._raw_redis.eval(
                     self._GET_JOB_SCRIPT,
                     3,
                     self.queue_key,
@@ -460,21 +473,23 @@ class RedisWorkerPool:
 
             if result:
                 job_id = result[0] if isinstance(result[0], str) else result[0].decode('utf-8')
-                return job_id, result[1]
+                job_data = result[1] if isinstance(result[1], bytes) else result[1]
+                return job_id, job_data
             return None
-        except Exception as e:
-            result = await self.redis.bzpopmin(self.queue_key, timeout=0.5)
+        except (UnicodeDecodeError, Exception) as e:
+            log.warning(f"Lua script error, falling back: {e}")
+            result = await self._raw_redis.bzpopmin(self.queue_key, timeout=0.5)
             if not result:
                 return None
 
             _key, job_id, _score = result
             job_id = job_id.decode('utf-8') if isinstance(job_id, bytes) else job_id
 
-            serialized_job = await self.redis.hget(self.job_data_key, job_id)
+            serialized_job = await self._raw_redis.hget(self.job_data_key, job_id)
             if not serialized_job:
                 return None
 
-            await self.redis.hset(processing_key, job_id, serialized_job)
+            await self._raw_redis.hset(processing_key, job_id, serialized_job)
             return job_id, serialized_job
 
     async def _monitor(self):
@@ -804,11 +819,11 @@ async def register_interface_task_RoBot(**kwargs):
     log.info("=== register_interface_task_RoBot 开始 ===")  # 添加
     try:
         runner = TaskRunner(APIStarter(StarterEnum.RoBot))
-        log.info(f"=== runner created: {runner} ===")  # 添加
+        log.info(f"=== runner created: {runner} ===")
         await runner.execute_task(params=TaskParams(**kwargs))
-        log.info("=== register_interface_task_RoBot 结束 ===")  # 添加
+        log.info("=== register_interface_task_RoBot 结束 ===")
     except Exception as e:
-        log.error(f"=== register_interface_task_RoBot 异常: {e} ===")  # 添加
+        log.error(f"=== register_interface_task_RoBot 异常: {e} ===")
 
 @r_pool.register_function
 async def register_interface_task_Handle(user: User, **kwargs):
@@ -816,9 +831,14 @@ async def register_interface_task_Handle(user: User, **kwargs):
     接口任务注册执行
     接口调用执行
     """
-    runner = TaskRunner(APIStarter(user))
-    await runner.execute_task(params=TaskParams(**kwargs))
-
+    log.info("=== register_interface_task_Handle 开始 ===")
+    try:
+        runner = TaskRunner(APIStarter(user))
+        log.info(f"=== runner created: {runner} ===")
+        await runner.execute_task(params=TaskParams(**kwargs))
+        log.info("=== register_interface_task_Handle 结束 ===")
+    except Exception as e:
+        log.error(f"=== register_interface_task_Handle 异常: {e} ===")
 
 @r_pool.register_function
 async def register_play_task_handle(user: User, **kwargs):

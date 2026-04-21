@@ -104,7 +104,12 @@ class TaskRunner:
             任务结果
         """
         log.info(f"execute_task  params {params} ")
-        self.task = await InterfaceTaskMapper.get_by_id(ident=params.task_id)
+        if isinstance(params.task_id, int):
+            self.task = await InterfaceTaskMapper.get_by_id(ident=params.task_id)
+        elif isinstance(params.task_id, str):
+            self.task = await InterfaceTaskMapper.get_by_uid(uid=params.task_id)
+        else:
+            raise ValueError("task id error")
         log.info(f"查询到任务 {self.task}")
 
         if not self.task:

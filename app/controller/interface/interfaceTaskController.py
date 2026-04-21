@@ -212,13 +212,13 @@ async def execute_task(task: ExecuteTask, starter: User = Depends(Authentication
 
     await r_pool.submit_to_redis(
         func=register_interface_task_Handle,
-        user=starter,
         job_id=task_job.uid,
         job_name=task_job.interface_task_title,
         job_kwargs={
             "task_id": task_job.id,
             "env_id": task.env_id,
-            "options": ["API", "CASE"]
+            "options": ["API", "CASE"],
+            "user": starter,
         }
     )
 

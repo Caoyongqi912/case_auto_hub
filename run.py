@@ -15,10 +15,5 @@ if __name__ == "__main__":
                 port=Config.SERVER_PORT,
                 reload=True,
                 forwarded_allow_ips="*",
-                workers=1)
+                workers=4)
 
-
-# todo
-# 1、 用例管理完善
-# 2、 接口添加修改日志能力
-# 3、 任务执行完善
