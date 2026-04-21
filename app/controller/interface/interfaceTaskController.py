@@ -206,7 +206,7 @@ async def execute_task(task: ExecuteTask, starter: User = Depends(Authentication
     - **task**: 包含任务ID和环境ID
     """
 
-    from common.redis_worker_pool import r_pool, register_interface_task_Handle
+    from common.worker_pool import r_pool, register_interface_task_Handle
 
     task_job = await InterfaceTaskMapper.get_by_id(task.task_id)
 
@@ -238,7 +238,7 @@ async def execute_task_by_jenkins(task: ExecuteTask):
 
     - **task**: 包含任务ID和环境ID
     """
-    from common.redis_worker_pool import r_pool, register_interface_task_RoBot
+    from common.worker_pool import r_pool, register_interface_task_RoBot
 
     task_job = await InterfaceTaskMapper.get_by_id(task.task_id)
 

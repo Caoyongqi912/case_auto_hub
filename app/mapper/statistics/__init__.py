@@ -48,9 +48,9 @@ class StatisticsMapper:
                         select(
                             InterfaceTaskResult.run_day.label("date"),
                             func.count().label("total_num"),  # 总数量
-                            func.sum(case((InterfaceTaskResult.result == "SUCCESS", 1), else_=0)).label(
+                            func.sum(case((InterfaceTaskResult.result.is_(True) , 1), else_=0)).label(
                                 "success_num"),  # 成功数量
-                            func.sum(case((InterfaceTaskResult.result == "ERROR", 1), else_=0)).label("fail_num")
+                            func.sum(case((InterfaceTaskResult.result.is_(False), 1), else_=0)).label("fail_num")
                             # 失败数量
                         ).where(
                             InterfaceTaskResult.run_day >= GenerateTools.get_date_days_ago(n)
@@ -95,45 +95,45 @@ class StatisticsMapper:
             result = {}
             date = GenerateTools.getTime(5)
             async with async_session() as session:
-                async with session.begin():
-                    api_task = await session.execute(
-                        select(
-                            InterfaceTaskResult.run_day.label("date"),
-                            func.count().label("total_num"),  # 总数量
-                            func.sum(case((InterfaceTaskResult.result == "SUCCESS", 1), else_=0)).label(
-                                "success_num"),  # 成功数量
-                            func.sum(case((InterfaceTaskResult.result == "FAIL", 1), else_=0)).label("fail_num")
-                        ).where(
-                            InterfaceTaskResult.run_day == date
-                        )
+                api_task = await session.execute(
+                    select(
+                        InterfaceTaskResult.run_day.label("date"),
+                        func.count().label("total_num"),  # 总数量
+                        func.sum(case((InterfaceTaskResult.result.is_(True), 1), else_=0)).label(
+                            "success_num"),  # 成功数量
+                        func.sum(case((InterfaceTaskResult.result.is_(False), 1), else_=0)).label("fail_num")
+                    ).where(
+                        InterfaceTaskResult.run_day == date
                     )
-                    ui_task = await session.execute(
-                        select(
-                            PlayTaskResult.run_day.label("date"),
-                            func.count().label("total_num"),  # 总数量
-                            func.sum(case((PlayTaskResult.result == "SUCCESS", 1), else_=0)).label(
-                                "success_num"),  # 成功数量
-                            func.sum(case((PlayTaskResult.result == "FAIL", 1), else_=0)).label("fail_num")
-                        ).where(
-                            PlayTaskResult.run_day == date
-                        )
+                )
+                ui_task = await session.execute(
+                    select(
+                        PlayTaskResult.run_day.label("date"),
+                        func.count().label("total_num"),  # 总数量
+                        func.sum(case((PlayTaskResult.result == "SUCCESS", 1), else_=0)).label(
+                            "success_num"),  # 成功数量
+                        func.sum(case((PlayTaskResult.result == "FAIL", 1), else_=0)).label("fail_num")
+                    ).where(
+                        PlayTaskResult.run_day == date
                     )
-                    apis = api_task.fetchone()
-                    uis = ui_task.fetchone()
+                )
+                apis = api_task.fetchone()
+                uis = ui_task.fetchone()
 
-                    result['api_task'] = {
-                        "date": apis.date if apis.date else date,
-                        "total_num": apis.total_num if apis.total_num else 0,
-                        "success_num": apis.success_num if apis.success_num else 0,
-                        "fail_num": apis.fail_num if apis.fail_num else 0
-                    }
-                    result['ui_task'] = {
-                        "date": uis.date if uis.date else date,
-                        "total_num": uis.total_num if uis.total_num else 0,
-                        "success_num": uis.success_num if uis.success_num else 0,
-                        "fail_num": uis.fail_num if uis.fail_num else 0
-                    }
-                    return result
+                result['api_task'] = {
+                    "date": apis.date if apis.date else date,
+                    "total_num": apis.total_num if apis.total_num else 0,
+                    "success_num": apis.success_num if apis.success_num else 0,
+                    "fail_num": apis.fail_num if apis.fail_num else 0
+                }
+                result['ui_task'] = {
+                    "date": uis.date if uis.date else date,
+                    "total_num": uis.total_num if uis.total_num else 0,
+                    "success_num": uis.success_num if uis.success_num else 0,
+                    "fail_num": uis.fail_num if uis.fail_num else 0
+                }
+                log.debug(result)
+                return result
         except Exception as e:
             raise e
 

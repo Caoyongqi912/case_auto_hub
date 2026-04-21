@@ -129,6 +129,7 @@ class InterfaceSchema(BaseModel):
     update_time: Optional[datetime] = Field(None, description="更新时间")
 
     @model_validator(mode="before")
+    @classmethod
     def validate_auth_type_and_auth(cls, values):
         """根据auth_type验证和转换auth字段"""
         auth_type = values.get('interface_auth_type')

@@ -94,23 +94,6 @@ async def validation_exception_handler(
     )
 
 
-async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """通用异常处理器 - 处理未捕获的异常"""
-    LOG.error(
-        f"未处理的异常: {str(exc)}",
-        exc_info=True,
-        extra={"path": request.url.path}
-    )
-    
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=jsonable_encoder({
-            "code": HttpCodeEnum.SERVICE_ERROR,
-            "data": None,
-            "msg": "服务器内部错误",
-        })
-    )
-
 
 def validation_msg(exc: Union[RequestValidationError, ValidationError]) -> str:
     """处理验证错误信息"""

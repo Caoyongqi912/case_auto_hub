@@ -12,12 +12,12 @@
 
 | Priority | Issue ID | Issue Title | Status |
 |----------|----------|-------------|--------|
-| CRITICAL | ISS-001 | `_raw_redis` 连接泄漏 | Pending |
-| CRITICAL | ISS-002 | processing_key 任务无超时机制导致任务永久丢失 | Pending |
-| HIGH | ISS-003 | processing_key 缺少 TTL 导致 Worker 崩溃后任务卡死 | Pending |
-| MEDIUM | ISS-004 | `get_stats` 中冗余的条件判断 | Pending |
-| MEDIUM | ISS-005 | 多进程环境下任务被重复领取的风险 | Pending |
-| LOW | ISS-006 | 代码注释遗留（调试日志） | Pending |
+| CRITICAL | ISS-001 | `_raw_redis` 连接泄漏 | ✅ Fixed |
+| CRITICAL | ISS-002 | processing_key 任务无超时机制导致任务永久丢失 | ✅ Fixed |
+| HIGH | ISS-003 | processing_key 缺少 TTL 导致 Worker 崩溃后任务卡死 | ✅ Fixed |
+| MEDIUM | ISS-004 | `get_stats` 中冗余的条件判断 | ✅ Fixed |
+| MEDIUM | ISS-005 | 多进程环境下任务被重复领取的风险 | Pending (Optional) |
+| LOW | ISS-006 | 代码注释遗留（调试日志） | ✅ Fixed |
 
 ---
 

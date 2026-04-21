@@ -12,7 +12,7 @@ import asyncio
 
 from app.model.base.job import AutoJob
 from app.model.playUI.playTask import PlayTask
-from app.model.interfaceAPIModel.interfaceTaskModel import   InterfaceTask
+from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
 from app.scheduler.aps.trigger import Trigger
 from common import RedisClient
 from config import Config
@@ -27,6 +27,7 @@ TaskType = TypeVar('TaskType', bound=Union[PlayTask, InterfaceTask])
 class JOBTypeEnum(enum.IntEnum):
     Interface = 1
     Play = 2
+
 
 async def run_sync(func: Callable, *args, **kwargs):
     return await asyncio.to_thread(func, *args, **kwargs)
@@ -72,7 +73,7 @@ class HubScheduler:
                                       job_defaults={
                                           'misfire_grace_time': 60,
                                           'coalesce': True,
-                                          'max_instances': 1
+                                          'max_instances': 1,
                                       },
                                       timezone=Config.APS_TZ)
             # 启动调度器
@@ -192,6 +193,7 @@ class HubScheduler:
         )
         await self.switch_job(job.uid, job.job_enabled)
         log.info(f"[Scheduler] : MODIFY JOB {modify_job} SUCCESS")
+        return modify_job
 
     async def _add_interface_job(self, job: AutoJob):
         """

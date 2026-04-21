@@ -132,7 +132,7 @@ class InterfaceTaskResult(BaseModel):
     """任务执行结果"""
     __tablename__ = "interface_task_result"
     status = Column(String(10), default="RUNNING", comment="状态")  # "RUNNING","DONE"
-    result = Column(String(10), nullable=True, comment="运行结果")  # SUCCESS FAIL
+    result = Column(Boolean, nullable=True, comment="运行结果")  # SUCCESS FAIL
 
     total_num = Column(INTEGER, default=0, comment="总运行数量")
     success_num = Column(INTEGER, default=0, comment="成功数量")
