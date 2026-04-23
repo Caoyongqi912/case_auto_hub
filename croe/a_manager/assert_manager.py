@@ -15,7 +15,6 @@ from typing import List, Mapping, Any, Tuple, Dict, Optional
 from json import JSONDecodeError
 from jmespath.exceptions import LexerError
 from app.schema.interface import IAssert
-from croe.interface.types import InterfaceCaseContent
 from pydantic import BaseModel
 from enums.CaseEnum import ExtraEnum, AssertTargetEnum
 from utils import log, JsonExtract

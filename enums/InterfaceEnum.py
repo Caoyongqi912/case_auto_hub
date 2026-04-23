@@ -20,9 +20,12 @@ class InterfaceAPIStatusEnum:
 
 class InterfaceAPIResultEnum:
     """接口结果实例状态"""
+    SUCCESS = True
+    ERROR = False
+
+class InterfaceCaseResultEnum:
     SUCCESS = "SUCCESS"
     ERROR = "ERROR"
-
 
 class InterfaceCaseErrorStep:
     STOP = 1

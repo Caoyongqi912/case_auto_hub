@@ -5,12 +5,14 @@
 # @File : taskClient
 # @Software: PyCharm
 # @Desc:
+import enum
 from typing import TypeVar, Union, Callable, Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
+
 from app.model.base.job import AutoJob
 from app.model.playUI.playTask import PlayTask
-from app.model.interface.interfaceModel import InterfaceTask
+from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
 from app.scheduler.aps.trigger import Trigger
 from common import RedisClient
 from config import Config
@@ -20,6 +22,11 @@ from .jobs import aps_heartbeat, print_jobs, aps_submit_interface_task, aps_subm
 
 log = MyLoguru().get_logger()
 TaskType = TypeVar('TaskType', bound=Union[PlayTask, InterfaceTask])
+
+
+class JOBTypeEnum(enum.IntEnum):
+    Interface = 1
+    Play = 2
 
 
 async def run_sync(func: Callable, *args, **kwargs):
@@ -66,7 +73,7 @@ class HubScheduler:
                                       job_defaults={
                                           'misfire_grace_time': 60,
                                           'coalesce': True,
-                                          'max_instances': 1
+                                          'max_instances': 1,
                                       },
                                       timezone=Config.APS_TZ)
             # 启动调度器
@@ -163,12 +170,11 @@ class HubScheduler:
         添加自动化任务APS
         ：param job
         """
-        if job.job_type == 1:
-            return await self._add_interface_job(job=job)
-        elif job.job_type == 2:
-            return await self._add_play_job(job=job)
-        else:
-            raise ValueError(f"Invalid job type {job.job_type}")
+        match job.job_type:
+            case JOBTypeEnum.Interface:
+                return await self._add_interface_job(job=job)
+            case JOBTypeEnum.Play:
+                return await self._add_play_job(job=job)
 
     async def modify(self, job: AutoJob):
         """修改已有任务配置"""
@@ -187,6 +193,7 @@ class HubScheduler:
         )
         await self.switch_job(job.uid, job.job_enabled)
         log.info(f"[Scheduler] : MODIFY JOB {modify_job} SUCCESS")
+        return modify_job
 
     async def _add_interface_job(self, job: AutoJob):
         """

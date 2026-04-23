@@ -1,0 +1,23 @@
+{
+  "skill_name": "code-reviewer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "请审查 common 目录下的所有代码文件，进行全面的代码质量分析",
+      "expected_output": "生成包含8个维度评估的代码审查报告，包括安全性、功能性、性能等问题",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "审查文件 common/mysqlClient.py 的代码质量",
+      "expected_output": "生成该文件的详细代码审查报告，指出存在的问题并提供改进建议",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "审查以下 Python 代码片段的代码质量：\n\ndef get_user_data(user_id):\n    query = \"SELECT * FROM users WHERE id = \" + user_id\n    result = db.execute(query)\n    return result\n\ndef process_payment(amount, user_id):\n    # 处理支付\n    if amount > 0:\n        balance = get_balance(user_id)\n        new_balance = balance - amount\n        update_balance(user_id, new_balance)\n        log.info(f\"Payment processed: user={user_id}, amount={amount}\")\n        return True\n    return False\n\ndef calculate_discount(price, discount_rate):\n    return price * discount_rate",
+      "expected_output": "识别代码中的安全问题（SQL注入）、功能问题、性能问题等，并提供具体的改进建议",
+      "files": []
+    }
+  ]
+}

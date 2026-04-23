@@ -8,7 +8,7 @@
 import json
 from contextlib import asynccontextmanager
 from math import ceil
-from typing import TypeVar, List, Type, Any, Optional, Generic, Dict, Union, Sequence
+from typing import TypeVar, List, Type, Any, Optional, Generic, Dict, Union, Sequence, AsyncIterator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, text, delete, update
@@ -45,10 +45,31 @@ class Mapper(Generic[M]):
     """通用Mapper基类，提供标准的CRUD操作"""
     __model__: Type[M] | Any
 
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        if not hasattr(cls, '__model__'):
-            raise TypeError(f"{cls.__name__} 必须定义 __model__ 类变量")
+    # def __init_subclass__(cls, **kwargs):
+    #     super().__init_subclass__(**kwargs)
+    #     if not hasattr(cls, '__model__'):
+    #         raise TypeError(f"{cls.__name__} 必须定义 __model__ 类变量")
+
+    @classmethod
+    @asynccontextmanager
+    async def session_scope(cls, session: AsyncSession = None) -> AsyncIterator[AsyncSession]:
+        """
+        Session 上下文管理器
+
+        如果传入 session 则直接使用，否则创建新 session
+
+        Args:
+            session: 可选的数据库会话
+
+        Yields:
+            AsyncSession: 数据库会话
+        """
+        if session:
+            yield session
+        else:
+            async with async_session() as s:
+                yield s
+
 
     @classmethod
     async def _execute_query(cls, stmt, session: Optional[AsyncSession] = None):
@@ -117,7 +138,7 @@ class Mapper(Generic[M]):
             raise
 
     @classmethod
-    async def copy_one(cls, target: Union[int,BaseModel], session: AsyncSession, user: User = None) -> M:
+    async def copy_one(cls, target: Union[int,BaseModel], session: AsyncSession, user: User = None, **kwargs) -> M:
         """复制模型实例"""
         if isinstance(target, BaseModel):
             old_one = target
@@ -127,6 +148,10 @@ class Mapper(Generic[M]):
         if user:
             new_one.creator = user.id
             new_one.creatorName = user.username
+        if kwargs:
+            for k, v in kwargs.items():
+                if hasattr(new_one, k):
+                    setattr(new_one, k, v)
         return await cls.add_flush_expunge(session, new_one)
 
     @classmethod
@@ -140,16 +165,12 @@ class Mapper(Generic[M]):
         """
         model = cls.__model__
         try:
-            if session is None:
-                async with async_session() as session:
-                    instance = await session.get(model, ident)
-            else:
+            async with cls.session_scope(session) as session:
                 instance = await session.get(model, ident)
-
-            if not instance:
-                error_msg = f"数据{desc}不存在或已经删除，id: {ident}" if desc else f"数据不存在，id: {ident}"
-                raise NotFind(error_msg)
-            return instance
+                if not instance:
+                    error_msg = f"数据{desc}不存在或已经删除，id: {ident}" if desc else f"数据不存在，id: {ident}"
+                    raise NotFind(error_msg)
+                return instance
         except NotFind:
             raise
         except Exception as e:
@@ -181,17 +202,16 @@ class Mapper(Generic[M]):
             if ident is None:
                 raise ValueError("id parameter is required")
 
-            kwargs = set_updater(update_user, **kwargs)
+            if update_user:
+                kwargs = set_updater(update_user, **kwargs)
 
             if session is None:
-                async with async_session() as session:
-                    async with session.begin():
-                        target = await cls.get_by_id(ident, session)
-                        return await cls.update_cls(target, session, **kwargs)
+                async with cls.transaction() as session:
+                    target = await cls.get_by_id(ident, session)
+                    return await cls.update_cls(target, session, **kwargs)
             else:
                 target = await cls.get_by_id(ident, session)
                 await cls.update_cls(target, session, **kwargs)
-                await session.commit()
                 return target
         except Exception as e:
             log.exception(e)
@@ -254,17 +274,17 @@ class Mapper(Generic[M]):
             raise
 
     @classmethod
-    async def delete_by(cls, session: AsyncSession, **kwargs):
+    async def delete_by(cls, session: AsyncSession=None, **kwargs):
         """
         通过属性删除
         :param session: 会话对象
         :param kwargs: 查询条件
         """
         try:
-            model = await cls.get_by(session, **kwargs)
-            if model:
-                await session.delete(model)
-                await session.flush()
+            async with cls.session_scope(session) as session:
+                model = cls.__model__
+                log.debug(model)
+                await session.execute(delete(model).filter_by(**kwargs))
                 await session.commit()
         except Exception as e:
             log.error(f"delete_by error: {e}")
@@ -373,7 +393,7 @@ class Mapper(Generic[M]):
         :param model: 模型实例
         :return: 模型实例
         """
-        return await Mapper.flush_expunge(session, model, add=True, refresh=False)
+        return await Mapper.flush_expunge(session, model, add=True, refresh=True)
 
     @classmethod
     async def page_query(cls, current: int, pageSize: int, **kwargs):
@@ -390,7 +410,7 @@ class Mapper(Generic[M]):
                 sort = kwargs.pop("sort", None)
                 conditions = await cls.search_conditions(**kwargs)
                 base_query = select(model).filter(and_(*conditions))
-                base_query = await cls.sorted_search(base_query,sort )
+                base_query = await cls.sorted_search(base_query, sort )
 
                 total_query = select(func.count()).select_from(model).filter(*conditions)
                 total = (await session.execute(total_query)).scalar()
@@ -432,7 +452,8 @@ class Mapper(Generic[M]):
             update_fields = {k: v for k, v in kw.items() if k in valid_columns}
 
             for field, value in update_fields.items():
-                setattr(target, field, value)
+                if hasattr(target, field):
+                    setattr(target, field, value)
 
             await session.flush()
             session.expunge(target)
@@ -672,18 +693,48 @@ class Mapper(Generic[M]):
             return 0
 
         model = cls.__model__
+        log.info(f"bulk_insert items: {items}")
         try:
             if session:
                 session.add_all([model(**item) for item in items])
                 await session.flush()
                 return len(items)
             else:
-                async with async_session() as session:
-                    session.add_all([model(**item) for item in items])
-                    await session.commit()
+                async with cls.transaction() as session:
+                    models =[model(**item) for item in items]
+                    log.info(f"bulk_insert models: {models}")
+                    session.add_all(models)
                     return len(items)
         except Exception as e:
-            log.error(f"bulk_insert error: {e}")
+            log.exception(f"bulk_insert error: {e}")
+            raise
+
+    @classmethod
+    async def bulk_insert_models(cls, models: List[M], session: AsyncSession = None) -> int:
+        """
+        批量插入模型实例
+
+        与 bulk_insert 不同，此方法直接接受模型实例列表，
+        适用于已经创建好模型实例的场景
+
+        :param models: 模型实例列表
+        :param session: 可选的会话对象
+        :return: 插入的记录数
+        """
+        if not models:
+            return 0
+
+        try:
+            if session:
+                session.add_all(models)
+                await session.flush()
+                return len(models)
+            else:
+                async with cls.transaction() as session:
+                    session.add_all(models)
+                    return len(models)
+        except Exception as e:
+            log.exception(f"bulk_insert_models error: {e}")
             raise
 
     @classmethod

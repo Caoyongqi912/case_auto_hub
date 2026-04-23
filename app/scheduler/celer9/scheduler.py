@@ -11,7 +11,7 @@ from datetime import datetime
 
 from app.model.base.job import AutoJob
 from app.model.playUI.playTask import PlayTask
-from app.model.interface.interfaceModel import InterfaceTask
+from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
 from app.scheduler.celer9.trigger import CeleryTrigger, create_trigger
 from app.scheduler.celer9.app import (
     celery_app,

@@ -1,12 +1,14 @@
 import datetime
 
-from app.mapper.interface import InterfaceMapper
+from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
+from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.interface_executor import InterfaceExecutor
-from croe.interface.writer import write_interface_result
 from croe.play.context import StepContentContext
 from croe.play.executor.play_method.result_types import StepExecutionResult
 from croe.play.executor.step_content_strategy._base import StepBaseStrategy
 from utils import log
+from croe.interface.writer import result_writer
+
 
 
 class PlayInterfaceContentStrategy(StepBaseStrategy):
@@ -24,8 +26,9 @@ class PlayInterfaceContentStrategy(StepBaseStrategy):
             interface = await InterfaceMapper.get_by_id(ident=step_context.play_step_content.target_id)
             result, success = await interface_executor.execute(interface=interface)
 
-            interface_result = await write_interface_result(
-                **result,
+            interface_result = await result_writer.write_interface_result(
+                interface_result=InterfaceResult(**result),
+                immediate=True
             )
 
             log.debug(f"interface_result {interface_result}")

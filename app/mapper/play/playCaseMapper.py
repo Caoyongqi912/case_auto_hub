@@ -20,12 +20,13 @@ from enums.CaseEnum import Status, PlayStepContentType
 from utils import log
 from .playConditionMapper import PlayConditionMapper
 from .playStepGroupMapper import PlayStepGroupMapper
-from ..interface import InterfaceResultMapper, InterfaceMapper
-from ..project.dbConfigMapper import CaseContentDBExecuteMapper
-from ...exception import NotFind
 from app.model.playUI.playStepContent import PlayStepContent
 from app.model.playUI.playAssociation import PlayCaseStepContentAssociation
 from app.model.playUI.PlayResult import PlayStepContentResult
+from ..interfaceApi.interfaceMapper import InterfaceMapper
+from ..interfaceApi.interfaceResultMapper import InterfaceResultMapper
+from ..project.dbConfigMapper import DBExecuteMapper
+from ...exception import NotFind
 
 
 class CommonHelper:
@@ -132,8 +133,8 @@ class PlayCaseMapper(Mapper[PlayCase]):
                         session=session,
                         target_id=interface.id,
                         is_common=False,
-                        content_name=interface.name,
-                        content_desc=interface.description,
+                        content_name=interface.interface_name,
+                        content_desc=interface.interface_desc,
                         content_type=PlayStepContentType.STEP_PLAY_API,
                     )
                     last_index = await CommonHelper.get_case_step_last_index(case_id, session)
@@ -586,8 +587,8 @@ class PlayCaseMapper(Mapper[PlayCase]):
                                 content.content_desc = play.description
                             case PlayStepContentType.STEP_PLAY_API:
                                 api = await InterfaceMapper.get_by_id(ident=content.target_id, session=session)
-                                content.content_name = api.name
-                                content.content_desc = api.description
+                                content.content_name = api.interface_name
+                                content.content_desc = api.interface_desc
                             case PlayStepContentType.STEP_PLAY_GROUP:
                                 group = await PlayStepGroupMapper.get_by_id(ident=content.target_id, session=session)
                                 content.content_name = group.name
@@ -975,7 +976,7 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
                         content.content_name = "脚本"
 
                     case PlayStepContentType.STEP_PLAY_DB:
-                        _db = await CaseContentDBExecuteMapper.init_empty(creator_user=user,
+                        _db = await DBExecuteMapper.init_empty(creator_user=user,
                                                                           session=session)
                         content.content_name = "DB操作"
                         content.target_id = _db.id

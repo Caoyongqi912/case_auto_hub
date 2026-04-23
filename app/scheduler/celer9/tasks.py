@@ -43,7 +43,7 @@ def celery_submit_interface_task(self: Task, job_data: Dict[str, Any]) -> Dict[s
         Dict[str, Any]: 执行结果
     """
     async def _execute():
-        from common.redis_worker_pool import r_pool, register_interface_task_RoBot
+        from common.worker_pool import r_pool, register_interface_task_RoBot
         
         if not r_pool.is_running:
             raise RuntimeError("任务池未启动")
@@ -114,7 +114,7 @@ def celery_submit_play_task(self: Task, job_data: Dict[str, Any]) -> Dict[str, A
         Dict[str, Any]: 执行结果
     """
     async def _execute():
-        from common.redis_worker_pool import r_pool, register_play_task_robot
+        from common.worker_pool import r_pool, register_play_task_robot
         
         if not r_pool.is_running:
             raise RuntimeError("任务池未启动")

@@ -9,7 +9,8 @@
 from app.model.base.job import AutoJob
 from utils import log
 import time
-from common.redis_worker_pool import r_pool, register_interface_task_RoBot, register_play_task_robot
+from common.worker_pool import r_pool, register_interface_task_RoBot, register_play_task_robot
+from common import rc
 
 
 async def aps_submit_interface_task(job: AutoJob):
@@ -21,6 +22,7 @@ async def aps_submit_interface_task(job: AutoJob):
         raise RuntimeError("任务池未启动")
     ## 添加到多个任务
     ##
+    log.debug(f"aps_submit_interface_task {job}")
     for task_id in job.job_task_id_list:
         await r_pool.submit_to_redis(
             func=register_interface_task_RoBot,
@@ -79,7 +81,24 @@ async def print_jobs():
     """
     打印JOB
     """
-    from .scheduler import hubScheduler
-    jobs = await hubScheduler.get_jobs()
-    for job in jobs:
-        log.info(f"[Scheduler]: JOB {job.id} {job} ")
+    import pickle
+    from config import Config
+
+    try:
+        jobs_key = Config.APSJobStores['default'].jobs_key
+        await rc.init_pool()
+
+        job_ids = await rc.r.hkeys(jobs_key)
+        for job_id in job_ids:
+            job_id_str = job_id.decode() if isinstance(job_id, bytes) else job_id
+            job_data = await rc.r.hget(jobs_key, job_id_str)
+            if job_data:
+                try:
+                    job_info = pickle.loads(job_data)
+                    log.info(f"[Scheduler]: JOB {job_id_str} -> next run: {job_info.get('next_run_time', 'N/A')}")
+                except Exception:
+                    log.info(f"[Scheduler]: JOB {job_id_str}")
+
+        log.info(f"[Scheduler]: 共有 {len(job_ids)} 个调度任务")
+    except Exception as e:
+        log.error(f"[Scheduler]: 打印任务失败: {e}")

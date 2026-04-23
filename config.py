@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 class BaseConfig:
     ROOT = os.path.dirname(os.path.abspath(__file__))
     SECRET_KEY = "HARD TO GUESS"
-    MYSQL_DATABASE = 'autoHub'
+    MYSQL_DATABASE = 'caseHub'
     MYSQL_PORT: int = 3306
     REDIS_PORT = 6379
     # sqlalchemy
@@ -54,7 +54,7 @@ class LocalConfig(BaseConfig):
     MYSQL_SERVER = "127.0.0.1"
     MYSQL_PASSWORD = "sdkjfhsdkjhfsdkhfksd"
     # MYSQL_PASSWORD = "qq23qq"
-    MYSQL_DATABASE = 'autoHub'
+    MYSQL_DATABASE = 'caseHub'
     MYSQL_PORT: int = 3306
 
     SQLALCHEMY_DATABASE_URI = 'mysql+mysqlconnector://{}:{}@{}/{}'.format(

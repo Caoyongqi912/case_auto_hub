@@ -12,6 +12,7 @@ class SocketSender:
     userId: int = None
     _ns: str = None
     _perf_ns = "/api_perf_ns"
+    startBy:int
 
     def __init__(self, ns: str, event: str, user: Union[User, StarterEnum]):
         self.user = user

@@ -1,1 +1,82 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2026/1/21# @Author : cyq# @File : api# @Software: PyCharm# @Desc:from app.mapper.interface import InterfaceMapper, InterfaceContentStepResultMapperfrom app.model.interface.interfaceResultModel import InterfaceCaseStepContentResultfrom croe.interface.types import *from croe.interface.executor.context import CaseStepContextfrom croe.interface.executor.step_content.base import StepBaseStrategyfrom croe.interface.writer import write_interface_resultfrom enums import InterfaceAPIResultEnumclass APIStepContentStrategy(StepBaseStrategy):    """    API步骤执行策略    """    async def execute(self, step_context: CaseStepContext) -> bool:        """执行API步骤"""        interface = await InterfaceMapper.get_by_id(ident=step_context.content.target_id)        step_result, success = await self.interface_executor.execute(            interface=interface,            env=step_context.execution_context.env,            case_result=step_context.execution_context.case_result,            task_result=step_context.execution_context.task_result,        )        interface_result = await write_interface_result(            **step_result,        )        await write_case_step_content_api_result(            step_index=step_context.index,            interface_case_result_id=step_context.execution_context.case_result.id,            step_content=step_context.content,            interface_result=interface_result,            success=success,        )        case_result = step_context.execution_context.case_result        if case_result:            case_result.success_num += 1        else:            case_result.fail_num += 1            case_result.result = InterfaceAPIResultEnum.ERROR        return successasync def write_case_step_content_api_result(        step_index: int,        interface_case_result_id: int,        step_content: "InterfaceCaseContent",        interface_result: "InterfaceTaskResult",        success: bool,        interface_task_result_id: int = None,):    """    步骤结果写入    :param step_index: 步骤索引    :param interface_case_result_id: 用例结果ID    :param step_content: 步骤内容    :param interface_result: 接口结果    :param success: 是否成功    :param interface_task_result_id: 任务结果ID    """    result = InterfaceCaseStepContentResult(        content_id=step_content.id,        content_type=step_content.content_type,        content_name=step_content.content_name,        content_desc=step_content.content_desc,        content_target_result_id=interface_result.id,        content_step=step_index,        content_result=success,        starter_id=interface_result.starterId,        starter_name=interface_result.starterName,        start_time=interface_result.start_time,        use_time=interface_result.totalUseTime,        interface_case_result_id=interface_case_result_id,        interface_task_result_id=interface_task_result_id,    )    await InterfaceContentStepResultMapper.insert(result)
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2026/1/21
+# @Author : cyq
+# @File : api
+# @Software: PyCharm
+# @Desc: API步骤执行策略
+
+
+from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
+from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
+from croe.interface.executor.context import CaseStepContext
+from croe.interface.executor.step_content.base import StepBaseStrategy
+from croe.interface.writer import result_writer
+from enums import InterfaceAPIResultEnum
+from enums.CaseEnum import CaseStepContentType
+from utils import log
+
+
+
+class APIStepContentStrategy(StepBaseStrategy):
+    """API步骤执行策略"""
+
+    async def execute(self, step_context: CaseStepContext) -> bool:
+        """
+        执行API步骤
+
+        Args:
+            step_context: 步骤执行上下文
+
+        Returns:
+            是否执行成功
+        """
+        interface = await InterfaceMapper.get_by_id(
+            ident=step_context.content.target_id
+        )
+
+        if not interface:
+            await step_context.starter.send(
+                f"未找到接口: id={step_context.content.target_id}"
+            )
+            return False
+
+        step_result, success = await self.interface_executor.execute(
+            interface=interface,
+            env=step_context.execution_context.env
+        )
+
+        log.info(f"api step step_result {step_result}")
+        interface_result = await result_writer.write_interface_result(
+            interface_result=InterfaceResult(**step_result),
+            immediate=True
+        )
+        log.info(f"api step interface_result {interface_result}")
+        task_result_id = None
+        if step_context.execution_context.task_result:
+            task_result_id = step_context.execution_context.task_result.id
+
+        await result_writer.write_step_result(
+            content_type=CaseStepContentType.STEP_API,
+            case_result_id=step_context.execution_context.case_result.id,
+            task_result_id=task_result_id,
+            content_id=step_context.content.id,
+            content_name=step_context.content.resolved_content_name,
+            content_desc=step_context.content.content_desc,
+            content_step=step_context.index,
+            success=success,
+            start_time=interface_result.start_time,
+            use_time=interface_result.use_time,
+            interface_result_id=interface_result.id,
+        )
+
+        case_result = step_context.execution_context.case_result
+        if success:
+            case_result.success_num += 1
+        else:
+            case_result.fail_num += 1
+            case_result.result = InterfaceAPIResultEnum.ERROR
+
+        await result_writer.update_case_progress(case_result)
+
+        return success

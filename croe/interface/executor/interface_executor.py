@@ -1,1 +1,499 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2026/1/21# @Author : cyq# @File : interface_executor# @Software: PyCharm# @Desc:import copyimport jsonfrom typing import Union, Tuple, Any, Dict, List, TypeVar, Mapping, Optionalimport httpxfrom app.mapper.interface import InterfaceMapperfrom app.mapper.project.dbConfigMapper import DbConfigMapperfrom app.mapper.project.env import EnvMapperfrom common.httpxClient import HttpxClientfrom croe.interface.builder.request_builder import RequestBuilderfrom croe.interface.builder.url_builder import UrlBuilderfrom croe.a_manager.assert_manager import AssertManagerfrom croe.interface.manager.extract_manager import ExtractManagerfrom croe.a_manager import VariableManager,ScriptManagerfrom croe.interface.types import *from enums import ExtractTargetVariablesEnum, InterfaceResponseStatusCodeEnum, InterfaceAPIResultEnumfrom croe.interface.starter import APIStarterfrom croe.play.starter import UIStarterfrom utils import log, GenerateToolsfrom utils.execDBScript import ExecDBScriptBeforeParams = TypeVar("BeforeParams", bound=Union[List[Dict[str, Any]]])class InterfaceExecutor:    """接口执行器"""    def __init__(self, starter: Union[UIStarter, APIStarter], variable_manager: VariableManager):        self.variable_manager = variable_manager        self.starter = starter        self.http = HttpxClient(logger=self.starter.send)    async def request_info(self,request_id:int,use_var:bool=False):        """        获取请求信息        :param request_id: 请求id        :param use_var: 是否使用变量        :return: 请求信息        """        interface = await InterfaceMapper.get_by_id(ident=request_id)        if interface.env_id == UrlBuilder.CUSTOM_ENV_ID:            from utils import Tools            parse = Tools.parse_url(interface.url)            url = parse.path            host = f"{parse.scheme}://{parse.netloc}"        else:            env = await EnvMapper.get_by_id(ident=interface.env_id)            host = env.host            url = interface.url            if env.port:                host += f":{env.port}"        if use_var:            # 1、前置变量参数            await self.__execute_before_params(interface.before_params)            # 2、执行前置函数            await self.__execute_before_script(interface.before_script)            # 3.前置sql            await self.__execute_before_sql(interface)            url = await self.variable_manager.trans(target=url)        builder = RequestBuilder(self.variable_manager)        request_info = await builder.set_req_info(interface)        request_info.pop("follow_redirects")        request_info.pop("read")        request_info.pop("connect")        return {            "name": interface.name,            "method": interface.method.lower(),            "url": url,            "host": host,            "asserts": interface.asserts,            **request_info        }    async def execute(self,                      interface: "InterfaceAPI",                      env: "Env" = None,                      case_result: Optional["InterfaceCaseResult"] = None,                      task_result: Optional["InterfaceTaskResult"] = None,                      temp_var: "VARS" = None) -> Tuple['InterfaceResultInfo', bool]:        """        执行接口用例        :param interface: 接口用例        :param env: 环境变量        :param case_result: 用例结果        :param task_result: 任务结果        :param temp_var: 临时变量        :return: 接口结果信息, 是否执行成功        """        temp_variables = await get_temp_variables(temp_var)        start_time = GenerateTools.getTime(1)        await self.starter.send(f"✍️✍️  EXECUTE API : {interface} ")        resolved_url = ""        asserts_info = None        request_info = None        response = None        try:            # 构建url            origin_url = await UrlBuilder.build(interface=interface, env=env)            # 执行前处理            temp_variables.extend(await self._before_execute(interface))            # 构建请求信息            builder = RequestBuilder(self.variable_manager)            request_info = await builder.set_req_info(interface)            # 替换变量到url            resolved_url = await self.variable_manager.trans(origin_url)            # 执行请求            response = await self.http(url=resolved_url, method=interface.method, **request_info)            # 提取变量            temp_variables.extend(await self.__execute_extract(response=response, interface=interface))            # 执行断言            asserts_info = await self.__execute_assert(response=response, interface=interface)        except Exception as e:            log.exception(e)            await self.starter.send(f"Error occurred: \"{str(e)}\"")            response = f"{str(e)} to {resolved_url}"        finally:            request_info['url'] = resolved_url            return await set_interface_result_info(                startTime=start_time,                starter=self.starter,                request_info=request_info,                interface=interface,                response=response,                asserts=asserts_info,                case_result=case_result,                task_result=task_result,                variables=temp_variables            )    async def _before_execute(self, interface: "InterfaceAPI") -> List:        """        执行前处理        :param interface: 接口用例        :return: 临时变量        """        temp_variables = []        temp_variables.extend(await self.__execute_before_params(interface.before_params))        temp_variables.extend(await self.__execute_before_script(interface.before_script))        temp_variables.extend(await self.__execute_before_sql(interface))        return temp_variables    async def __execute_before_params(self, before_params: "BeforeParams" = None) -> List:        """        执行前参数处理        :param before_params: 执行前参数        :return: None        """        if not before_params:            return []        values = await self.variable_manager.trans(before_params)        log.info(f"执行前参数处理: {values}")        if values:            await self.variable_manager.add_vars(values)            return [                {                    **item,                    ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.BeforeParams                }                for item in values            ]    async def __execute_before_sql(self, interface: "InterfaceAPI") -> List:        """        执行前sql处理        :param interface: 接口用例        :return: None        """        if not interface.before_sql or not interface.before_db_id:            return []        _db = await DbConfigMapper.get_by_id(interface.before_db_id)        if not _db:            await self.starter.send(f"数据库配置不存在，db_id = {interface.before_db_id}")            return []        _db_script = await self.variable_manager.trans(interface.before_sql.strip())        log.info(f"执行前sql处理: {_db_script}")        db_script = ExecDBScript(self.starter, _db_script, interface.before_sql_extracts)        result = await db_script.invoke(_db.db_type, **_db.config)        await self.variable_manager.add_vars(result)        await self.starter.send(f"🫳🫳    数据库读取 = {result}")        if result:            return [                {                    ExtractTargetVariablesEnum.KEY: k,                    ExtractTargetVariablesEnum.VALUE: v,                    ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.BeforeSQL                }                for k, v in result.items()            ]        return []    async def __execute_before_script(self, script: str):        """        执行前脚本处理        :param script: 执行前脚本        :return: None        """        if script:            script_manger = ScriptManager()            _extracted_vars = script_manger.execute(script)            await self.variable_manager.add_vars(_extracted_vars)            await self.starter.send(f"🫳🫳  脚本 = {json.dumps(_extracted_vars, ensure_ascii=False)}")            return [{                ExtractTargetVariablesEnum.KEY: k,                ExtractTargetVariablesEnum.VALUE: v,                ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.BeforeScript            } for k, v in _extracted_vars.items()]        return []    async def __execute_assert(self, response: "httpx.Response", interface: "InterfaceAPI"):        """        响应断言        前提：        1、有断言        2、有响应        """        _assert = AssertManager(response, self.variable_manager.variables)        asserts_info = await _assert(interface.asserts)        if asserts_info:            await self.starter.send(f"🫳🫳  响应断言 = {json.dumps(asserts_info, ensure_ascii=False)}")        else:            await self.starter.send(f"🫳🫳  未配置 响应断言 ⚠️⚠️")        return asserts_info    async def __execute_extract(self, response: "httpx.Response", interface: "InterfaceAPI"):        """        变量提取        前提：        1、有断言        2、有响应        3、响应200        """        if interface.extracts and response.status_code == InterfaceResponseStatusCodeEnum.SUCCESS:            _extract = ExtractManager(response=response)            _interface_extract = copy.deepcopy(interface.extracts)  #            _vars = await _extract(_interface_extract)            await self.starter.send(f"🫳🫳  响应参数提取 = {[{v.get('key'): v.get('value')} for v in _vars]}")            await self.variable_manager.add_vars(_vars)            return _vars        return []async def get_temp_variables(temp_vars: VARS) -> List:    """    处理临时变量    :param temp_vars: 临时变量    :return: 临时变量列表    """    _temp_variables = []    if temp_vars:        if isinstance(temp_vars, list):            _temp_variables.extend(temp_vars)        else:            _temp_variables.append(temp_vars)    return _temp_variablesasync def set_interface_result_info(        startTime: str,        starter: "APIStarter",        interface: "InterfaceAPI",        request_info: Optional[Dict[str, Any]] = None,        response: Union["httpx.Response" ,str] = None,        asserts: List[Mapping[str, Any]] = None,        case_result: Optional["InterfaceCaseResult"] = None,        variables: List[Mapping[str, Any]] = None,        task_result: Optional["InterfaceTaskResult"] = None) -> Tuple[InterfaceResultInfo, bool]:    """    设置接口结果信息    :param startTime: 请求时间记录    :param starter: 执行人    :param interface: 接口实体    :param request_info: 接口请求体    :param response: 响应结果对象    :param asserts: 断言信息    :param case_result: 用例结果实例    :param variables: 变量    :param task_result: 任务结果实例    :return: 结果信息和执行状态    """    # 构建基础信息    _interfaceBaseInfo = {        'startTime': startTime,        'interfaceID': interface.id,        'interfaceName': interface.name,        'interfaceUid': interface.uid,        'interfaceDesc': interface.desc,        'starterId': starter.userId,        'starterName': starter.username,        'interfaceProjectId': interface.project_id,        'interfaceModuleId': interface.module_id,        'interfaceEnvId': interface.env_id,        'request_info': request_info    }    # 添加关联ID    if task_result:        _interfaceBaseInfo['interface_task_result_Id'] = task_result.id    if case_result:        _interfaceBaseInfo['interface_case_result_Id'] = case_result.id    # 初始化响应信息    _response = {        'extracts': variables or [],        'asserts': asserts or [],        'result': InterfaceAPIResultEnum.SUCCESS,        'request_method': interface.method.upper()    }    # 处理响应结果    flag = True    if isinstance(response, str):        # 字符串响应表示错误        _response.update({            'response_status': 500,            'response_txt': response,            'result': InterfaceAPIResultEnum.ERROR        })        flag = False    elif isinstance(response, httpx.Response):        # Response对象处理        is_success = response.status_code == 200        _response.update({            'result': InterfaceAPIResultEnum.SUCCESS if is_success else InterfaceAPIResultEnum.ERROR,            'response_status': response.status_code,            'response_txt': response.text,            'response_head': dict(response.headers),            'request_head': dict(response.request.headers),            'useTime': round(response.elapsed.total_seconds() * 1000, 2)  # 转成ms        })        flag = is_success    # 处理断言结果    if asserts:        has_failed_assert = any(assert_item.get('result') is False for assert_item in asserts)        if has_failed_assert:            flag = False            _response['result'] = InterfaceAPIResultEnum.ERROR    return {**_interfaceBaseInfo, **_response}, flag
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+"""
+Interface Executor
+
+接口执行器
+负责执行接口请求、处理前置/后置逻辑、断言验证和变量提取
+"""
+import copy
+import json
+from dataclasses import dataclass, field
+from typing import Union, Tuple, Any, Dict, List, Optional
+
+import httpx
+
+from app.mapper.project.dbConfigMapper import DbConfigMapper
+from app.mapper.project.env import EnvMapper
+from app.model.base import EnvModel
+from app.model.interfaceAPIModel.interfaceGlobalModel import InterfaceGlobalHeader
+from app.model.interfaceAPIModel.interfaceModel import Interface
+from common.httpxClient import HttpxClient
+from croe.a_manager import ScriptManager, VariableManager
+from croe.a_manager.assert_manager import AssertManager
+from croe.interface.builder.request_builder import RequestBuilder
+from croe.interface.builder.url_builder import UrlBuilder
+from croe.interface.manager.extract_manager import ExtractManager
+from croe.interface.starter import APIStarter
+from croe.play.starter import UIStarter
+from enums import ExtractTargetVariablesEnum, InterfaceResponseStatusCodeEnum
+from utils import GenerateTools, log
+from utils.execDBScript import ExecDBScript
+
+
+@dataclass
+class ExecutionContext:
+    """
+    执行上下文数据类
+
+    封装接口执行过程中的所有状态信息，避免方法参数过多和隐式状态共享
+    """
+    interface: Interface
+    env: Optional[EnvModel] = None
+    start_time: str = ""
+    resolved_url: str = ""
+    response: Optional[httpx.Response] = None
+    error: Optional[str] = None
+    request_info: Dict[str, Any] = field(default_factory=dict)
+    variables: List = field(default_factory=list)
+    extracted_vars: List = field(default_factory=list)
+    asserts: Optional[List] = None
+    success: bool = True
+
+
+class InterfaceExecutor:
+    """
+    接口执行器
+
+    负责执行单个接口请求，包括：
+    - 构建和执行 HTTP 请求
+    - 处理前置参数、脚本和 SQL
+    - 执行响应断言
+    - 提取变量
+    """
+
+    def __init__(self, starter: Union[UIStarter, APIStarter],
+                 variable_manager: VariableManager,
+                 global_headers:List[InterfaceGlobalHeader]=None,
+                 ):
+        """
+        初始化接口执行器
+
+        Args:
+            starter: 启动器（UI 或 API），用于日志输出
+            variable_manager: 变量管理器，用于变量替换和存储
+        """
+        self.variable_manager: VariableManager = variable_manager
+        self.starter: Union[UIStarter, APIStarter] = starter
+        self.http: HttpxClient = HttpxClient(logger=self.starter.send)
+        self.g_headers: List[InterfaceGlobalHeader] = global_headers or []
+
+    async def execute(
+        self,
+        interface: Interface,
+        env: Optional[EnvModel] = None,
+        temp_var: Optional[Dict] = None
+    ) -> Tuple[Dict[str, Any], bool]:
+        """
+        执行接口请求（主入口）
+
+        执行流程：
+        1. 初始化执行上下文
+        2. 构建并发送 HTTP 请求
+        3. 执行后置处理（变量提取 + 断言）
+        4. 构建并返回结果
+
+        Args:
+            interface: 接口对象
+            env: 环境配置
+            temp_var: 临时变量（单个 dict 或 list）
+
+        Returns:
+            Tuple[结果字典, 是否成功]
+            结果字典字段与 InterfaceResult 模型对齐
+        """
+        # 创建执行上下文
+        ctx: ExecutionContext = ExecutionContext(
+            interface=interface,
+            env=env,
+            start_time=GenerateTools.getTime(1),
+        )
+        # 标准化临时变量
+        ctx.variables = self._normalize_temp_variables(temp_var)
+
+        # 输出执行日志
+        await self.starter.send(f"✍️✍️  EXECUTE API : {interface}")
+
+        try:
+            # 构建并发送请求
+            await self._build_and_send_request(ctx)
+            # 执行后置处理
+            await self._execute_post_handlers(ctx)
+        except Exception as e:
+            # 捕获所有异常并记录
+            log.exception(e)
+            ctx.error = str(e)
+            await self.starter.send(f"Error occurred: \"{str(e)}\"")
+
+        # 构建并返回结果
+        return self._build_result(ctx)
+
+    @staticmethod
+    async def _parse_url(interface: Interface) -> Tuple[str, str]:
+        """
+        解析 URL，返回 host 和 path
+
+        Args:
+            interface: 接口对象
+
+        Returns:
+            Tuple[host, url_path]
+        """
+        # 判断是否使用自定义环境
+        if interface.env_id == UrlBuilder.CUSTOM_ENV_ID:
+            # 自定义环境：从接口 URL 中解析 host 和 path
+            from utils import Tools
+            parse = Tools.parse_url(interface.interface_url)
+            url = parse.path
+            host = f"{parse.scheme}://{parse.netloc}"
+        else:
+            # 使用预配置环境
+            env = await EnvMapper.get_by_id(ident=interface.env_id)
+            host = env.host
+            url = interface.interface_url
+            if env.port:
+                host += f":{env.port}"
+
+        return host, url
+
+    async def _build_and_send_request(self, ctx: ExecutionContext) -> None:
+        """
+        构建并发送 HTTP 请求
+
+        Args:
+            ctx: 执行上下文
+        """
+        # 构建原始 URL
+        origin_url = await UrlBuilder.build(interface=ctx.interface, env=ctx.env)
+        log.info(f"origin_url = {origin_url}")
+        # 执行前置处理器，扩展变量列表
+        ctx.variables.extend(await self._execute_before_handlers(ctx.interface))
+
+        # 构建请求信息（headers, body, params 等）
+        builder = RequestBuilder(self.variable_manager, self.g_headers)
+        ctx.request_info = await builder.set_req_info(ctx.interface)
+
+        # 变量替换
+        ctx.resolved_url = await self.variable_manager.trans(origin_url)
+        log.info(f"resolved_url = {ctx.resolved_url}")
+        ctx.request_info['url'] = ctx.resolved_url
+        log.debug(ctx.request_info)
+
+        # 发送 HTTP 请求
+        ctx.response = await self.http(
+            method=ctx.interface.interface_method,
+            **ctx.request_info
+        )
+
+    async def _execute_before_handlers(self, interface: Interface) -> List[Dict]:
+        """
+        执行所有前置处理器
+
+        按顺序执行：
+        1. 前置参数处理
+        2. 前置脚本处理
+        3. 前置 SQL 处理
+
+        Args:
+            interface: 接口对象
+
+        Returns:
+            提取的变量列表
+        """
+        variables: List = []
+        # 执行前置参数
+        variables.extend(await self._execute_before_params(interface.interface_before_params))
+        # 执行前置脚本
+        variables.extend(await self._execute_before_script(interface.interface_before_script))
+        # 执行前置 SQL
+        variables.extend(await self._execute_before_sql(interface))
+        return variables
+
+    async def _execute_before_params(self, before_params: Optional[List[Dict]] = None) -> List[Dict]:
+        """
+        执行前置参数处理
+
+        对配置的参数进行变量替换后存入变量管理器
+
+        Args:
+            before_params: 前置参数列表
+
+        Returns:
+            处理后的变量列表（标记来源为 BeforeParams）
+        """
+        if not before_params:
+            return []
+
+        # 变量替换
+        values = await self.variable_manager.trans(before_params)
+        log.info(f"执行前参数处理: {values}")
+
+        if not values:
+            return []
+
+        # 添加到变量管理器
+        await self.variable_manager.add_vars(values)
+
+        # 标记变量来源
+        return [
+            {**item, ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.BeforeParams}
+            for item in values
+        ]
+
+    async def _execute_before_script(self, script: Optional[str]) -> List[Dict]:
+        """
+        执行前置脚本处理
+
+        执行用户自定义脚本，从输出中提取变量
+
+        Args:
+            script: 脚本内容
+
+        Returns:
+            提取的变量列表（标记来源为 BeforeScript）
+        """
+        if not script:
+            return []
+
+        # 执行脚本
+        script_manager = ScriptManager()
+        extracted_vars = script_manager.execute(script)
+
+        # 添加到变量管理器
+        await self.variable_manager.add_vars(extracted_vars)
+        await self.starter.send(f"🫳🫳  脚本 = {json.dumps(extracted_vars, ensure_ascii=False)}")
+
+        # 标记变量来源
+        return [
+            {
+                ExtractTargetVariablesEnum.KEY: k,
+                ExtractTargetVariablesEnum.VALUE: v,
+                ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.BeforeScript
+            }
+            for k, v in extracted_vars.items()
+        ]
+
+    async def _execute_before_sql(self, interface: Interface) -> List[Dict]:
+        """
+        执行前置 SQL 处理
+
+        执行预置 SQL 查询，从结果中提取变量
+
+        Args:
+            interface: 接口对象
+
+        Returns:
+            提取的变量列表（标记来源为 BeforeSQL）
+        """
+        # 检查是否配置了前置 SQL
+        if not interface.interface_before_sql or not interface.interface_before_db_id:
+            return []
+
+        # 获取数据库配置
+        db_config = await DbConfigMapper.get_by_id(interface.interface_before_db_id)
+        if not db_config:
+            await self.starter.send(f"数据库配置不存在，db_id = {interface.interface_before_db_id}")
+            return []
+
+        # 变量替换 SQL 语句
+        db_script = await self.variable_manager.trans(interface.interface_before_sql.strip())
+        log.info(f"执行前sql处理: {db_script}")
+
+        # 执行 SQL
+        db_executor = ExecDBScript(
+            self.starter,
+            db_script,
+            interface.interface_before_sql_extracts
+        )
+        result = await db_executor.invoke(db_config.db_type, **db_config.config)
+
+        # 添加到变量管理器
+        await self.variable_manager.add_vars(result)
+        await self.starter.send(f"🫳🫳    数据库读取 = {result}")
+
+        if not result:
+            return []
+
+        # 标记变量来源
+        return [
+            {
+                ExtractTargetVariablesEnum.KEY: k,
+                ExtractTargetVariablesEnum.VALUE: v,
+                ExtractTargetVariablesEnum.Target: ExtractTargetVariablesEnum.BeforeSQL
+            }
+            for k, v in result.items()
+        ]
+
+    async def _execute_post_handlers(self, ctx: ExecutionContext) -> None:
+        """
+        执行所有后置处理器
+
+        包括：
+        1. 变量提取
+        2. 响应断言
+
+        Args:
+            ctx: 执行上下文
+        """
+        if not ctx.response:
+            return
+
+        # 执行变量提取
+        ctx.extracted_vars = await self._execute_extract(ctx.response, ctx.interface)
+        # 执行响应断言
+        ctx.asserts = await self._execute_assert(ctx.response, ctx.interface)
+
+    async def _execute_assert(
+        self,
+        response: httpx.Response,
+        interface: Interface
+    ) -> Optional[List[Dict]]:
+        """
+        执行响应断言
+
+        Args:
+            response: HTTP 响应对象
+            interface: 接口对象
+
+        Returns:
+            断言结果列表
+        """
+        # 创建断言管理器
+        assert_manager = AssertManager(response, self.variable_manager.variables)
+        asserts_info = await assert_manager(interface.interface_asserts)
+
+        if asserts_info:
+            await self.starter.send(f"🫳🫳  响应断言 = {json.dumps(asserts_info, ensure_ascii=False)}")
+        else:
+            await self.starter.send(f"🫳🫳  未配置 响应断言 ⚠️⚠️")
+
+        return asserts_info
+
+    async def _execute_extract(
+        self,
+        response: httpx.Response,
+        interface: Interface
+    ) -> List[Dict]:
+        """
+        执行变量提取
+
+        从 HTTP 响应中根据配置提取变量
+
+        Args:
+            response: HTTP 响应对象
+            interface: 接口对象
+
+        Returns:
+            提取的变量列表
+        """
+        # 检查是否配置了提取规则
+        if not interface.interface_extracts:
+            return []
+
+        # 非 200 状态码不进行提取
+        if response.status_code != InterfaceResponseStatusCodeEnum.SUCCESS:
+            return []
+
+        # 执行提取
+        extract_manager = ExtractManager(response=response)
+        interface_extracts = copy.deepcopy(interface.interface_extracts)
+        vars_list = await extract_manager(interface_extracts)
+
+        # 输出日志
+        await self.starter.send(
+            f"🫳🫳  响应参数提取 = {[{v.get('key'): v.get('value')} for v in vars_list]}"
+        )
+
+        # 添加到变量管理器
+        await self.variable_manager.add_vars(vars_list)
+
+        return vars_list
+
+    def _build_result(self, ctx: ExecutionContext) -> Tuple[Dict[str, Any], bool]:
+        """
+        构建接口执行结果
+
+        构建结果与 InterfaceResult 模型字段对齐
+
+        Args:
+            ctx: 执行上下文
+
+        Returns:
+            Tuple[结果字典, 是否成功]
+        """
+        # 基础信息
+        result: Dict[str, Any] = {
+            'interface_id': ctx.interface.id,
+            'interface_name': ctx.interface.interface_name,
+            'interface_uid': ctx.interface.uid,
+            'interface_desc': ctx.interface.interface_desc,
+            'starter_id': self.starter.userId,
+            'starter_name': self.starter.username,
+            'request_url': ctx.resolved_url,
+            'request_method': ctx.interface.interface_method,
+            'request_params': ctx.request_info.get('params') or None,
+            "request_body_type": ctx.interface.interface_body_type,
+            'request_json': json.dumps(ctx.request_info.get('json')) if ctx.request_info.get('json') else None,
+            'request_data': json.dumps(ctx.request_info.get('data')) if ctx.request_info.get('data') else None,
+            'request_headers': ctx.request_info.get('headers') or None,
+            'extracts': ctx.extracted_vars or [],
+            'asserts': ctx.asserts or [],
+        }
+
+        # 环境信息
+        if ctx.env:
+            result['running_env_id'] = ctx.env.id
+            result['running_env_name'] = ctx.env.name
+        else:
+            result['running_env_id'] = ctx.interface.env_id
+
+        # 错误处理
+        if ctx.error:
+            result.update({
+                'response_status': 500,
+                'response_text': ctx.error,
+                'result': False,
+                'use_time': '0'
+            })
+            ctx.success = False
+        # 正常响应处理
+        elif isinstance(ctx.response, httpx.Response):
+            is_success = ctx.response.status_code == 200
+            result.update({
+                'response_status': ctx.response.status_code,
+                'response_text': ctx.response.text,
+                'response_headers': {k: v for k, v in ctx.response.headers.items()},
+                'use_time': str(round(ctx.response.elapsed.total_seconds() * 1000, 2))
+            })
+            if not is_success:
+                ctx.success = False
+
+        # 检查断言结果
+        if ctx.asserts:
+            has_failed = any(a.get('result') is False for a in ctx.asserts)
+            if has_failed:
+                ctx.success = False
+
+        result['result'] = ctx.success
+        result['start_time'] = ctx.start_time
+
+        return result, ctx.success
+
+    @staticmethod
+    def _normalize_temp_variables(temp_var: Optional[Union[Dict, List]]) -> List:
+        """
+        标准化临时变量
+
+        将单个变量 dict 或变量列表统一转换为 list 格式
+
+        Args:
+            temp_var: 临时变量（单个 dict 或 list）
+
+        Returns:
+            变量列表
+        """
+        if not temp_var:
+            return []
+        if isinstance(temp_var, list):
+            return temp_var
+        return [temp_var]

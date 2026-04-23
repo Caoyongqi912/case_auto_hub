@@ -5,7 +5,7 @@
 # @File : init_method
 # @Software: PyCharm
 # @Desc:
-
+from utils import log
 
 locator_list = [
     {
@@ -346,12 +346,42 @@ methods_list = [  # ========== 页面操作方法 ==========
 ]
 
 
+
+interface_g_func = [
+    {'label': '$f_name', 'value': '{{$f_name}}', 'description': '随机生成姓名', 'demo': '大娃'},
+    {'label': '$f_address', 'value': '{{$f_address}}', 'description': '随机生成地址', 'demo': '北京市朝阳区建国路12号'},
+    {'label': '$f_phone_number', 'value': '{{$f_phone_number}}', 'description': '随机生成电话号码', 'demo': '13812345678'},
+    {'label': '$f_email', 'value': '{{$f_email}}', 'description': '随机生成电子邮件地址', 'demo': 'example@example.com'},
+    {'label': '$f_text', 'value': '{{$f_text}}', 'description': '随机生成一段文本', 'demo': '这是一段随机生成的文本，用于填充数据。'},
+    {'label': '$f_city', 'value': '{{$f_city}}', 'description': '随机生成城市名称', 'demo': '上海'},
+    {'label': '$f_country', 'value': '{{$f_country}}', 'description': '随机生成国家名称', 'demo': '中国'},
+    {'label': '$f_date_of_birth', 'value': '{{$f_date_of_birth}}', 'description': '随机生成出生日期', 'demo': '1990-05-23'},
+    {'label': '$f_url', 'value': '{{$f_url}}', 'description': '随机生成 URL 地址', 'demo': 'https://www.example.com'},
+    {'label': '$f_uuid', 'value': '{{$f_uuid}}', 'description': '随机生成 UUID', 'demo': '123e4567-e89b-12d3-a456-426614174000'},
+    {'label': '$timestamp', 'value': '{{$timestamp}}', 'description': '生成当前时间戳', 'demo': '1739974246313'},
+    {'label': '$today', 'value': '{{$today}}', 'description': '生成当前日期', 'demo': '2025-02-19'},
+    {'label': '$now', 'value': '{{$now}}', 'description': '生成当前日期时间', 'demo': '2025-02-19 22:22:50'},
+    {'label': '$monthFirst', 'value': '{{$monthFirst}}', 'description': '生成当月一号', 'demo': '2025-02-01'},
+    {'label': '$yesterday', 'value': '{{$yesterday}}', 'description': '生成昨天日期', 'demo': '2025-02-02'},
+]
+
+async def init_interface_global_func():
+    """
+    初始化API方法
+    """
+    from app.mapper.interfaceApi.interfaceGlobalMapper import InterfaceGlobalFuncMapper
+    if await InterfaceGlobalFuncMapper.query_all():
+        return
+    await InterfaceGlobalFuncMapper.init_interface_funcs(interface_g_func)
+    log.info("init_interface_global_func success")
+
+
+
 async def init_play_method():
     """
     初始化UI 方法API入库
     """
     from app.mapper.play.playConfigMapper import PlayMethodMapper
-    from utils import log
     if await PlayMethodMapper.query_all():
         return
     await PlayMethodMapper.init_play_methods(methods_list)
@@ -364,7 +394,6 @@ async def init_play_locator():
     初始化UI 方法API入库
     """
     from app.mapper.play.playConfigMapper import PlayLocatorMapper
-    from utils import log
     if await PlayLocatorMapper.query_all():
         return
     await PlayLocatorMapper.init_play_locators(locator_list)
