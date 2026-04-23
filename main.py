@@ -19,6 +19,7 @@ from app.exception import AppException
 from sqlalchemy.exc import SQLAlchemyError
 from app.controller import RegisterRouterList
 from app.ws import asgi_app
+from script.init_method import init_interface_global_func
 from utils import log
 from common import rc, RedisClient
 from config import Config
@@ -59,6 +60,7 @@ async def init_optional():
     """
     await init_proxy()
     await init_ui_methods()
+    await init_interface_global_func()
 
 
 @asynccontextmanager
