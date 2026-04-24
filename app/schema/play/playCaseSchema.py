@@ -10,7 +10,7 @@ from typing import List, Any, Optional, Union
 from pydantic import BaseModel, Field, field_validator
 
 from app.schema import PageSchema
-from app.schema.interface import UpdateCaseContentAssert
+from app.schema.api.interfaceCaseSchema import UpdateCaseContentAssert
 from enums import ModuleEnum
 
 

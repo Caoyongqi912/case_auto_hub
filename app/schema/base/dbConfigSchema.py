@@ -5,11 +5,12 @@
 # @File : dbConfigSchema
 # @Software: PyCharm
 # @Desc: 数据库配置相关的Schema定义
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import BaseModel, Field
 
 from app.schema import PageSchema
+from app.schema.api.interfaceSchema import IBeforeSqlExtracts
 
 
 class DBConfigField(BaseModel):
@@ -60,4 +61,12 @@ class PageDBConfigSchema(DBConfigField, PageSchema):
 
 class SetByDBConfigIdSchema(DBConfigField):
     """根据数据库配置ID设置模型"""
-    uid: str = Field(..., description="唯一标识")
+    uid: str = Field(..., description="唯一标识")
+
+
+class UpdateDBSchema(BaseModel):
+    """更新数据库模型"""
+    id: int = Field(..., description="ID")
+    sql_text: Optional[str] = Field(None, description="SQL文本")
+    sql_extracts: Optional[List[IBeforeSqlExtracts]] = Field(None, description="SQL提取")
+    db_id: Optional[int] = Field(None, description="数据库ID")

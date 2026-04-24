@@ -123,7 +123,7 @@ class PlayRunner:
                 # 一次性写入 content results
                 await content_writer.flush()
                 await case_result_writer.write_result(case_success)
-            await self.starter.over(case_result_writer.play_case_result.uid)
+            await self.starter.over(case_result_writer.play_case_result.id)
             await self.__clean(page_manager)
         return case_success
 

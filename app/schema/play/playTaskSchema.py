@@ -17,16 +17,10 @@ class PlayTaskField(BaseModel):
     """play任务基础字段模型"""
     title: Optional[str] = Field(None, description="标题")
     description: Optional[str] = Field(None, description="描述")
-    is_auto: Optional[bool] = Field(None, description="是否自动")
-    cron: Optional[str] = Field(None, description="定时表达式")
-    switch: Optional[bool] = Field(None, description="开关")
-    status: Optional[str] = Field(None, description="状态")
     level: Optional[str] = Field(None, description="级别")
     play_case_num: Optional[int] = Field(None, description="play用例数量")
-    retry: Optional[int] = Field(None, description="重试次数")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
-    push_id: Optional[int] = Field(None, description="推送ID")
 
 
 class PagePlayTaskSchema(PlayTaskField, PageSchema):
@@ -39,9 +33,7 @@ class InsertPlayTaskSchema(PlayTaskField):
     module_id: int = Field(..., description="模块ID")
     project_id: int = Field(..., description="项目ID")
     description: str = Field(..., description="描述")
-    is_auto: bool = Field(False, description="是否自动")
-    switch: bool = Field(False, description="开关")
-    status: Optional[str] = Field("WAIT", description="状态")
+    level: str = Field(..., description='登记')
     title: str = Field(..., description="标题")
 
 

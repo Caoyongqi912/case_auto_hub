@@ -338,6 +338,17 @@ class InsertCaseContentStepSchema(BaseModel):
     content_type:int = Field(...,description="类型")
 
 
+class RemoveAssociationConditionAPISchema(BaseModel):
+    """移除关联条件API模型"""
+    condition_id: int = Field(..., description="条件ID")
+    interface_id: int = Field(..., description="接口ID")
+
+
+class RemoveAssociationLoopAPISchema(BaseModel):
+    """移除关联循环API模型"""
+    loop_id: int = Field(..., description="循环ID")
+    interface_id: int = Field(..., description="接口ID")
+
 __all__ = [
     "InsertCaseContentStepSchema",
     'InterfaceCaseSchema',
@@ -369,5 +380,7 @@ __all__ = [
     "CreateConditionAPISchema",
     "AssociationGroupSchema",
     "AssociationDBSchema",
-    "UpdateAssociationDBSchema"
+    "UpdateAssociationDBSchema",
+    "RemoveAssociationConditionAPISchema",
+    "RemoveAssociationLoopAPISchema",
 ]

@@ -530,4 +530,5 @@ __all__ = [
     'ReorderContentStepSchema',
     'InterfaceCaseListSchema',
     'InterfaceCaseQuerySchema',
+    "IAssert"
 ]

@@ -39,13 +39,11 @@ from app.schema.api.interfaceCaseSchema import (
     ReorderContentStepSchema, AssociationApiSchema, ReorderAssociationConditionAPISchema, CreateConditionAPISchema,
     AssociationGroupSchema, InsertCaseContentStepSchema, UpdateCaseContentStepSchema, AssociationDBSchema,
     UpdateAssociationDBSchema,
-)
-from app.schema.base import AddVarsSchema, UpdateVarsSchema, DeleteVarsSchema
-from app.schema.base.vars import QueryVarsSchema
-from app.schema.interface import (
     RemoveAssociationLoopAPISchema,
     RemoveAssociationConditionAPISchema,
 )
+from app.schema.base import AddVarsSchema, UpdateVarsSchema, DeleteVarsSchema
+from app.schema.base.vars import QueryVarsSchema
 from croe.interface.runner import InterfaceRunner
 from croe.interface.starter import APIStarter
 from utils import log
