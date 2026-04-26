@@ -23,6 +23,10 @@ class IItem(BaseModel):
     desc: Optional[str] = Field(None, description="描述")
 
 
+class IFormData(IItem):
+    """request form data"""
+    value_type:str = Field(...,description="类型")
+
 class IAssert(BaseModel):
     """断言结构定义"""
     assert_name: str = Field(..., description="断言名")
@@ -100,7 +104,7 @@ class InterfaceSchema(BaseModel):
     interface_body_type: Optional[int] = Field(default=0, description="请求体类型: 0无 1raw 2data 3..")
     interface_raw_type: Optional[str] = Field(None, description="raw类型: json/text")
     interface_body: Optional[Any] = Field(None, description="请求体")
-    interface_data: Optional[List[IItem]] = Field(None, description="表单数据")
+    interface_data: Optional[List[IFormData]] = Field(None, description="表单数据")
     interface_asserts: Optional[List[IAssert]] = Field(None, description="断言配置")
     interface_extracts: Optional[List[IExtract]] = Field(None, description="响应提取配置")
     interface_follow_redirects: Optional[int] = Field(None, description="是否跟随重定向: 0否 1是")
@@ -269,7 +273,7 @@ class UpdateInterfaceApiSchema(BaseModel):
     interface_params: Optional[Dict[str, Any]] = Field(None, description="请求参数")
     interface_headers: Optional[Dict[str, Any]] = Field(None, description="请求头")
     interface_body: Optional[Dict[str, Any]] = Field(None, description="请求体")
-    interface_data: Optional[Dict[str, Any]] = Field(None, description="表单数据")
+    interface_data: Optional[List[IFormData]] = Field(None, description="表单数据")
     interface_asserts: Optional[List[Dict[str, Any]]] = Field(None, description="断言配置")
     interface_extracts: Optional[List[Dict[str, Any]]] = Field(None, description="响应提取配置")
     interface_raw_type: Optional[str] = Field(None, description="raw类型")
