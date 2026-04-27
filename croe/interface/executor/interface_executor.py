@@ -177,7 +177,6 @@ class InterfaceExecutor:
         ctx.resolved_url = await self.variable_manager.trans(origin_url)
         log.info(f"resolved_url = {ctx.resolved_url}")
         ctx.request_info['url'] = ctx.resolved_url
-        log.debug(ctx.request_info)
 
         # 发送 HTTP 请求
         ctx.response = await self.http(

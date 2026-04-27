@@ -193,7 +193,7 @@ class AddInterfaceSchema(InterfaceSchema):
     """
     interface_name: str = Field(..., min_length=1, max_length=100, description="接口名称")
     interface_url: str = Field(..., min_length=1, max_length=500, description="接口地址")
-    interface_method: Literal["GET", "POST", "PUT", "DELETE", "PATCH"] = Field(
+    interface_method: Literal["GET", "POST", "PUT", "DELETE"] = Field(
         default="GET",
         description="请求方法"
     )

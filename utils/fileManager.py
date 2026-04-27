@@ -1,6 +1,6 @@
 import csv
 import os
-from typing import AnyStr, NoReturn, List, Dict, Any
+from typing import AnyStr, NoReturn, List, Dict, Any, Tuple
 from fastapi import UploadFile
 from app.mapper.file import FileMapper
 from app.model.base import User
@@ -24,16 +24,19 @@ class FileManager:
     # 头像
 
     @staticmethod
-    async def save_data_file(file: UploadFile, interfaceId: str):
+    async def save_data_file(file: UploadFile, interface_uid: str) -> Tuple[str, str]:
         """
         接口请求form 附件保存
+        return: fileName,filePath
         """
-        verify_dir(API_DATA)
-        fileName = f"{interfaceId}_{file.filename}"
-        filePath = os.path.join(API_DATA, fileName)
+        interface_path = os.path.join(API_DATA, interface_uid)
+        verify_dir(interface_path)
+
+        fileName = f"{interface_uid}_{GenerateTools.uid()}_{file.filename}"
+        filePath = os.path.join(interface_path, fileName)
         async with aiofiles.open(filePath, "wb") as buffer:
             await buffer.write(await file.read())
-        return fileName
+        return fileName, filePath
 
     @staticmethod
     async def save_perf_file(file: UploadFile, interfaceId: str):

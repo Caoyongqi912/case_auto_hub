@@ -16,12 +16,12 @@ import aiofiles
 import mimetypes
 from base64 import b64encode
 from httpx._utils import to_bytes
-
+from app.mapper.file import FileMapper
 from app.mapper.interfaceApi.interfaceGlobalMapper import InterfaceGlobalHeaderMapper
 from app.model.interfaceAPIModel.interfaceGlobalModel import InterfaceGlobalHeader
 from app.model.interfaceAPIModel.interfaceModel import Interface
 from croe.a_manager.variable_manager import VariableManager
-from enums import InterfaceAuthType, InterfaceRequestMethodEnum, InterfaceRequestTBodyTypeEnum
+from enums import InterfaceAuthType, InterfaceRequestMethodEnum, InterfaceRequestTBodyTypeEnum,InterfaceDataValueType
 from utils import GenerateTools, log
 
 
@@ -86,7 +86,12 @@ class RequestBuilder:
         else:
             await self._process_request_body(request_data, interface)
 
-        log.debug(f"构建的请求信息: {request_data}")
+        if request_data.get(KEY_FORM_FILES):
+            files_summary = {
+                k: (v[0], f"<{len(v[1])} bytes>", v[2]) if v else None
+                for k, v in request_data[KEY_FORM_FILES].items()
+            }
+            log.debug(f"文件字段摘要: {files_summary}")
 
         # 处理认证信息
         await self._prepare_auth(request_data, interface)
@@ -295,24 +300,35 @@ class RequestBuilder:
 
         Args:
             interface: 接口对象
+            [{"id": 1777279704064, "key": "file", "value": "670b9419", "value_type": "file"}，
+            {"id": 1777279704064, "key": "name", "value": "撒打算大", "value_type": "text"}
+            ]
 
         Returns:
             Tuple[表单数据和文件字典, Content-Type]
             注意：多部分表单的 Content-Type 由 httpx 自动设置，因此返回 None
         """
+        from app.model import async_session
+
         files = {}
         data = {}
 
-        form_data = GenerateTools.list2dict(interface.interface_data)
 
-        # 遍历表单数据，区分文件字段和普通字段
-        for key, value in form_data.items():
-            # 文件字段：值以接口 UID 开头
-            if str(value).startswith(str(interface.uid)):
-                file_info = await self._prepare_file_upload(key, value)
-                if file_info:
+        for item in interface.interface_data:
+            key = item["key"]
+            value = item["value"]
+            value_type = item.get("value_type")
+
+            if value_type == InterfaceDataValueType.FILE:
+                file_record = await FileMapper.get_by_uid(uid=value, raise_error=False)
+                if file_record:
+                    file_path = file_record.file_path
+                    file_name = file_record.file_name
+                    mime_type = file_record.file_type
+                    file_info = await self._prepare_file_upload(file_path, file_name, mime_type)
                     files[key] = file_info
-            # 普通字段
+                else:
+                    files[key] = None
             else:
                 data[key] = value
 
@@ -321,60 +337,46 @@ class RequestBuilder:
                 KEY_FORM_FILES: files,
                 KEY_FORM_DATA: data
             },
-            None  # Content-Type 由 httpx 自动设置
+            None
         )
 
     @staticmethod
-    async def _prepare_file_upload(key: str, value: Any) -> Optional[Tuple[str, bytes, str]]:
+    async def _prepare_file_upload(file_path: str, file_name: str, mime_type: str) -> Optional[Tuple[str, bytes, str]]:
         """
         准备文件上传数据
 
         Args:
-            key: 文件字段名
-            value: 文件值（文件路径标识）
+            file_path: 文件路径
+            file_name: 文件名
+            mime_type: MIME类型
 
         Returns:
             文件上传元组 (filename, content, mime_type)
             如果文件处理失败则返回 None
         """
-        from utils.fileManager import API_DATA
-
-        # 构建文件路径
-        filepath = os.path.join(API_DATA, value)
-        log.debug(f"准备上传文件: {filepath}")
+        log.debug(f"准备上传文件: {file_path}")
 
         try:
-            # 检查文件是否存在
-            if not os.path.exists(filepath):
-                log.error(f"文件不存在: {filepath}")
+            if not os.path.exists(file_path):
+                log.error(f"文件不存在: {file_path}")
                 return None
 
-            # 检查文件是否可读
-            if not os.access(filepath, os.R_OK):
-                log.error(f"文件不可读: {filepath}")
+            if not os.access(file_path, os.R_OK):
+                log.error(f"文件不可读: {file_path}")
                 return None
 
-            # 获取 MIME 类型
-            mime_type, _ = mimetypes.guess_type(str(filepath))
-            mime_type = mime_type or 'application/octet-stream'
-
-            # 获取文件名（去除 UID 前缀）
-            file_name = os.path.basename(filepath).split("_")[-1]
-
-            # 读取文件内容
-            async with aiofiles.open(filepath, 'rb') as f:
+            async with aiofiles.open(file_path, 'rb') as f:
                 file_content = await f.read()
 
-            # 检查文件内容
             if not file_content:
-                log.error(f"无法读取文件内容: {filepath}")
+                log.error(f"无法读取文件内容: {file_path}")
                 return None
 
             log.debug(f"文件 {file_name} 已准备上传，MIME 类型: {mime_type}")
             return file_name, file_content, mime_type
 
         except Exception as e:
-            log.exception(f"处理文件 {filepath} 时出错: {str(e)}")
+            log.exception(f"处理文件 {file_path} 时出错: {str(e)}")
             return None
 
     # ==================== 私有方法 - 变量转换 ====================

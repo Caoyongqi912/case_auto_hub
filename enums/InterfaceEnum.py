@@ -31,6 +31,10 @@ class InterfaceCaseErrorStep:
     STOP = 1
     CONTINUE = 0
 
+class InterfaceDataValueType:
+    TEXT = "text"
+    FILE = "file"
+
 
 class InterfaceRequestTBodyTypeEnum:
     """接口请求体类型"""
