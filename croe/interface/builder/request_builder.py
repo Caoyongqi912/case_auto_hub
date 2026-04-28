@@ -326,9 +326,8 @@ class RequestBuilder:
                     file_name = file_record.file_name
                     mime_type = file_record.file_type
                     file_info = await self._prepare_file_upload(file_path, file_name, mime_type)
-                    files[key] = file_info
-                else:
-                    files[key] = None
+                    if file_info:
+                        files[key] = file_info
             else:
                 data[key] = value
 
