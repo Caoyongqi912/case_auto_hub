@@ -206,6 +206,8 @@ class InterfaceExecutor:
         variables.extend(await self._execute_before_script(interface.interface_before_script))
         # 执行前置 SQL
         variables.extend(await self._execute_before_sql(interface))
+
+        log.info(f"execute_before_handlers variables = {variables}")
         return variables
 
     async def _execute_before_params(self, before_params: Optional[List[Dict]] = None) -> List[Dict]:

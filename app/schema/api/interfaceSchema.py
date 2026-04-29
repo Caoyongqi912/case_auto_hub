@@ -2,9 +2,6 @@
 # -*- coding:utf-8 -*-
 """
 Interface Schema 定义
-
-与 app/model/interfaceAPIModel/interfaceModel.py 中的 Interface 模型对应
-使用 Pydantic v2 注解，提供数据验证和序列化
 """
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -111,14 +108,16 @@ class InterfaceSchema(BaseModel):
     interface_connect_timeout: Optional[int] = Field(None, description="连接超时时间(秒)")
     interface_response_timeout: Optional[int] = Field(None, description="响应超时时间(秒)")
     interface_before_script: Optional[str] = Field(None, description="前置脚本")
+
     interface_before_db_id: Optional[int] = Field(None, description="前置数据库ID")
-    interface_before_sql: Optional[List[IBeforeSqlExtracts]] = Field(None, description="前置SQL")
+    interface_before_sql: Optional[str] = Field(None, description="前置SQL")
     interface_before_sql_extracts: Optional[List[Dict[str, Any]]] = Field(None, description="SQL提取配置")
+
     interface_before_params: Optional[List[Dict[str, Any]]] = Field(None, description="前置参数")
     interface_after_script: Optional[str] = Field(None, description="后置脚本")
 
     interface_auth_type: Optional[int] = Field(None, description="认证类型: 1不认证 2KV 3Basic 4Bearer")
-    interface_auth: Optional[Dict[str, Any]] = Field(None, description="认证配置")
+    interface_auth: Optional[Union[Dict[str, Any], KVAuth, BasicAuth, BearerAuth]] = Field(None, description="认证配置")
 
     is_common: Optional[int] = Field(None, description="是否公共API: 0否 1是")
     env_id: Optional[int] = Field(None, description="环境ID")

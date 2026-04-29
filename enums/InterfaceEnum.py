@@ -88,6 +88,7 @@ class InterfaceResponseErrorMsgEnum:
     ConnectFailed = "Connect Failed  请求链接失败！"
     HTTPStatusError = "HTTP Status Error  HTTP状态码错误！"
     UnsupportedProtocol = "Unsupported Protocol  请检查请求协议！"
+    RemoteProtocolError = "RemoteProtocolError  请检查网络是否正常！"
 
 
 class BeforeSqlDBTypeEnum:
