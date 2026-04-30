@@ -50,7 +50,7 @@ class FileManager:
         return fileName
 
     @staticmethod
-    async def save_avatar(file: UploadFile, user: User):
+    async def save_avatar(file: UploadFile)->Tuple[str,str]:
         """
         头像存本地
         路径存file table
@@ -61,23 +61,11 @@ class FileManager:
         重新存
         """
         verify_dir(AVATAR)
-        if user.avatar:
-            await FileMapper.remove_file(user.avatar.split("uid=")[-1])
-
         fileName = GenerateTools.uid()
-        fileType = file.content_type
         filePath = os.path.join(AVATAR, fileName)
         async with aiofiles.open(filePath, "wb") as buffer:
             await buffer.write(await file.read())
-
-        file_model = await FileMapper.save(**dict(
-            fileType=fileType,
-            filePath=filePath,
-            fileName=fileName
-        ))
-        avatar_PATH = Config.FILE_AVATAR_PATH + file_model.uid
-        from app.mapper.user import UserMapper
-        await UserMapper.set_avatar(avatar_PATH, user)
+        return fileName,filePath
 
     @staticmethod
     def delFile(path: AnyStr):

@@ -86,8 +86,8 @@ async def upload_api_data(
 async def render_response(uid: str):
     file = await FileMapper.get_by_uid(uid)
     return FastResponse(
-        content=await open_file(file.filePath),
-        media_type=file.fileType
+        content=await open_file(file.file_path),
+        media_type=file.file_type
     )
 
 

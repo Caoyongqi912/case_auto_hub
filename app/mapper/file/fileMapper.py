@@ -7,10 +7,12 @@
 # @Desc:
 from typing import Union
 
+from config import Config
 from fastapi import UploadFile
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper import Mapper
-from app.model.base import FileModel
+from app.model.base import FileModel, User
 from app.model import async_session
 from utils import log
 
@@ -24,36 +26,29 @@ class FileMapper(Mapper[FileModel]):
         删除本地文件
         """
         try:
-            # 说明是 clear_case_result  传递过来的 不判断是否存在
-            if session:
+            async with cls.session_scope(session=session) as session:
                 file = await cls.get_by_uid(uid.strip(), session=session, raise_error=False)
 
-            else:
-                async with async_session() as session:
-                    async with session.begin():
-                        log.debug(f"删除文件 {uid}")
-                        file = await cls.get_by_uid(uid.strip(), session=session)
-            if file:
-                path = file.file_path
-                await session.delete(file)
-                from utils.fileManager import FileManager
-                FileManager.delFile(path)
-                log.debug(f"删除 {path}")
+                if file:
+                    path = file.file_path
+                    await session.delete(file)
+                    from utils.fileManager import FileManager
+                    FileManager.delFile(path)
+                    log.debug(f"删除 {path}")
         except Exception as e:
             raise e
 
     @classmethod
     async def insert_file(cls, filePath: Union[str], fileName: str) -> FileModel:
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    file = FileModel(
-                        file_type="image/jpeg",
-                        file_path=filePath,
-                        file_name=fileName
-                    )
-                    await cls.add_flush_expunge(session, file)
-                    return file
+            async with cls.transaction() as session:
+                file = FileModel(
+                    file_type="image/jpeg",
+                    file_path=filePath,
+                    file_name=fileName
+                )
+                await cls.add_flush_expunge(session, file)
+                return file
         except Exception as e:
             log.error(e)
             raise e
@@ -86,5 +81,32 @@ class FileMapper(Mapper[FileModel]):
                 file_path = file.file_path
                 await session.delete(file)
                 FileManager.delFile(file_path)
+        except Exception as e:
+            raise e
+
+
+
+    @classmethod
+    async def save_avatar(cls,avatar: UploadFile,user:User):
+        from utils.fileManager import FileManager
+
+        try:
+            async with cls.transaction() as session:
+                avatar_path = user.avatar.split("uid=")[-1]
+                await cls.remove_file(avatar_path, session)
+
+
+                file_name,file_path = await FileManager.save_avatar(avatar)
+
+                new_avatar = await cls.save(
+                    session=session,
+                    creator_user=user,
+                    file_name=file_name,
+                    file_path=file_path,
+                    file_type=avatar.content_type
+                )
+                await session.execute(
+                    update(User).where(User.id == user.id).values(avatar=Config.FILE_AVATAR_PATH + new_avatar.uid)
+                )
         except Exception as e:
             raise e
