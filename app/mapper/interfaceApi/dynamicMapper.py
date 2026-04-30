@@ -26,6 +26,33 @@ IGNORE_KEYS: set[str] = {
     "creator", "creatorName", "updater", "updaterName"
 }
 
+ARRAY_FIELD_KEYS: set[str] = {
+    "interface_params",
+    "interface_headers",
+    "interface_before_params",
+}
+
+SCRIPT_SQL_FIELD_KEYS: set[str] = {
+    "interface_before_script",
+    "interface_after_script",
+}
+
+ASSERT_EXTRACT_FIELD_KEYS: set[str] = {
+    "interface_asserts",
+    "interface_extracts",
+}
+
+NAME_FIELD_MAP: Dict[str, str] = {
+    "interface_params": "请求参数",
+    "interface_headers": "请求头",
+    "interface_before_params": "前置参数",
+    "interface_before_script": "前置脚本",
+    "interface_after_script": "后置脚本",
+    "interface_before_sql": "前置SQL",
+    "interface_asserts": "断言",
+    "interface_extracts": "变量提取",
+}
+
 
 def transform_value(field_key: str, value: Any, value_mappings: Dict[str, Dict]) -> str:
     """
@@ -58,6 +85,193 @@ def transform_value(field_key: str, value: Any, value_mappings: Dict[str, Dict])
         return "是" if value else "否"
 
     return str(value)
+
+
+def _get_item_name(item: Dict[str, Any], field_key: str) -> str:
+    """
+    从数组项中获取名称用于描述
+
+    Args:
+        item: 数组项字典
+        field_key: 字段名
+
+    Returns:
+        名称字符串
+    """
+    if field_key in ("interface_params", "interface_headers", "interface_before_params"):
+        return item.get("key", item.get("id", "未知"))
+    if field_key in ("interface_asserts", "interface_extracts"):
+        name = item.get("assert_name") or item.get("key") or item.get("name")
+        return name or str(item.get("id", "未知"))
+    return str(item.get("id", "未知"))
+
+
+def _diff_array_field(
+        old_list: List[Dict],
+        new_list: List[Dict],
+        field_key: str
+) -> List[str]:
+    """
+    比较两个数组的差异，生成变更描述
+
+    Args:
+        old_list: 变更前的数组
+        new_list: 变更后的数组
+        field_key: 字段名
+
+    Returns:
+        变更描述列表
+    """
+    diffs = []
+    old_ids = {item.get("id") for item in old_list if item.get("id") is not None}
+    new_ids = {item.get("id") for item in new_list if item.get("id") is not None}
+
+    field_name = NAME_FIELD_MAP.get(field_key, field_key)
+
+    added_ids = new_ids - old_ids
+    removed_ids = old_ids - new_ids
+
+    old_dict = {item.get("id"): item for item in old_list if item.get("id") is not None}
+    new_dict = {item.get("id"): item for item in new_list if item.get("id") is not None}
+
+    for item_id in added_ids:
+        item = new_dict.get(item_id)
+        if item:
+            name = _get_item_name(item, field_key)
+            diffs.append(f"{field_name} 新增 {name}")
+
+    for item_id in removed_ids:
+        item = old_dict.get(item_id)
+        if item:
+            name = _get_item_name(item, field_key)
+            diffs.append(f"{field_name} 删除 {name}")
+
+    for item_id in old_ids & new_ids:
+        old_item = old_dict.get(item_id)
+        new_item = new_dict.get(item_id)
+        if old_item and new_item:
+            item_diffs = _diff_dict_items(old_item, new_item, field_key)
+            if item_diffs:
+                name = _get_item_name(new_item, field_key)
+                for diff in item_diffs:
+                    diffs.append(f"{field_name} 修改 {name}: {diff}")
+
+    return diffs
+
+
+def _diff_dict_items(old: Dict[str, Any], new: Dict[str, Any], parent_key: str) -> List[str]:
+    """
+    比较两个字典项的差异
+
+    Args:
+        old: 变更前的字典
+        new: 变更后的字典
+        parent_key: 父级字段名
+
+    Returns:
+        变更描述列表
+    """
+    diffs = []
+    all_keys = set(old.keys()) | set(new.keys())
+    ignore_keys = {"id"}
+    relevant_keys = all_keys - ignore_keys
+
+    for key in relevant_keys:
+        old_value = old.get(key)
+        new_value = new.get(key)
+        if old_value == new_value:
+            continue
+        field_name = key
+        old_display = str(old_value) if old_value is not None else "空"
+        new_display = str(new_value) if new_value is not None else "空"
+        diffs.append(f"{field_name}: {old_display} → {new_display}")
+
+    return diffs
+
+
+def _diff_script_sql_field(
+        old_value: Any,
+        new_value: Any,
+        field_key: str
+) -> List[str]:
+    """
+    比较脚本/SQL字段的差异
+
+    Args:
+        old_value: 变更前的值
+        new_value: 变更后的值
+        field_key: 字段名
+
+    Returns:
+        变更描述列表
+    """
+    diffs = []
+    field_name = NAME_FIELD_MAP.get(field_key, field_key)
+
+    old_str = old_value.strip() if old_value else ""
+    new_str = new_value.strip() if new_value else ""
+
+    if old_str and not new_str:
+        diffs.append(f"{field_name} 已清空")
+    elif not old_str and new_str:
+        diffs.append(f"{field_name} 已添加内容")
+    elif old_str != new_str:
+        diffs.append(f"{field_name} 已修改")
+
+    return diffs
+
+
+def _diff_assert_extract_field(
+        old_list: List[Dict],
+        new_list: List[Dict],
+        field_key: str
+) -> List[str]:
+    """
+    比较断言/提取字段的差异
+
+    Args:
+        old_list: 变更前的列表
+        new_list: 变更后的列表
+        field_key: 字段名
+
+    Returns:
+        变更描述列表
+    """
+    diffs = []
+    field_name = NAME_FIELD_MAP.get(field_key, field_key)
+
+    old_ids = {item.get("id") for item in old_list if item.get("id") is not None}
+    new_ids = {item.get("id") for item in new_list if item.get("id") is not None}
+
+    added_ids = new_ids - old_ids
+    removed_ids = old_ids - new_ids
+
+    old_dict = {item.get("id"): item for item in old_list if item.get("id") is not None}
+    new_dict = {item.get("id"): item for item in new_list if item.get("id") is not None}
+
+    for item_id in added_ids:
+        item = new_dict.get(item_id)
+        if item:
+            name = _get_item_name(item, field_key)
+            diffs.append(f"{field_name} 新增 {name}")
+
+    for item_id in removed_ids:
+        item = old_dict.get(item_id)
+        if item:
+            name = _get_item_name(item, field_key)
+            diffs.append(f"{field_name} 删除 {name}")
+
+    for item_id in old_ids & new_ids:
+        old_item = old_dict.get(item_id)
+        new_item = new_dict.get(item_id)
+        if old_item and new_item:
+            item_diffs = _diff_dict_items(old_item, new_item, field_key)
+            if item_diffs:
+                name = _get_item_name(new_item, field_key)
+                for diff in item_diffs:
+                    diffs.append(f"{field_name} 修改 {name}: {diff}")
+
+    return diffs
 
 
 class BaseDynamicMapper(Mapper):
@@ -94,6 +308,23 @@ class BaseDynamicMapper(Mapper):
             new_value = new.get(key)
 
             if old_value == new_value:
+                continue
+
+            if key in ARRAY_FIELD_KEYS:
+                if isinstance(old_value, list) and isinstance(new_value, list):
+                    array_diffs = _diff_array_field(old_value, new_value, key)
+                    diff_args.extend(array_diffs)
+                continue
+
+            if key in SCRIPT_SQL_FIELD_KEYS:
+                script_diffs = _diff_script_sql_field(old_value, new_value, key)
+                diff_args.extend(script_diffs)
+                continue
+
+            if key in ASSERT_EXTRACT_FIELD_KEYS:
+                if isinstance(old_value, list) and isinstance(new_value, list):
+                    assert_diffs = _diff_assert_extract_field(old_value, new_value, key)
+                    diff_args.extend(assert_diffs)
                 continue
 
             field_name = cls.KEY_MAP.get(key, key)

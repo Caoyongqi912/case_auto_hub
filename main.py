@@ -19,10 +19,10 @@ from app.exception import AppException
 from sqlalchemy.exc import SQLAlchemyError
 from app.controller import RegisterRouterList
 from app.ws import asgi_app
-from script.init_method import init_interface_global_func
 from utils import log
 from common import rc, RedisClient
 from config import Config
+from script.init_method import init_interface_global_func, init_interface_script_doc
 
 logging.getLogger('apscheduler').setLevel(logging.WARNING)
 logging.getLogger('apscheduler.scheduler').setLevel(logging.WARNING)
@@ -58,9 +58,11 @@ async def init_optional():
 
     这些组件失败不应该阻止应用启动。
     """
+
     await init_proxy()
     await init_ui_methods()
     await init_interface_global_func()
+    await init_interface_script_doc()
 
 
 @asynccontextmanager

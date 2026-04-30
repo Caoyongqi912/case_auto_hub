@@ -30,6 +30,5 @@ class InterfaceGlobalFuncMapper(Mapper[InterfaceGlobalFunc]):
                 await session.execute(
                     insert(cls.__model__).values(methods)
                 )
-                await session.commit()
         except Exception as e:
             raise e

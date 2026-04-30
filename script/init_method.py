@@ -5,6 +5,7 @@
 # @File : init_method
 # @Software: PyCharm
 # @Desc:
+from app.mapper.interfaceApi.interfaceScriptMapper import InterfaceScriptMapper
 from utils import log
 
 locator_list = [
@@ -345,8 +346,6 @@ methods_list = [  # ========== 页面操作方法 ==========
     },
 ]
 
-
-
 interface_g_func = [
     {'label': '$f_name', 'value': '{{$f_name}}', 'description': '随机生成姓名', 'demo': '大娃'},
     {'label': '$f_address', 'value': '{{$f_address}}', 'description': '随机生成地址', 'demo': '北京市朝阳区建国路12号'},
@@ -364,6 +363,60 @@ interface_g_func = [
     {'label': '$monthFirst', 'value': '{{$monthFirst}}', 'description': '生成当月一号', 'demo': '2025-02-01'},
     {'label': '$yesterday', 'value': '{{$yesterday}}', 'description': '生成昨天日期', 'demo': '2025-02-02'},
 ]
+
+
+
+interface_script_doc = [
+    {
+        "title": "timestamp(day:str = None) -> str",
+        "subTitle": "获取时间戳",
+        "args": "Func",
+        "desc": "['+1s', '-1s', '+1m', '-1m', '+1h', '-1h']",
+        "example": "获取不同时间的时间戳",
+        "returnContent": "ts = timestamp(); # return 1705114614000"
+    },
+    {
+        "title": "date(day:str = None) -> str",
+        "subTitle": "获取日期",
+        "args": "Func",
+        "desc": "['+1d', '-1d', '+1m', '-1m', '+1y', '-1y']",
+        "example": "获取 YYYY-MM-DD 格式时间",
+        "returnContent": "currentDay = date(); # return 2024-01-13"
+    },
+    {
+        "title": "log(message:str) -> NoReturn",
+        "subTitle": "打印日志",
+        "args": "Func",
+        "desc": "",
+        "example": "日志输出",
+        "returnContent": "log('debug info'); # :no return"
+    },
+    {
+        "title": "response",
+        "subTitle": "响应体",
+        "args": "Http Response Object",
+        "desc": "",
+        "example": "当前步骤返回响应体对象 用于后置操作",
+        "returnContent": "text = response.text; jsonBody = response.json()"
+    },
+    {
+        "title": "faker",
+        "subTitle": "生成伪数据",
+        "args": "Faker Object",
+        "desc": "",
+        "example": "当前步骤返回响应体对象 用于后置操作",
+        "returnContent": "name = faker.name(); # return Any"
+    },
+]
+
+async def init_interface_script_doc():
+    """
+    初始化API script doc
+    """
+    from app.mapper.interfaceApi.interfaceScriptMapper import InterfaceScriptDesc
+    if not await InterfaceScriptMapper.query_all():
+        await InterfaceScriptMapper.init_interface_funcs(interface_script_doc)
+        log.info("init_interface_script_doc success")
 
 async def init_interface_global_func():
     """

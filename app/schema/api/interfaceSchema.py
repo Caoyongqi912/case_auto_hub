@@ -26,6 +26,7 @@ class IFormData(IItem):
 
 class IAssert(BaseModel):
     """断言结构定义"""
+    id: Optional[Union[int,str]] = Field(None, description="ID")
     assert_name: str = Field(..., description="断言名")
     assert_switch: bool = Field(True, description="是否开启断言")
     assert_target: str = Field(..., description="断言目标")
@@ -68,6 +69,7 @@ class IExtract(BaseModel):
     value: Optional[Any] = Field(..., description="值")
     target: int = Field(..., description="目标")
     extraOpt: str = Field(..., description="类型")
+    id: Optional[Union[int,str]] = Field(None, description="ID")
 
 
 class IBeforeSqlExtracts(BaseModel):
