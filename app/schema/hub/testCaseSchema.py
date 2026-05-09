@@ -123,7 +123,7 @@ class RemoveCaseSchema(BaseModel):
 
 class CopyCaseStep(BaseModel):
     """复制用例步骤模型"""
-    stepId: int = Field(..., description="步骤ID")
+    step_id: int = Field(..., description="步骤ID")
 
 
 class ReorderCase(BaseModel):
@@ -134,7 +134,7 @@ class ReorderCase(BaseModel):
 
 class ReorderCaseStep(BaseModel):
     """重排序用例步骤模型"""
-    stepIds: List[int] = Field(..., description="步骤ID列表")
+    step_ids: List[int] = Field(..., description="步骤ID列表")
 
 
 class RemoveCaseStep(BaseModel):
