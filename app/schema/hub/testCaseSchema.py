@@ -107,6 +107,8 @@ class QueryTestCaseSchemaByField(BaseModel):
     case_type: Optional[int] = Field(None, description="用例类型")
     case_tag: Optional[str] = Field(None, description="用例标签")
     case_status: Optional[int] = Field(None, description="用例状态")
+    is_review:Optional[bool] = Field(None,description='是否评审')
+    is_common:Optional[bool] = Field(None,description='是否公共')
 
 
 class CopyCase(BaseModel):

@@ -52,7 +52,7 @@ class TestCase(BaseModel):
     case_setup = Column(String(500), nullable=True, comment="用例步骤前置条件")
     case_mark = Column(String(500), nullable=True, comment="用例步骤备注")
 
-    is_common = Column(Boolean, default=False, comment="用例库")
+    is_common = Column(Boolean, default=False, index=True, comment="用例库")
     # **关键外键**
     module_id = Column(Integer, ForeignKey('module.id'), nullable=False, comment="所属模块")
     project_id = Column(Integer, ForeignKey('project.id'), nullable=False, comment="所属项目")

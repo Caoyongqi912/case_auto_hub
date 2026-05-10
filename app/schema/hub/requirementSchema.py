@@ -32,6 +32,8 @@ class AddRequirementsSchema(BaseModel):
     """添加需求模型"""
     requirement_name: str = Field(..., description="需求名称")
     requirement_level: str = Field(..., description="需求级别")
+    requirement_url: Optional[str] = Field(None, description="需求链接")
+
     process: int = Field(5, description="需求进度")
     develops: Optional[List[int]] = Field(None, description="开发人员ID列表")
     maintainer: Optional[int] = Field(None, description="维护人员ID")
@@ -45,6 +47,8 @@ class UpdateRequirementsSchema(BaseModel):
     id: int = Field(..., description="需求ID")
     requirement_name: Optional[str] = Field(None, description="需求名称")
     requirement_level: Optional[str] = Field(None, description="需求级别")
+    requirement_url: Optional[str] = Field(None, description="需求链接")
+
     process: Optional[int] = Field(None, description="需求进度")
     develops: Optional[List[int]] = Field(None, description="开发人员ID列表")
     maintainer: Optional[int] = Field(None, description="维护人员ID")

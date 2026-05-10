@@ -15,7 +15,6 @@ from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
-from croe.a_manager import ConditionManager
 from croe.interface.writer import result_writer
 from enums import (
     InterfaceAPIResultEnum,

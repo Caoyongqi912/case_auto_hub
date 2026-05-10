@@ -340,12 +340,19 @@ class TestCaseMapper(Mapper[TestCase]):
 
         :param requirement_id: 需求ID
         :param kwargs: 过滤条件
+            - TestCase字段: case_name, case_tag
+            - RequirementCaseAssociation字段: is_review, case_status, case_type, case_level
         :return: 符合条件的用例列表（包含关联表的 is_review 和 case_status）
         """
+        ASSOCIATION_FIELDS = {'is_review', 'case_status', 'case_type', 'case_level'}
+        
+        case_filters = {k: v for k, v in kwargs.items() if k not in ASSOCIATION_FIELDS}
+        association_filters = {k: v for k, v in kwargs.items() if k in ASSOCIATION_FIELDS}
+        
         try:
             async with async_session() as session:
-                conditions = await cls.search_conditions(**kwargs)
-
+                case_conditions = await cls.search_conditions(**case_filters)
+                
                 query = (
                     select(TestCase,
                            RequirementCaseAssociation.is_review,
@@ -354,18 +361,34 @@ class TestCaseMapper(Mapper[TestCase]):
                            RequirementCaseAssociation.case_level)
                     .join(RequirementCaseAssociation, RequirementCaseAssociation.case_id == TestCase.id)
                     .where(RequirementCaseAssociation.requirement_id == requirement_id)
-                    .where(and_(*conditions))
-                    .order_by(RequirementCaseAssociation.order)
                 )
+                
+                if case_conditions:
+                    query = query.where(and_(*case_conditions))
+                
+                for field_name, value in association_filters.items():
+                    if hasattr(RequirementCaseAssociation, field_name):
+                        field = getattr(RequirementCaseAssociation, field_name)
+                        if value is None:
+                            query = query.where(field.is_(None))
+                        elif isinstance(value, (int, float, bool)):
+                            query = query.where(field == value)
+                        elif isinstance(value, str):
+                            query = query.where(field == value)
+                
+                query = query.order_by(RequirementCaseAssociation.order)
+                
                 result = await session.execute(query)
-
                 rows = result.all()
+                
                 return [
-                    {"is_review": row[1],
-                     "case_status": row[2],
-                     "case_type": row[3],
-                     "case_level": row[4],
-                     **(row[0].to_dict())}
+                    {
+                        "is_review": row[1],
+                        "case_status": row[2],
+                        "case_type": row[3],
+                        "case_level": row[4],
+                        **(row[0].to_dict())
+                    }
                     for row in rows
                 ]
 
@@ -593,7 +616,6 @@ class TestCaseMapper(Mapper[TestCase]):
                 new_case.project_id = req.project_id
 
                 await cls.add_flush_expunge(session=session, model=new_case)
-
                 last_order = await get_last_index(session, requirement_id)
                 await session.execute(
                     insert(RequirementCaseAssociation).values(

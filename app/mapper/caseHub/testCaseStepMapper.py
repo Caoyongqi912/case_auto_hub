@@ -125,7 +125,7 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
         :param user: 操作用户
         """
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 last_order = await cls.get_last_order(case_id=caseId, session=session)
 
                 session.add(
