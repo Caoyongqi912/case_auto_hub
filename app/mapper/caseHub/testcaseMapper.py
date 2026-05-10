@@ -388,7 +388,11 @@ class TestCaseMapper(Mapper[TestCase]):
                     .join(RequirementCaseAssociation, RequirementCaseAssociation.case_id == TestCase.id)
                     .where(RequirementCaseAssociation.requirement_id == requirement_id)
                 )
-                return set(tags.all())
+                all_tags= tags.all()
+                if all_tags:
+
+                    return set(tags.all())
+                return []
         except Exception as e:
             log.error(f"query_tags error: requirement_id={requirement_id}, error={e}")
             raise
