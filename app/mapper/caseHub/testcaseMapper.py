@@ -108,6 +108,24 @@ def _parse_steps(action: Optional[str], expected_result: Optional[str]) -> List[
 class TestCaseMapper(Mapper[TestCase]):
     __model__ = TestCase
 
+
+    @classmethod
+    async def case_info(cls,case_id:int):
+
+
+        try:
+            async with async_session() as session:
+                case = await cls.get_by_id(ident=case_id, session=session)
+                case_steps = await TestCaseStepMapper.query_sub_steps(case_id=case_id, session=session)
+
+                return {
+                    **case.to_dict(),
+                    "case_sub_steps": case_steps,
+                }
+        except Exception as e:
+            log.error(f"case_info error: case_id={case_id}, error={e}")
+            raise
+
     @classmethod
     async def update_cases_common(cls, case_ids: List[int], project_id: int, module_id: int):
         """
@@ -421,29 +439,31 @@ class TestCaseMapper(Mapper[TestCase]):
             raise
 
     @classmethod
-    async def save_case(cls, cr: User, requirement_id: Optional[int] = None, **kwargs):
+    async def save_case(cls, user: User, requirement_id: Optional[int] = None, **kwargs):
         """
         创建测试用例及其步骤
 
-        :param cr: 创建者用户
+        :param user: 创建者用户
         :param requirement_id: 关联的需求ID（可选）
         :param kwargs: 用例字段数据
         :return: 创建的用例对象
         """
         case_sub_steps = kwargs.pop("case_sub_steps", [])
-        kwargs = set_creator(cr, **kwargs)
+
+        kwargs = set_creator(user, **kwargs)
 
         try:
             async with cls.transaction() as session:
                 case_obj: TestCase = await cls.save(session=session, **kwargs)
 
                 if case_sub_steps:
-                    await TestCaseStepMapper.save_steps(
-                        case_id=case_obj.id,
-                        steps=case_sub_steps,
-                        user=cr,
-                        session=session
-                    )
+                    steps = [TestCaseStep(
+                        **i,
+                        test_case_id=case_obj.id,
+                        creator=user.id,
+                        creatorName=user.username
+                    )  for i in case_sub_steps]
+                    session.add_all(steps)
 
                 if requirement_id:
                     await insert_requirement_case(
@@ -453,7 +473,7 @@ class TestCaseMapper(Mapper[TestCase]):
                     )
 
                 await CaseDynamicMapper.new_dynamic(
-                    cr=cr,
+                    cr=user,
                     test_case=case_obj,
                     session=session
                 )

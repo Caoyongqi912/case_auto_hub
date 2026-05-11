@@ -20,9 +20,15 @@ from app.schema.hub.testCaseSchema import (
 from app.controller import Authentication
 from app.model.base import User
 from app.response import Response
-from utils import log
+from utils import  log
 
 router = APIRouter(prefix="/hub/cases", tags=['用例'])
+
+
+@router.get("/info", description="用例信息")
+async def case_info(case_id: int, _: User = Depends(Authentication())):
+    case = await TestCaseMapper.case_info(case_id=case_id)
+    return Response.success(case)
 
 
 @router.post("/insert", description="添加测试用例")
@@ -33,8 +39,7 @@ async def insert_case(data: AddTestCaseSchema, user: User = Depends(Authenticati
     :param user: 认证用户
     :return: 创建的用例ID
     """
-    log.info(data)
-    result = await TestCaseMapper.save_case(cr=user, **data.model_dump(exclude_unset=True))
+    result = await TestCaseMapper.save_case(user=user, **data.model_dump(exclude_unset=True))
     return Response.success(result)
 
 
@@ -46,8 +51,8 @@ async def page_cases(data: PageTestCaseSchema, _: User = Depends(Authentication(
     :param _: 认证用户
     :return: 用例分页数据
     """
-    log.info(data.model_dump(exclude_none=True,exclude_unset=True))
-    result = await TestCaseMapper.page_by_module(**data.model_dump(exclude_none=True,exclude_unset=True))
+    log.info(data.model_dump(exclude_none=True, exclude_unset=True))
+    result = await TestCaseMapper.page_by_module(**data.model_dump(exclude_none=True, exclude_unset=True))
     return Response.success(result)
 
 
@@ -74,8 +79,6 @@ async def update_case(data: UpdateTestCaseSchema, user: User = Depends(Authentic
     log.info(data)
     await TestCaseMapper.update_case(ur=user, **data.model_dump(exclude_unset=True, exclude_none=True))
     return Response.success()
-
-
 
 
 @router.get("/queryByField", description="根据条件查询用例列表")
@@ -182,7 +185,7 @@ async def query_sub_steps(caseId: int, _: User = Depends(Authentication())):
     :param _: 认证用户
     :return: 步骤列表
     """
-    steps =  await TestCaseStepMapper.query_sub_steps(caseId)
+    steps = await TestCaseStepMapper.query_sub_steps(caseId)
     return Response.success(steps)
 
 
@@ -230,8 +233,8 @@ async def upload_cases(
         project_id: int = Form(..., description="项目ID"),
         module_id: int = Form(..., description="模块ID"),
         file: UploadFile = File(..., description="Excel文件"),
-        requirement_id:Optional[int] = Form(None,description="所属需求"),
-        is_common:bool = Form(True,description="是否公共"),
+        requirement_id: Optional[int] = Form(None, description="所属需求"),
+        is_common: bool = Form(True, description="是否公共"),
         user: User = Depends(Authentication())
 ):
     """
@@ -273,8 +276,6 @@ async def download_case_template(_: User = Depends(Authentication())):
         filename="用例模板.xlsx",
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-
-
 
 
 @router.post("/updateCommon", description="批量设置公共用例")

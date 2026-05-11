@@ -5,7 +5,7 @@
 # @File : testCaseStepMapper
 # @Software: PyCharm
 # @Desc: 测试用例步骤数据访问层
-from typing import List, Dict, Any, Sequence
+from typing import List, Dict, Any, Sequence, Optional
 
 from sqlalchemy import select, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -141,33 +141,6 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
             log.error(f"add_default_step error: caseId={caseId}, error={e}")
             raise
 
-    @classmethod
-    async def save_steps(cls, case_id: int, steps: List[Dict[str, Any]], session: AsyncSession, user: User):
-        """
-        批量保存用例步骤
-
-        :param case_id: 用例ID
-        :param steps: 步骤数据列表
-        :param session: 数据库会话
-        :param user: 操作用户
-        """
-        if not steps:
-            return
-
-        try:
-            step_objects = []
-            for index, step_data in enumerate(steps):
-                step_data["test_case_id"] = case_id
-                step_data["order"] = index
-                step_data["creator"] = user.id
-                step_data["creatorName"] = user.username
-                step_objects.append(cls.__model__(**step_data))
-
-            session.add_all(step_objects)
-            await session.flush()
-        except Exception as e:
-            log.error(f"save_steps error: case_id={case_id}, error={e}")
-            raise
 
     @classmethod
     async def query_sub_steps(cls, case_id: int, session: AsyncSession = None) -> Sequence[TestCaseStep]:
@@ -179,9 +152,7 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
         :return: 步骤列表
         """
         try:
-            if session:
-                return await cls._query_steps(session, case_id)
-            async with async_session() as sess:
+            async with cls.session_scope(session=session) as sess:
                 return await cls._query_steps(sess, case_id)
         except Exception as e:
             log.error(f"query_sub_steps error: case_id={case_id}, error={e}")

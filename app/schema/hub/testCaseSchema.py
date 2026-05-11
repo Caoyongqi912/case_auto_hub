@@ -16,6 +16,7 @@ from enums.CaseEnum import CaseLevel
 
 class TestCaseStep(BaseModel):
     """测试用例步骤模型"""
+    order: Optional[int] = Field(None, description="顺序")
     action: Optional[str] = Field(None, description="操作步骤")
     expected_result: Optional[str] = Field(None, description="预期结果")
     id: Optional[int] = Field(None, description="步骤ID")
@@ -24,7 +25,7 @@ class TestCaseStep(BaseModel):
 class TestCaseField(BaseModel):
     """测试用例基础字段模型"""
     case_name: Optional[str] = Field(None, description="用例名称")
-    case_level: Optional[str] = Field(CaseLevel.P2, description="用例级别")
+    case_level: Optional[str] = Field(None, description="用例级别")
     case_type: Optional[int] = Field(1, description="用例类型: 1'普通' | 2'冒烟' | 3 回归")
     case_tag: Optional[str] = Field(None, description="用例标签")
     case_setup: Optional[str] = Field(None, description="用例前置条件")
@@ -48,6 +49,10 @@ class AddTestCaseSchema(TestCaseField):
     project_id: Optional[int] = Field(None, description="项目ID")
 
 
+class UpdateTestCaseSchema(TestCaseField):
+    id: int = Field(..., description="ID")
+
+
 class InsertMindCaseSchema(BaseModel):
     """插入思维导图用例模型"""
     mind_node: dict = Field(..., description="思维导图节点")
@@ -62,11 +67,6 @@ class UpdateMindCaseSchema(BaseModel):
     id: int = Field(..., description="用例ID")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
-
-
-class UpdateTestCaseSchema(TestCaseField):
-    """更新测试用例模型"""
-    id: int = Field(..., description="用例ID")
 
 
 class UpdateTestCaseStatusSchema(BaseModel):
@@ -107,8 +107,8 @@ class QueryTestCaseSchemaByField(BaseModel):
     case_type: Optional[int] = Field(None, description="用例类型")
     case_tag: Optional[str] = Field(None, description="用例标签")
     case_status: Optional[int] = Field(None, description="用例状态")
-    is_review:Optional[bool] = Field(None,description='是否评审')
-    is_common:Optional[bool] = Field(None,description='是否公共')
+    is_review: Optional[bool] = Field(None, description='是否评审')
+    is_common: Optional[bool] = Field(None, description='是否公共')
 
 
 class CopyCase(BaseModel):
@@ -155,9 +155,6 @@ class UpdateTestCaseStep(BaseModel):
     action: Optional[str] = Field(None, description="操作步骤")
     expected_result: Optional[str] = Field(None, description="预期结果")
     order: Optional[int] = Field(None, description="排序序号")
-
-
-
 
 
 class SetCasesCommonSchema(BaseModel):

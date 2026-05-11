@@ -52,10 +52,15 @@ class TestCase(BaseModel):
     case_setup = Column(String(500), nullable=True, comment="用例步骤前置条件")
     case_mark = Column(String(500), nullable=True, comment="用例步骤备注")
 
+    case_level = Column(String(10), default="P2", comment="用例等级")
+    case_type = Column(String(10), nullable=True, comment="用例类型")
+
     is_common = Column(Boolean, default=False, index=True, comment="用例库")
     # **关键外键**
     module_id = Column(Integer, ForeignKey('module.id'), nullable=False, comment="所属模块")
     project_id = Column(Integer, ForeignKey('project.id'), nullable=False, comment="所属项目")
+
+
 
     async def set_default(self, user: User):
         self.case_name = "测试用例"
@@ -80,7 +85,7 @@ class CaseStepDynamic(BaseModel):
 class TestCaseStep(BaseModel):
     __tablename__ = "case_sub_step"
 
-    test_case_id = Column(Integer, ForeignKey("test_case.id", ondelete="cascade"), nullable=False, 
+    test_case_id = Column(Integer, ForeignKey("test_case.id", ondelete="cascade"), nullable=False,
                           comment="用例步骤id")
     action = Column(String(500), nullable=True, comment="执行")
     expected_result = Column(String(500), nullable=True, comment="预期")
