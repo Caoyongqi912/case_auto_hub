@@ -363,14 +363,14 @@ class TestCaseMapper(Mapper[TestCase]):
         :return: 符合条件的用例列表（包含关联表的 is_review 和 case_status）
         """
         ASSOCIATION_FIELDS = {'is_review', 'case_status', 'case_type', 'case_level'}
-        
+
         case_filters = {k: v for k, v in kwargs.items() if k not in ASSOCIATION_FIELDS}
         association_filters = {k: v for k, v in kwargs.items() if k in ASSOCIATION_FIELDS}
-        
+
         try:
             async with async_session() as session:
                 case_conditions = await cls.search_conditions(**case_filters)
-                
+
                 query = (
                     select(TestCase,
                            RequirementCaseAssociation.is_review,
@@ -380,10 +380,10 @@ class TestCaseMapper(Mapper[TestCase]):
                     .join(RequirementCaseAssociation, RequirementCaseAssociation.case_id == TestCase.id)
                     .where(RequirementCaseAssociation.requirement_id == requirement_id)
                 )
-                
+
                 if case_conditions:
                     query = query.where(and_(*case_conditions))
-                
+
                 for field_name, value in association_filters.items():
                     if hasattr(RequirementCaseAssociation, field_name):
                         field = getattr(RequirementCaseAssociation, field_name)
@@ -393,19 +393,20 @@ class TestCaseMapper(Mapper[TestCase]):
                             query = query.where(field == value)
                         elif isinstance(value, str):
                             query = query.where(field == value)
-                
+
                 query = query.order_by(RequirementCaseAssociation.order)
-                
+
                 result = await session.execute(query)
                 rows = result.all()
-                
+
                 return [
                     {
+                        **(row[0].to_dict()),
                         "is_review": row[1],
                         "case_status": row[2],
                         "case_type": row[3],
                         "case_level": row[4],
-                        **(row[0].to_dict())
+
                     }
                     for row in rows
                 ]
@@ -430,9 +431,9 @@ class TestCaseMapper(Mapper[TestCase]):
                     .where(RequirementCaseAssociation.requirement_id == requirement_id)
                 )
                 all_tags= tags.all()
+                log.info(all_tags)
                 if all_tags:
-
-                    return set(tags.all())
+                    return set(all_tags)
                 return []
         except Exception as e:
             log.error(f"query_tags error: requirement_id={requirement_id}, error={e}")
