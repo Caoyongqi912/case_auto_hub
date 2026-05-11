@@ -111,7 +111,7 @@ class CaseDynamicMapper(Mapper[CaseStepDynamic]):
                 dynamics = await session.scalars(
                     select(CaseStepDynamic)
                     .where(CaseStepDynamic.test_case_id == case_id)
-                    .order_by(CaseStepDynamic.create_time.asc())
+                    .order_by(CaseStepDynamic.create_time.desc())
                 )
                 return dynamics.all()
         except Exception as e:

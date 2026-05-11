@@ -412,7 +412,7 @@ class TestCaseMapper(Mapper[TestCase]):
                 ]
 
         except Exception as e:
-            log.error(f"query_case_by_field error: requirement_id={requirement_id}, kwargs={kwargs}, error={e}")
+            log.exception(f"query_case_by_field error: requirement_id={requirement_id}, kwargs={kwargs}, error={e}")
             raise
 
     @classmethod
@@ -428,13 +428,14 @@ class TestCaseMapper(Mapper[TestCase]):
                 tags = await session.scalars(
                     select(TestCase.case_tag)
                     .join(RequirementCaseAssociation, RequirementCaseAssociation.case_id == TestCase.id)
-                    .where(RequirementCaseAssociation.requirement_id == requirement_id)
+                    .where(
+                        RequirementCaseAssociation.requirement_id == requirement_id,
+                        TestCase.case_tag.isnot(None)
+                    )
                 )
-                all_tags= tags.all()
+                all_tags = tags.all()
                 log.info(all_tags)
-                if all_tags:
-                    return set(all_tags)
-                return []
+                return set(all_tags) if all_tags else []
         except Exception as e:
             log.error(f"query_tags error: requirement_id={requirement_id}, error={e}")
             raise
@@ -498,6 +499,7 @@ class TestCaseMapper(Mapper[TestCase]):
             async with cls.transaction() as session:
                 case_obj = await cls.get_by_id(ident=kwargs.get("id"), session=session)
                 old_data = case_obj.map
+                kwargs.pop("id", None)
                 new_case = await cls.update_cls(case_obj, session, **kwargs)
 
                 await CaseDynamicMapper.update_dynamic(
