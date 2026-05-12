@@ -34,7 +34,7 @@ KEY_MAP = {
 
 VALUE_MAPPINGS = {
     "case_type": {1: "冒烟", 2: "普通"},
-    "case_status": {1: "成功", 2: "失败", 0: "待执行"},
+    "case_status": {1: "成功", 2: "失败", 0: "待执行", 3: "阻塞"},
     "is_review": {True: "已评审", False: "未评审"}
 }
 

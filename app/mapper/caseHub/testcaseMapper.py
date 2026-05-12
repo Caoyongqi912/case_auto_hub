@@ -111,13 +111,17 @@ class TestCaseMapper(Mapper[TestCase]):
 
     @classmethod
     async def case_info(cls,case_id:int):
+        """
+        获取指定用例的详细信息，包括步骤
 
+        :param case_id: 用例ID
+        :return: 用例详细信息字典
+        """
 
         try:
             async with async_session() as session:
                 case = await cls.get_by_id(ident=case_id, session=session)
                 case_steps = await TestCaseStepMapper.query_sub_steps(case_id=case_id, session=session)
-
                 return {
                     **case.to_dict(),
                     "case_sub_steps": case_steps,
