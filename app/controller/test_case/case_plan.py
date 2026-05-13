@@ -5,6 +5,7 @@
 # @File : case_plan
 # @Software: PyCharm
 # @Desc: 测试计划接口
+from typing import Optional
 from fastapi import APIRouter, Depends
 
 from app.controller import Authentication
@@ -16,10 +17,14 @@ from app.schema.hub.planSchema import (
     AssociateRequirementSchema, DisassociateRequirementSchema,
     QueryPlanRequirementsSchema,
     AddPlanModuleSchema, UpdatePlanModuleSchema,
-    RemovePlanModuleSchema, MovePlanModuleSchema
+    RemovePlanModuleSchema, MovePlanModuleSchema,
+    AddPlanCaseSchema, UpdatePlanCaseStatusSchema,
+    RemovePlanCaseSchema, PagePlanCaseSchema,
+    UpdatePlanPhaseSchema
 )
 from app.mapper.test_case.planMapper import PlanMapper
 from app.mapper.test_case.planModuleMapper import PlanModuleMapper
+from app.mapper.test_case.planCaseMapper import PlanCaseMapper
 from utils import log
 
 router = APIRouter(prefix="/hub/plan", tags=['测试计划'])
@@ -223,3 +228,142 @@ async def get_module_tree(plan_id: int, _: User = Depends(Authentication())):
     """
     modules = await PlanModuleMapper.build_tree(plan_id=plan_id)
     return Response.success(data=modules)
+
+
+@router.post("/case/associate", description="关联用例到计划")
+async def associate_cases(data: AddPlanCaseSchema, user: User = Depends(Authentication())):
+    """
+    批量关联用例到计划
+    :param data: 计划ID和用例ID列表
+    :param user: 认证用户
+    :return: 关联数量
+    """
+    count = await PlanCaseMapper.associate_cases(
+        plan_id=data.plan_id,
+        case_ids=data.case_ids,
+        user=user,
+        plan_module_id=data.plan_module_id,
+        case_level=data.case_level or "P2"
+    )
+    return Response.success(data={"count": count})
+
+
+@router.post("/case/remove", description="移除用例关联")
+async def remove_case_association(data: RemovePlanCaseSchema, _: User = Depends(Authentication())):
+    """
+    移除用例与计划的关联
+    :param data: 计划用例关联ID
+    :param _: 认证用户
+    :return: 操作结果
+    """
+    count = await PlanCaseMapper.remove_association(plan_case_id=data.plan_case_id)
+    return Response.success(data={"count": count})
+
+
+@router.post("/case/updateStatus", description="更新用例关联状态")
+async def update_case_status(data: UpdatePlanCaseStatusSchema, user: User = Depends(Authentication())):
+    """
+    更新用例关联状态（审核、执行状态、缺陷链接）
+    :param data: 更新数据
+    :param user: 认证用户
+    :return: 操作结果
+    """
+    log.info(data)
+    await PlanCaseMapper.update_case_status(
+        plan_case_id=data.plan_case_id,
+        user=user,
+        is_review=data.is_review,
+        case_status=data.case_status,
+        bug_url=data.bug_url
+    )
+    return Response.success()
+
+
+@router.get("/cases", description="获取计划用例列表")
+async def get_plan_cases(
+    plan_id: int,
+    plan_module_id: Optional[int] = None,
+    case_level: Optional[str] = None,
+    case_status: Optional[int] = None,
+    is_review: Optional[bool] = None,
+    current: int = 1,
+    pageSize: int = 10,
+    _: User = Depends(Authentication())
+):
+    """
+    分页获取计划关联的用例列表
+    :param plan_id: 计划ID
+    :param plan_module_id: 计划分组ID
+    :param case_level: 用例等级
+    :param case_status: 用例状态
+    :param is_review: 是否审核
+    :param current: 当前页
+    :param pageSize: 每页大小
+    :param _: 认证用户
+    :return: 用例分页列表
+    """
+    result = await PlanCaseMapper.get_plan_cases(
+        plan_id=plan_id,
+        plan_module_id=plan_module_id,
+        case_level=case_level,
+        case_status=case_status,
+        is_review=is_review,
+        current=current,
+        pageSize=pageSize
+    )
+    return Response.success(result)
+
+
+@router.post("/phase", description="更新计划执行阶段")
+async def update_plan_phase(data: UpdatePlanPhaseSchema, user: User = Depends(Authentication())):
+    """
+    更新计划执行阶段
+    :param data: 计划ID和阶段
+    :param user: 认证用户
+    :return: 操作结果
+    """
+    log.info(data)
+    await PlanMapper.update_by_id(
+        update_user=user,
+        id=data.plan_id,
+        plan_phase=data.plan_phase
+    )
+    return Response.success()
+
+
+@router.get("/phase", description="获取计划执行阶段")
+async def get_plan_phase(plan_id: int, _: User = Depends(Authentication())):
+    """
+    获取计划执行阶段
+    :param plan_id: 计划ID
+    :param _: 认证用户
+    :return: 阶段信息
+    """
+    plan = await PlanMapper.get_by_id(ident=plan_id)
+    if not plan:
+        return Response.success(data=None)
+    return Response.success(data={"plan_phase": plan.plan_phase})
+
+
+@router.get("/overview", description="获取计划概览统计")
+async def get_plan_overview(plan_id: int, _: User = Depends(Authentication())):
+    """
+    获取计划概览统计数据
+    :param plan_id: 计划ID
+    :param _: 认证用户
+    :return: 统计数据
+    """
+    data = await PlanCaseMapper.get_overview(plan_id=plan_id)
+    return Response.success(data=data)
+
+
+@router.get("/statistics", description="获取计划详细统计")
+async def get_plan_statistics(plan_id: int, _: User = Depends(Authentication())):
+    """
+    获取计划详细统计数据
+    :param plan_id: 计划ID
+    :param _: 认证用户
+    :return: 详细统计
+    """
+    data = await PlanCaseMapper.get_statistics(plan_id=plan_id)
+    return Response.success(data=data)

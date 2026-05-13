@@ -10,9 +10,8 @@ from typing import List, Optional
 from sqlalchemy import insert, delete, select, and_
 
 from app.mapper import Mapper
-from app.model.base import User
 from app.model.caseHub.case_plan import CasePlan
-from app.model.caseHub.plan_requirement_association import PlanRequirementAssociation
+from app.model.caseHub.association import PlanRequirementAssociation
 from app.model.caseHub.requirement import Requirement
 
 
