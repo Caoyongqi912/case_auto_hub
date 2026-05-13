@@ -15,7 +15,8 @@ from app.mapper import Mapper
 from app.model import async_session
 from app.model.base import User
 from app.model.caseHub.association import RequirementCaseAssociation
-from app.model.caseHub.caseHUB import Requirement, TestCase
+from app.model.caseHub.requirement import Requirement
+from app.model.caseHub.test_case import TestCase
 from app.mapper.user import UserMapper
 from utils import log
 
@@ -41,7 +42,7 @@ class RequirementMapper(Mapper[Requirement]):
         :param is_review: 是否审核
         :param case_status: 用例状态
         """
-        from app.mapper.caseHub import CaseDynamicMapper
+        from app.mapper.test_case import CaseDynamicMapper
 
         updates = {
             "case_level": case_level.upper() if case_level else None,
@@ -148,7 +149,7 @@ class RequirementMapper(Mapper[Requirement]):
                     **kwargs
                 )
                 if case_ids:
-                    from .testcaseMapper import get_last_index
+                    from app.mapper.test_case import get_last_index
                     last_order = await get_last_index(session=session, requirement_id=requirement.id)
                     requirement.case_number += len(case_ids)
                     await session.execute(

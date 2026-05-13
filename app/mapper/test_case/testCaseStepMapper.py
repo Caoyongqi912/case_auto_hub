@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper import Mapper
 from app.model import async_session
 from app.model.base import User
-from app.model.caseHub.caseHUB import TestCaseStep
+from app.model.caseHub.test_case_step import TestCaseStep
 from utils import log
 
 
@@ -29,7 +29,7 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
         :param id: 步骤ID
         :param kwargs: 更新字段
         """
-        from app.mapper.caseHub.caseDynamicMapper import CaseDynamicMapper
+        from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper
 
         log.info(f"更新步骤 {id}")
         log.debug(f"更新参数 {kwargs}")

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.controller import Authentication
-from app.mapper.caseHub.mindcaseMapper import MindCaseMapper
+from app.mapper.test_case.mindcaseMapper import MindCaseMapper
 from app.model.base import User
 from app.response import Response
 from app.schema.hub.testCaseSchema import InsertMindCaseSchema, UpdateMindCaseSchema

@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper import Mapper
 from app.model import async_session
 from app.model.base import User
-from app.model.caseHub.caseHUB import TestCase, CaseStepDynamic
+from app.model.caseHub.test_case import TestCase
+from app.model.caseHub.case_step_dynamic import CaseStepDynamic
 from utils import log
 
 

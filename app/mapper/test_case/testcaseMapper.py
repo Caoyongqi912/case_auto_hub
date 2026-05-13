@@ -11,12 +11,13 @@ from sqlalchemy import select, insert, update, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper, set_creator
-from app.mapper.caseHub.requirementMapper import RequirementMapper
-from app.mapper.caseHub.testCaseStepMapper import TestCaseStepMapper
-from app.mapper.caseHub.caseDynamicMapper import CaseDynamicMapper
+from app.mapper.test_case.requirementMapper import RequirementMapper
+from app.mapper.test_case.testCaseStepMapper import TestCaseStepMapper
+from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper
 from app.model import async_session
 from app.model.base import User
-from app.model.caseHub.caseHUB import TestCase, TestCaseStep
+from app.model.caseHub.test_case import TestCase
+from app.model.caseHub.test_case_step import TestCaseStep
 from app.model.caseHub.association import RequirementCaseAssociation
 from utils import log
 

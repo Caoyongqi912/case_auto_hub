@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, UploadFile, Form, File
 from fastapi.responses import FileResponse
 
-from app.mapper.caseHub import TestCaseMapper, TestCaseStepMapper, CaseDynamicMapper
+from app.mapper.test_case import TestCaseMapper, TestCaseStepMapper, CaseDynamicMapper
 from app.schema.hub.testCaseSchema import (
     AddTestCaseSchema, PageTestCaseSchema, AddDefaultCaseSchema,
     UpdateTestCaseSchema, QueryTestCaseSchemaByField, RemoveCaseSchema, RemoveCaseStep,

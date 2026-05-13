@@ -1,5 +1,5 @@
 from app.mapper import Mapper
-from app.model.caseHub.caseHUB import TestCaseMind
+from app.model.caseHub.test_case_mind import TestCaseMind
 
 
 class MindCaseMapper(Mapper[TestCaseMind]):
