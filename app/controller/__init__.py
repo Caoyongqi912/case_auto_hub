@@ -40,7 +40,7 @@ from .user import user, department
 from .interface import (interfaceCaseController, interfaceGlobalController,
                         interfaceController, interfaceTaskController, interfaceResultController, interfaceGroupController)
 from .play import play_case, play_step, play_config, play_step_group, play_task
-from .test_case import requirements, test_case, mind_case
+from .test_case import requirements, test_case, mind_case, case_plan
 
 RegisterRouterList = [
     mind_case,
@@ -66,7 +66,7 @@ interfaceController,
     play_config,
     play_step_group,
     play_task,
-
+    case_plan,
     requirements,
     test_case
 ]

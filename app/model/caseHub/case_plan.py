@@ -1,6 +1,6 @@
 
 
-from app.model.base import BaseModel
+from app.model.basic import BaseModel
 from sqlalchemy import Column, INTEGER, String, Float, ForeignKey
 
 class CasePlan(BaseModel):

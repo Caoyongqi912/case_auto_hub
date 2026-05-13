@@ -7,11 +7,11 @@
 # @Desc:
 from sqlalchemy import Column, Integer, ForeignKey, Index, Boolean, String
 
-from app.model.basic import base
+from app.model.basic import BaseModel
 
 
 
-class RequirementCaseAssociation(base):
+class RequirementCaseAssociation(BaseModel):
     __tablename__ = "requirement_case_association"
 
     requirement_id = Column(Integer, ForeignKey('requirement.id', ondelete="CASCADE"), primary_key=True)
