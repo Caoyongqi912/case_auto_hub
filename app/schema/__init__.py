@@ -5,7 +5,7 @@
 # @File : __init__.py
 # @Software: PyCharm
 # @Desc:
-from typing import Optional
+from typing import Optional,List
 
 from pydantic import Field, BaseModel
 from app.exception import ParamsError
@@ -17,7 +17,7 @@ class PageSchema(BaseModel):
     """
     current: Optional[int] = Field(1)
     pageSize: Optional[int] = Field(10)
-    creator: Optional[int] = Field(default=None)
+    creator: Optional[List[int] | int] = Field(default=None)
     sort: Optional[dict] = Field(default=None, description="排序参数，接受 JSON 字典格式")
 
 

@@ -13,7 +13,7 @@ class CasePlan(BaseModel):
     plan_name = Column(String(50), nullable=False, comment="计划名称")
     plan_description = Column(String(200), nullable=True, comment="计划描述")
 
-    plan_status = Column(String(10), nullable=False, comment="状态 RUNNING/DONE")
+    plan_status = Column(String(10), nullable=True, comment="状态 RUNNING/DONE")
     plan_phase = Column(String(20), nullable=True, comment="执行阶段 准备/一轮/二轮/回归/验收")
     plan_completion_rate = Column(Float, nullable=True, comment="完成率")
     plan_mark = Column(String(200), nullable=True, comment="计划备注")

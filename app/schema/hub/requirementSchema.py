@@ -97,3 +97,9 @@ class SetCasesReviewSchema(BaseModel):
     requirement_id: int = Field(...,description="需求ID")
     case_ids: List[int] = Field(..., description="用例ID列表")
     is_review: bool = Field(..., description="状态值")
+
+
+class LinkCommonCasesSchema(BaseModel):
+    """关联公共用例"""
+    requirement_id: int = Field(..., description="需求ID")
+    case_ids: List[int] = Field(..., description="公共用例ID列表")

@@ -190,3 +190,48 @@ class RequirementMapper(Mapper[Requirement]):
                 reqInfo['developsInfo'] = [dev.userInfo for dev in devs]
 
             return reqInfo
+
+    @classmethod
+    async def link_common_cases(cls, requirement_id: int, case_ids: List[int], user: User):
+        """
+        关联公共用例到需求
+        :param requirement_id: 需求ID
+        :param case_ids: 公共用例ID列表
+        :param user: 操作用户
+        """
+        try:
+            async with cls.transaction() as session:
+                from app.mapper.test_case.testcaseMapper import get_last_index
+                last_order = await get_last_index(session=session, requirement_id=requirement_id)
+                order = last_order + 1
+
+                stmt = select(RequirementCaseAssociation).where(
+                    RequirementCaseAssociation.requirement_id == requirement_id
+                )
+                result = await session.execute(stmt)
+                existing_cases = {row.case_id for row in result.scalars().all()}
+
+                new_cases = [cid for cid in case_ids if cid not in existing_cases]
+                if not new_cases:
+                    return
+
+                associations = [
+                    {
+                        "requirement_id": requirement_id,
+                        "case_id": case_id,
+                        "order": order + idx,
+                        "is_review": False,
+                    }
+                    for idx, case_id in enumerate(new_cases)
+                ]
+
+                await session.execute(
+                    insert(RequirementCaseAssociation).values(associations)
+                )
+
+                requirement = await cls.get_by_id(session=session, ident=requirement_id)
+                requirement.case_number = (requirement.case_number or 0) + len(new_cases)
+                await cls.add_flush_expunge(session=session, model=requirement)
+        except Exception as e:
+            log.error(e)
+            raise

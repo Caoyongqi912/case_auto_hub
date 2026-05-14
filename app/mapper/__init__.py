@@ -549,8 +549,10 @@ class Mapper(Generic[M]):
                 field = getattr(model, key)
                 if value is None:
                     conditions.append(field.is_(None))
-                elif isinstance(value, (tuple, list)) and len(value) == 2:
+                elif isinstance(value, tuple) and len(value) == 2:
                     conditions.append(and_(field >= value[0], field <= value[1]))
+                elif isinstance(value, list):
+                    conditions.append(and_(*[field == v for v in value]))
                 elif isinstance(value, str):
                     conditions.append(field.like(f"%{value}%"))
                 elif isinstance(value, (int, float, bool)):

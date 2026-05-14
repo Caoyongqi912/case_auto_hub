@@ -7,11 +7,10 @@
 # @Desc:
 from sqlalchemy import Column, Integer, ForeignKey, Index, Boolean, String
 
-from app.model.basic import BaseModel
+from app.model.basic import base
 
 
-
-class RequirementCaseAssociation(BaseModel):
+class RequirementCaseAssociation(base):
     __tablename__ = "requirement_case_association"
 
     requirement_id = Column(Integer, ForeignKey('requirement.id', ondelete="CASCADE"), primary_key=True)
@@ -30,14 +29,14 @@ class RequirementCaseAssociation(BaseModel):
 
 
 
-class PlanRequirementAssociation(BaseModel):
+class PlanRequirementAssociation(base):
     __tablename__ = "plan_requirement_association"
 
-    plan_id = Column(Integer, ForeignKey('case_plan.id', ondelete='CASCADE'), nullable=False, comment="所属计划")
-    requirement_id = Column(Integer, ForeignKey('requirement.id', ondelete='CASCADE'), nullable=False, comment="需求ID")
+    plan_id = Column(Integer, ForeignKey('case_plan.id', ondelete='CASCADE'), primary_key=True, comment="所属计划")
+    requirement_id = Column(Integer, ForeignKey('requirement.id', ondelete='CASCADE'), primary_key=True, comment="需求ID")
 
     __table_args__ = (
-        Index('idx_plan_req', 'plan_id', 'requirement_id', unique=True),
+        Index('idx_plan_req', 'plan_id', 'requirement_id'),
     )
 
     def __repr__(self):
@@ -46,12 +45,12 @@ class PlanRequirementAssociation(BaseModel):
 
 
 
-class PlanCaseAssociation(BaseModel):
+class PlanCaseAssociation(base):
     __tablename__ = "plan_case_association"
 
-    plan_id = Column(Integer, ForeignKey('case_plan.id', ondelete='CASCADE'), nullable=False, comment="所属计划")
+    plan_id = Column(Integer, ForeignKey('case_plan.id', ondelete='CASCADE'), nullable=False,primary_key=True, comment="所属计划")
     plan_module_id = Column(Integer, ForeignKey('plan_module.id', ondelete='CASCADE'), nullable=True, comment="所属计划模块，NULL表示未分组")
-    case_id = Column(Integer, ForeignKey('test_case.id', ondelete='CASCADE'), nullable=False, comment="用例ID")
+    case_id = Column(Integer, ForeignKey('test_case.id', ondelete='CASCADE'), nullable=False,primary_key=True, comment="用例ID")
 
     case_level = Column(String(5), nullable=False, default="P2", comment="用例等级 P0/P1/P2/P3")
     is_review = Column(Boolean, default=False, comment="是否审核")
@@ -60,7 +59,7 @@ class PlanCaseAssociation(BaseModel):
     order = Column(Integer, default=0, comment="排序顺序")
 
     __table_args__ = (
-        Index('idx_plan_case', 'plan_id', 'case_id', unique=True),
+        Index('idx_plan_case', 'plan_id', 'case_id'),
         Index('idx_plan_module', 'plan_module_id'),
         Index('idx_case_id', 'case_id'),
     )
