@@ -38,7 +38,7 @@ async def insert_plan(data: AddPlanSchema, user: User = Depends(Authentication()
     :param user: 认证用户
     :return: 创建的计划ID
     """
-    result = await PlanMapper.save(creator_user=user, **data.model_dump(exclude_unset=True))
+    result = await PlanMapper.add_plan(user=user, **data.model_dump(exclude_unset=True))
     return Response.success(result)
 
 

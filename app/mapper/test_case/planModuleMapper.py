@@ -12,10 +12,37 @@ from sqlalchemy import select, delete, and_
 from app.mapper import Mapper
 from app.model.base import User
 from app.model.caseHub.plan_module import PlanModule
+from sqlalchemy.ext.asyncio import AsyncSession
+from utils import log
 
 
 class PlanModuleMapper(Mapper[PlanModule]):
     __model__ = PlanModule
+    
+    
+    @classmethod
+    async def init_module(cls,session:AsyncSession,plan_id:int,user:User) -> PlanModule:
+        """
+        初始化计划分组
+        :param session: 会话对象
+        :param plan_id: 计划ID
+        :param user: 创建人
+        :return: 创建的分组
+        """
+        try:
+            module = PlanModule(
+                plan_id=plan_id,
+                title="全部用例",
+                parent_id=None,
+                order=0
+            )
+            module.creator = user.id
+            module.creatorName = user.username
+            await cls.add_flush_expunge(model=module, session=session)
+            return module
+        except Exception as e:
+            log.error(f"init_module error: {e}")
+            raise
 
     @classmethod
     async def add_module(
@@ -169,9 +196,9 @@ class PlanModuleMapper(Mapper[PlanModule]):
                 ).order_by(PlanModule.order, PlanModule.create_time)
                 result = await session.execute(stmt)
                 modules = result.scalars().all()
-                
+                log.info(f"build_tree: {modules}")
                 module_list = [m.map for m in modules]
-                module_dict = {m["key"]: m for m in module_list}
+                module_dict = {m["id"]: m for m in module_list}
                 
                 for module in module_list:
                     module["children"] = []

@@ -7,16 +7,45 @@
 # @Desc: 测试计划数据访问层
 from typing import List, Optional
 
+from app.model.base.user import User
 from sqlalchemy import insert, delete, select, and_
 
 from app.mapper import Mapper
 from app.model.caseHub.case_plan import CasePlan
 from app.model.caseHub.association import PlanRequirementAssociation
 from app.model.caseHub.requirement import Requirement
+from utils import log
+
 
 
 class PlanMapper(Mapper[CasePlan]):
     __model__ = CasePlan
+    
+    @classmethod
+    async def add_plan(cls,user:User,**kwargs) -> CasePlan:
+        """
+        添加测试计划
+        :param user: 操作用户
+        :param kwargs: 计划信息
+        :return: 添加的计划
+        """
+        try:
+            async with cls.transaction() as session:
+                plan = CasePlan(**kwargs)
+                plan.creator = user.id
+                plan.creatorName = user.username
+                plan = await cls.add_flush_expunge(model=plan, session=session)
+                # 默认添加 root module
+                from app.mapper.test_case.planModuleMapper import PlanModuleMapper
+                
+                root_module = await PlanModuleMapper.init_module(session=session,plan_id=plan.id,user=user)
+                log.info(f"init_module: {root_module}")
+                return plan
+        except Exception as e:
+            log.error(f"add_plan error: {e}")
+            raise
+        
+    
 
     @classmethod
     async def plan_info(cls, plan_id: int) -> dict:

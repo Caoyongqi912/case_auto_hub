@@ -26,7 +26,7 @@ class PlanModule(BaseModel):
     @property
     def map(self):
         return {
-            "key": self.id,
+            "id": self.id,
             "title": self.title,
             "parent_id": self.parent_id,
             "plan_id": self.plan_id,

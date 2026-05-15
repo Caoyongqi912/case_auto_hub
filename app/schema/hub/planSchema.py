@@ -36,8 +36,8 @@ class AddPlanSchema(BaseModel):
     plan_mark: Optional[str] = Field(None, description="备注")
     charge_id: int = Field(..., description="负责人ID")
     charge_name: str = Field(..., description="负责人姓名")
-    plan_start_time: str = Field(..., description="开始时间")
-    plan_end_time: str = Field(..., description="结束时间")
+    plan_start_time: Optional[str] = Field(None, description="开始时间")
+    plan_end_time: Optional[str] = Field(None, description="结束时间")
 
 
 class UpdatePlanSchema(BaseModel):
