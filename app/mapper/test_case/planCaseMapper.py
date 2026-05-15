@@ -156,7 +156,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     select(PlanCaseAssociation, TestCase)
                     .join(TestCase, TestCase.id == PlanCaseAssociation.case_id)
                     .where(and_(*conditions))
-                    .order_by(PlanCaseAssociation.order, PlanCaseAssociation.create_time.desc())
+                    .order_by(PlanCaseAssociation.order)
                     .offset((current - 1) * pageSize)
                     .limit(pageSize)
                 )
