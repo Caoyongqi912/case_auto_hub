@@ -125,7 +125,6 @@ class AddPlanCaseSchema(BaseModel):
     plan_id: int = Field(..., description="计划ID")
     plan_module_id: Optional[int] = Field(None, description="计划分组ID，NULL表示未分组")
     case_ids: List[int] = Field(..., description="用例ID列表")
-    case_level: Optional[str] = Field("P2", description="用例等级")
 
 
 class UpdatePlanCaseStatusSchema(BaseModel):

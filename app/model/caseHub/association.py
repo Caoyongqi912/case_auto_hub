@@ -49,17 +49,16 @@ class PlanCaseAssociation(base):
     __tablename__ = "plan_case_association"
 
     plan_id = Column(Integer, ForeignKey('case_plan.id', ondelete='CASCADE'), nullable=False,primary_key=True, comment="所属计划")
-    plan_module_id = Column(Integer, ForeignKey('plan_module.id', ondelete='CASCADE'), nullable=True, comment="所属计划模块，NULL表示未分组")
+    plan_module_id = Column(Integer, ForeignKey('plan_module.id', ondelete='CASCADE'),primary_key=True, nullable=False, comment="所属计划模块，NULL表示未分组")
     case_id = Column(Integer, ForeignKey('test_case.id', ondelete='CASCADE'), nullable=False,primary_key=True, comment="用例ID")
 
-    case_level = Column(String(5), nullable=False, default="P2", comment="用例等级 P0/P1/P2/P3")
     is_review = Column(Boolean, default=False, comment="是否审核")
-    case_status = Column(Integer, default=0, comment="用例状态 0:未开始 1:通过 2:失败")
+    case_status = Column(Integer, default=0, comment="用例状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
     bug_url = Column(String(500), nullable=True, comment="缺陷链接")
     order = Column(Integer, default=0, comment="排序顺序")
 
     __table_args__ = (
-        Index('idx_plan_case', 'plan_id', 'case_id'),
+        Index('idx_plan_case', 'plan_id'),
         Index('idx_plan_module', 'plan_module_id'),
         Index('idx_case_id', 'case_id'),
     )

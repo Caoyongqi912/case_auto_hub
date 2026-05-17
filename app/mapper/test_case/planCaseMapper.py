@@ -14,6 +14,26 @@ from app.model.base import User
 from app.model.caseHub.association import PlanCaseAssociation, PlanRequirementAssociation
 from app.model.caseHub.test_case import TestCase
 from app.model.caseHub.requirement import Requirement
+from sqlalchemy.ext.asyncio import AsyncSession
+from utils import log
+
+
+async def get_last_order(plan_id: int, session: AsyncSession) -> int:
+    """
+    获取用例的最大步骤排序号
+
+    :param plan_id: 计划ID
+    :param session: 数据库会话
+    :return: 最大排序号，不存在则返回0
+    """
+    stmt = (
+        select(PlanCaseAssociation.order)
+        .where(PlanCaseAssociation.plan_id == plan_id)
+        .order_by(PlanCaseAssociation.order.desc())
+        .limit(1)
+    )
+    result = await session.execute(stmt)
+    return result.scalar() or 0
 
 
 class PlanCaseMapper(Mapper[PlanCaseAssociation]):
@@ -24,17 +44,14 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         cls,
         plan_id: int,
         case_ids: List[int],
-        user: User,
         plan_module_id: Optional[int] = None,
-        case_level: str = "P2"
     ) -> int:
         """
         关联用例到计划
         :param plan_id: 计划ID
         :param case_ids: 用例ID列表
-        :param user: 操作用户
         :param plan_module_id: 计划分组ID
-        :param case_level: 用例等级
+        
         :return: 关联数量
         """
         if not case_ids:
@@ -51,19 +68,21 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 existing_ids = set(result.scalars().all())
                 
                 new_case_ids = [cid for cid in case_ids if cid not in existing_ids]
+                log.info(f"new_case_ids: {new_case_ids}")
                 if not new_case_ids:
                     return 0
+                
+                last_order = await get_last_order(plan_id, session)
+                
                 
                 values = [
                     {
                         "plan_id": plan_id,
                         "plan_module_id": plan_module_id,
-                        "case_id": case_id,
-                        "case_level": case_level,
-                        "creator": user.id,
-                        "creatorName": user.username,
+                        "case_id": case_id,        
+                        "order": order,
                     }
-                    for case_id in new_case_ids
+                    for order, case_id in enumerate(new_case_ids, start=last_order + 1)
                 ]
                 await session.execute(insert(PlanCaseAssociation).values(values))
                 return len(values)
@@ -168,9 +187,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     assoc, case = row
                     item = case.to_dict()
                     item.update({
-                        "plan_case_id": assoc.id,
+                        "plan_case_id": assoc.case_id,
                         "plan_module_id": assoc.plan_module_id,
-                        "case_level": assoc.case_level,
                         "is_review": assoc.is_review,
                         "case_status": assoc.case_status,
                         "bug_url": assoc.bug_url,
