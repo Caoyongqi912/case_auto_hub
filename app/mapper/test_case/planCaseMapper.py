@@ -14,6 +14,7 @@ from app.model.base import User
 from app.model.caseHub.association import PlanCaseAssociation, PlanRequirementAssociation
 from app.model.caseHub.test_case import TestCase
 from app.model.caseHub.requirement import Requirement
+from app.model.caseHub.plan_module import PlanModule
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils import log
 
@@ -147,7 +148,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         """
         分页获取计划用例列表
         :param plan_id: 计划ID
-        :param plan_module_id: 计划分组ID
+        :param plan_module_id: 计划分组ID（包含其子模块）
         :param case_level: 用例等级
         :param case_status: 用例状态
         :param is_review: 是否审核
@@ -160,7 +161,13 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 conditions = [PlanCaseAssociation.plan_id == plan_id]
                 
                 if plan_module_id is not None:
-                    conditions.append(PlanCaseAssociation.plan_module_id == plan_module_id)
+                    module_ids = [plan_module_id]
+                    sub_modules_stmt = select(PlanModule.id).where(PlanModule.parent_id == plan_module_id)
+                    sub_result = await session.execute(sub_modules_stmt)
+                    sub_module_ids = [row[0] for row in sub_result.fetchall()]
+                    module_ids.extend(sub_module_ids)
+                    conditions.append(PlanCaseAssociation.plan_module_id.in_(module_ids))
+                    
                 if case_level:
                     conditions.append(PlanCaseAssociation.case_level == case_level)
                 if case_status is not None:
