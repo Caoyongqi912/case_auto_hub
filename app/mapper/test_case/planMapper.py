@@ -15,11 +15,31 @@ from app.model.caseHub.case_plan import CasePlan
 from app.model.caseHub.association import PlanRequirementAssociation
 from app.model.caseHub.requirement import Requirement
 from utils import log
-
+from app.model import async_session
 
 
 class PlanMapper(Mapper[CasePlan]):
     __model__ = CasePlan
+    
+    @classmethod
+    async def query_by_plan_name(cls,plan_name:Optional[str]=None) -> List[CasePlan]:
+        """
+        根据计划名称查询计划
+        :param plan_name: 计划名称
+        :return: 计划列表
+        """
+        try:
+            async with async_session() as session:
+                if not plan_name:
+                    stmt = select(cls.__model__)
+                else:
+                    stmt = select(cls.__model__).where(cls.__model__.plan_name.like(f"%{plan_name}%"))
+                result = await session.scalars(stmt)
+                plans = result.all()
+                return plans
+        except Exception as e:
+            log.error(f"query_by_plan_name error: {e}")
+            raise
     
     @classmethod
     async def add_plan(cls,user:User,**kwargs) -> CasePlan:

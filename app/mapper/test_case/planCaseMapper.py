@@ -7,7 +7,7 @@
 # @Desc: 计划用例关联数据访问层
 from typing import List, Optional
 
-from sqlalchemy import insert, delete, select, and_, func, update
+from sqlalchemy import insert, delete, select, and_, or_, func, update
 
 from app.mapper import Mapper
 from app.model.base import User
@@ -142,31 +142,36 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         case_level: Optional[str] = None,
         case_status: Optional[int] = None,
         is_review: Optional[bool] = None,
-        current: int = 1,
-        pageSize: int = 10
-    ) -> dict:
+    ) -> list:
         """
-        分页获取计划用例列表
+        获取计划用例列表（全部）
         :param plan_id: 计划ID
         :param plan_module_id: 计划分组ID（包含其子模块）
         :param case_level: 用例等级
         :param case_status: 用例状态
         :param is_review: 是否审核
-        :param current: 当前页
-        :param pageSize: 每页大小
-        :return: 分页数据
+        :return: 用例列表
         """
         try:
             async with cls.transaction() as session:
                 conditions = [PlanCaseAssociation.plan_id == plan_id]
                 
                 if plan_module_id is not None:
-                    module_ids = [plan_module_id]
-                    sub_modules_stmt = select(PlanModule.id).where(PlanModule.parent_id == plan_module_id)
-                    sub_result = await session.execute(sub_modules_stmt)
-                    sub_module_ids = [row[0] for row in sub_result.fetchall()]
-                    module_ids.extend(sub_module_ids)
-                    conditions.append(PlanCaseAssociation.plan_module_id.in_(module_ids))
+                    subquery = (
+                        select(PlanModule.id)
+                        .where(PlanModule.parent_id == plan_module_id)
+                        .scalar_subquery()
+                    )
+                    conditions.append(
+                        PlanCaseAssociation.plan_module_id.in_(
+                            select(PlanModule.id).where(
+                                or_(
+                                    PlanModule.id == plan_module_id,
+                                    PlanModule.id.in_(subquery)
+                                )
+                            )
+                        )
+                    )
                     
                 if case_level:
                     conditions.append(PlanCaseAssociation.case_level == case_level)
@@ -175,22 +180,15 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 if is_review is not None:
                     conditions.append(PlanCaseAssociation.is_review == is_review)
                 
-                count_stmt = select(func.count()).select_from(PlanCaseAssociation).where(and_(*conditions))
-                total = (await session.execute(count_stmt)).scalar()
-                
                 stmt = (
                     select(PlanCaseAssociation, TestCase)
                     .join(TestCase, TestCase.id == PlanCaseAssociation.case_id)
                     .where(and_(*conditions))
                     .order_by(PlanCaseAssociation.order)
-                    .offset((current - 1) * pageSize)
-                    .limit(pageSize)
                 )
                 result = await session.execute(stmt)
-                rows = result.all()
-                
                 items = []
-                for row in rows:
+                for row in result.all():
                     assoc, case = row
                     item = case.to_dict()
                     item.update({
@@ -203,14 +201,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     })
                     items.append(item)
                 
-                return {
-                    "items": items,
-                    "pageInfo": {
-                        "total": total,
-                        "page": current,
-                        "limit": pageSize
-                    }
-                }
+                return items
         except Exception as e:
             raise
 

@@ -64,7 +64,7 @@ class PlanCaseAssociation(base):
     )
 
     def __repr__(self):
-        return f"<PlanCaseAssociation(id={self.id}, plan_id={self.plan_id}, case_id={self.case_id}, case_status={self.case_status})>"
+        return f"<PlanCaseAssociation( plan_id={self.plan_id}, case_id={self.case_id}, case_status={self.case_status})>"
 
 
 

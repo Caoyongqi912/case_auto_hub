@@ -78,6 +78,15 @@ async def get_plan_info(plan_id: int, _: User = Depends(Authentication())):
     data = await PlanMapper.plan_info(plan_id=plan_id)
     return Response.success(data)
 
+@router.get("/query", description="查询测试计划列表")
+async def query_plans(plan_name:str,_: User = Depends(Authentication())):
+    """
+    查询所有测试计划
+    :param _: 认证用户
+    :return: 所有计划列表
+    """
+    data = await PlanMapper.query_by_plan_name(plan_name=plan_name)
+    return Response.success(data)
 
 @router.post("/page", description="分页查询测试计划列表")
 async def page_plans(data: PagePlanSchema, _: User = Depends(Authentication())):
@@ -88,6 +97,7 @@ async def page_plans(data: PagePlanSchema, _: User = Depends(Authentication())):
     :return: 计划分页数据
     """
     log.info(data.model_dump(exclude_none=True, exclude_unset=True))
+
     result = await PlanMapper.page_query(**data.model_dump(exclude_none=True, exclude_unset=True))
     return Response.success(result)
 
@@ -284,8 +294,6 @@ async def get_plan_cases(
     case_level: Optional[str] = None,
     case_status: Optional[int] = None,
     is_review: Optional[bool] = None,
-    current: int = 1,
-    pageSize: int = 10,
     _: User = Depends(Authentication())
 ):
     """
@@ -306,8 +314,6 @@ async def get_plan_cases(
         case_level=case_level,
         case_status=case_status,
         is_review=is_review,
-        current=current,
-        pageSize=pageSize
     )
     return Response.success(result)
 
