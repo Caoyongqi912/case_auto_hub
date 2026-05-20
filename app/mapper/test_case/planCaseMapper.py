@@ -7,7 +7,9 @@
 # @Desc: 计划用例关联数据访问层
 from typing import List, Optional
 
-from sqlalchemy import insert, delete, select, and_, or_, func, update
+from app.mapper.test_case.testcaseMapper import TestCaseMapper
+from sqlalchemy import insert, update, delete, select, and_, or_, func
+from sqlalchemy.orm import joinedload
 
 from app.mapper import Mapper
 from app.model.base import User
@@ -41,24 +43,188 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
     __model__ = PlanCaseAssociation
 
     @classmethod
+    async def update_case(cls,plan_id:int,case_id_list:List[int],user:User,is_review:Optional[int]=None,case_status:Optional[int]=None):
+        """
+        更新计划用例关联的属性
+
+        Args:
+            plan_id (int): 计划ID
+            user (User): 认证用户
+            case_id_list (List[int]): 用例ID列表
+            is_review (Optional[int], optional): 是否审核. Defaults to None.
+            case_status (Optional[int], optional): 用例状态 0:未开始 1:通过 2:失败.. Defaults to None.
+        """
+        try:
+            async with cls.transaction() as session:
+                values = {}
+                if is_review is not None:
+                    values["is_review"] = is_review
+                if case_status is not None:
+                    values["case_status"] = case_status
+                
+                if not values:
+                    return 0
+                stmt = update(PlanCaseAssociation).where(
+                    and_(
+                        PlanCaseAssociation.plan_id == plan_id, 
+                        PlanCaseAssociation.case_id.in_(case_id_list),
+                    )
+                ).values(values)
+                await session.execute(stmt)
+                return len(case_id_list)
+        except Exception as e:
+            raise e
+    @classmethod
+    async def copy_plan_case(cls,case_id:int,plan_id:int,plan_module_id:int,user:User):
+        
+        """
+        复制单个计划用例  
+
+        Raises:
+            e: _description_
+            e: _description_
+
+        Returns:
+            _type_: _description_
+        """
+        try:
+            async with cls.transaction() as session:
+                new_cases = await TestCaseMapper.copy_cases(
+                    case_ids=[case_id],
+                    user=user,
+                    session=session
+                )
+                if not new_cases:
+                    return 0
+                else:
+                    new_case = new_cases[0]
+                    await cls.associate_case(
+                        plan_id=plan_id,
+                        case_id=case_id,
+                        plan_module_id=plan_module_id,
+                        session=session
+                    )
+                return 1
+        except Exception as e:
+            log.error(e)
+            raise e
+    
+        
+    @classmethod
+    async def copy_cases(cls,case_id_list:List[int],plan_id:int,plan_case_module_id:int,user:User,is_review:bool=False):
+        """
+        复制计划用例到新的分组
+
+        Args:
+            case_id_list (List[int]): 用例ID列表
+            plan_id (int): 计划ID
+            plan_case_module_id (int): 计划分组ID
+            is_review (bool): 是否审核
+
+        Raises:
+            e: _description_
+
+        Returns:
+            _type_: _description_
+        """
+        try:
+            async with cls.transaction() as session:
+                # 查询用例
+                new_cases = await TestCaseMapper.copy_cases(
+                    case_ids=case_id_list,
+                    user=user,
+                    session=session
+                )
+                if not new_cases:
+                    return 0
+                
+                new_case_ids = [case.id for case in new_cases]
+                
+                await cls.associate_cases(
+                    plan_id=plan_id,
+                    case_ids=new_case_ids,
+                    plan_module_id=plan_case_module_id,
+                    session=session,
+                    is_review=is_review
+                )
+                return len(new_case_ids)
+        except Exception as e:
+            raise e
+    
+    @classmethod
+    async def move_case(
+        cls,
+        case_id_list: List[int],
+        plan_id: int,
+        plan_case_module_id: int,
+    ) -> int:
+        """
+        移动计划用例到新的分组
+        如果仍是当前plan、只是更新plan module则只更新module，不移动用例
+        如果是其他plan则移动用例到新的plan关联下。
+        :param case_id_list: 用例ID列表
+        :param plan_id: 计划ID
+        :param plan_case_module_id: 计划分组ID
+        :return: 移动数量
+        """
+        if not case_id_list:
+            return 0
+        try:
+            async with cls.transaction() as session:
+                stmt = select(PlanCaseAssociation).where(
+                    and_(
+                        PlanCaseAssociation.plan_id == plan_id,
+                        PlanCaseAssociation.case_id.in_(case_id_list)
+                    )
+                )
+                result = await session.execute(stmt)
+                existing_data = result.scalars().all()
+                
+                if existing_data:
+                    update_stmt = (
+                        update(PlanCaseAssociation)
+                        .where(
+                            and_(
+                                PlanCaseAssociation.plan_id == plan_id,
+                                PlanCaseAssociation.case_id.in_(case_id_list)
+                            )
+                        )
+                        .values(plan_module_id=plan_case_module_id)
+                    )
+                    await session.execute(update_stmt)
+                    return len(existing_data)
+                else:
+                    return await cls.associate_cases(
+                        plan_id=plan_id,
+                        case_ids=case_id_list,
+                        plan_module_id=plan_case_module_id,
+                        session=session
+                    )
+        except Exception as e:
+            raise e
+    
+    @classmethod
     async def associate_cases(
         cls,
         plan_id: int,
         case_ids: List[int],
         plan_module_id: Optional[int] = None,
+        session: Optional[AsyncSession] = None,
+        **kwargs,
     ) -> int:
         """
         关联用例到计划
         :param plan_id: 计划ID
         :param case_ids: 用例ID列表
         :param plan_module_id: 计划分组ID
-        
+        :param session: 数据库会话
+        :param kwargs: 其他关联字段
         :return: 关联数量
         """
         if not case_ids:
             return 0
         try:
-            async with cls.transaction() as session:
+            async with cls.session_scope(session) as session:
                 stmt = select(PlanCaseAssociation.case_id).where(
                     and_(
                         PlanCaseAssociation.plan_id == plan_id,
@@ -82,6 +248,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                         "plan_module_id": plan_module_id,
                         "case_id": case_id,        
                         "order": order,
+                        **kwargs,
                     }
                     for order, case_id in enumerate(new_case_ids, start=last_order + 1)
                 ]
@@ -91,16 +258,20 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             raise
 
     @classmethod
-    async def remove_association(cls, plan_case_id: int) -> int:
+    async def remove_association(cls, case_ids: List[int], plan_id: int) -> int:
         """
         移除用例关联
-        :param plan_case_id: 计划用例关联ID
+        :param case_ids: 用例ID列表
+        :param plan_id: 计划ID
         :return: 删除数量
         """
         try:
             async with cls.transaction() as session:
                 result = await session.execute(
-                    delete(PlanCaseAssociation).where(PlanCaseAssociation.id == plan_case_id)
+                    delete(PlanCaseAssociation).where(and_(
+                        PlanCaseAssociation.plan_id == plan_id,
+                        PlanCaseAssociation.case_id.in_(case_ids),
+                    ))
                 )
                 return result.rowcount
         except Exception as e:
@@ -152,58 +323,49 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         :param is_review: 是否审核
         :return: 用例列表
         """
-        try:
-            async with cls.transaction() as session:
-                conditions = [PlanCaseAssociation.plan_id == plan_id]
-                
-                if plan_module_id is not None:
-                    subquery = (
-                        select(PlanModule.id)
-                        .where(PlanModule.parent_id == plan_module_id)
-                        .scalar_subquery()
+        async with cls.transaction() as session:
+            conditions = [PlanCaseAssociation.plan_id == plan_id]
+
+            if plan_module_id is not None:
+                module_ids = select(PlanModule.id).where(
+                    or_(
+                        PlanModule.parent_id == plan_module_id,
+                        PlanModule.id == plan_module_id
                     )
-                    conditions.append(
-                        PlanCaseAssociation.plan_module_id.in_(
-                            select(PlanModule.id).where(
-                                or_(
-                                    PlanModule.id == plan_module_id,
-                                    PlanModule.id.in_(subquery)
-                                )
-                            )
-                        )
-                    )
-                    
-                if case_level:
-                    conditions.append(PlanCaseAssociation.case_level == case_level)
-                if case_status is not None:
-                    conditions.append(PlanCaseAssociation.case_status == case_status)
-                if is_review is not None:
-                    conditions.append(PlanCaseAssociation.is_review == is_review)
-                
-                stmt = (
-                    select(PlanCaseAssociation, TestCase)
-                    .join(TestCase, TestCase.id == PlanCaseAssociation.case_id)
-                    .where(and_(*conditions))
-                    .order_by(PlanCaseAssociation.order)
                 )
-                result = await session.execute(stmt)
-                items = []
-                for row in result.all():
-                    assoc, case = row
-                    item = case.to_dict()
-                    item.update({
-                        "plan_case_id": assoc.case_id,
-                        "plan_module_id": assoc.plan_module_id,
-                        "is_review": assoc.is_review,
-                        "case_status": assoc.case_status,
-                        "bug_url": assoc.bug_url,
-                        "order": assoc.order
-                    })
-                    items.append(item)
-                
-                return items
-        except Exception as e:
-            raise
+                conditions.append(PlanCaseAssociation.plan_module_id.in_(module_ids))
+
+            filter_mapping = {
+                (case_level, "case_level"): TestCase.case_level == case_level,
+                (case_status, "case_status"): PlanCaseAssociation.case_status == case_status,
+                (is_review, "is_review"): PlanCaseAssociation.is_review == is_review,
+            }
+            for key, condition in filter_mapping.items():
+                if key[0] is not None:
+                    conditions.append(condition)
+
+            stmt = (
+                select(PlanCaseAssociation, TestCase)
+                .join(TestCase, TestCase.id == PlanCaseAssociation.case_id)
+                .where(and_(*conditions))
+                .options(joinedload(TestCase.case_sub_steps))
+                .order_by(PlanCaseAssociation.order)
+            )
+            result = await session.execute(stmt)
+            data = [
+                {
+                    **case.to_dict(),
+                    "plan_case_id": assoc.case_id,
+                    "plan_module_id": assoc.plan_module_id,
+                    "is_review": assoc.is_review,
+                    "case_status": assoc.case_status,
+                    "bug_url": assoc.bug_url,
+                    "order": assoc.order,
+                    "case_sub_steps": list(map(lambda s: s.to_dict(), case.case_sub_steps))
+                }
+                for assoc, case in result.unique()
+            ]
+            return data 
 
     @classmethod
     async def get_overview(cls, plan_id: int) -> dict:

@@ -5,9 +5,10 @@
 # @File : testcaseMapper
 # @Software: PyCharm
 # @Desc: 测试用例数据访问层
+from re import L
 from typing import List, Dict, Any, Optional, Sequence
 
-from sqlalchemy import select, insert, update, and_, delete
+from sqlalchemy import select, insert, update, and_, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper, set_creator
@@ -20,6 +21,7 @@ from app.model.caseHub.test_case import TestCase
 from app.model.caseHub.test_case_step import TestCaseStep
 from app.model.caseHub.association import RequirementCaseAssociation
 from utils import log
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def get_last_index(session: AsyncSession, requirement_id: int) -> int:
@@ -519,68 +521,101 @@ class TestCaseMapper(Mapper[TestCase]):
             raise
 
     @classmethod
-    async def copy_case(cls, caseId: int, user: User, requirement_id: Optional[int]):
+    async def copy_cases(cls, case_ids: List[int], user: User, requirement_id: Optional[int]=None, session: Optional[AsyncSession]=None):
         """
-        复制用例及其步骤到指定需求
+        复制用例及其步骤
 
-        :param caseId: 被复制的源用例ID
+        :param case_ids: 被复制的源用例ID列表
         :param user: 操作用户
         :param requirement_id: 目标需求ID（可选）
+        :param session: 异步会话（可选）
+        :return: 复制的用例对象
         """
         try:
-            async with cls.transaction() as session:
-                source_case: TestCase = await cls.get_by_id(ident=caseId, session=session)
-                source_steps: Sequence[TestCaseStep] = await TestCaseStepMapper.query_sub_steps(
-                    case_id=source_case.id,
-                    session=session
-                )
+            async with cls.session_scope(session) as session:
+                source_cases = await cls.query_by_in_clause("id", case_ids, session)
 
-                new_case_data = source_case.copy_map()
-                new_case_data["case_name"] += " - 副本"
-                new_case_data["creator"] = user.id
-                new_case_data["creatorName"] = user.username
+                source_steps_map = {}
+                if source_cases:
+                    steps_result = await session.execute(
+                        select(TestCaseStep)
+                        .where(TestCaseStep.test_case_id.in_(case_ids))
+                        .order_by(TestCaseStep.order)
+                    )
+                    all_steps = steps_result.scalars().all()
+                    for step in all_steps:
+                        source_steps_map.setdefault(step.test_case_id, []).append(step)
 
-                new_case_obj = await cls.save(session=session, **new_case_data)
-
-                for step in source_steps:
-                    new_step_data = step.copy_map()
-                    new_step_data["test_case_id"] = new_case_obj.id
-                    new_step_data["creator"] = user.id
-                    new_step_data["creatorName"] = user.username
-                    await TestCaseStepMapper.save(session=session, **new_step_data)
-
-                if requirement_id:
-                    req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
-                    req.case_number += 1
-
-                    source_order = await get_case_index(session, requirement_id, source_case.id)
-
-                    await session.execute(
-                        update(RequirementCaseAssociation)
-                        .where(
+                source_order_map = {}
+                if requirement_id and source_cases:
+                    order_result = await session.execute(
+                        select(
+                            RequirementCaseAssociation.case_id,
+                            RequirementCaseAssociation.order
+                        ).where(
                             and_(
                                 RequirementCaseAssociation.requirement_id == requirement_id,
-                                RequirementCaseAssociation.order > source_order
+                                RequirementCaseAssociation.case_id.in_(case_ids)
                             )
                         )
-                        .values(order=RequirementCaseAssociation.order + 1)
                     )
+                    for row in order_result.all():
+                        source_order_map[row.case_id] = row.order
 
-                    await session.execute(
-                        insert(RequirementCaseAssociation).values(
-                            requirement_id=requirement_id,
-                            case_id=new_case_obj.id,
-                            order=source_order + 1
+                new_case_list = []
+                for source_case in source_cases:
+                    new_case_data = source_case.copy_map()
+                    new_case_data["creator"] = user.id
+                    new_case_data["creatorName"] = user.username
+                    new_case_model = TestCase(**new_case_data)
+
+                    steps = source_steps_map.get(source_case.id, [])
+                    new_case_model.case_sub_steps = [
+                        TestCaseStep(
+                            **{
+                                **step.copy_map(),
+                                "test_case_id": new_case_model.id,
+                                "creator": user.id,
+                                "creatorName": user.username
+                            }
                         )
+                        for step in steps
+                    ]
+                    new_case_list.append(new_case_model)
+
+                session.add_all(new_case_list)
+                await session.flush()
+
+                if requirement_id and source_cases:
+                    req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
+                    req.case_number += len(new_case_list)
+
+                    max_order_result = await session.execute(
+                        select(func.max(RequirementCaseAssociation.order))
+                        .where(RequirementCaseAssociation.requirement_id == requirement_id)
+                    )
+                    max_order = max_order_result.scalar() or 0
+
+                    assoc_values = [
+                        {
+                            "requirement_id": requirement_id,
+                            "case_id": new_case_obj.id,
+                            "order": max_order + idx + 1
+                        }
+                        for idx, new_case_obj in enumerate(new_case_list)
+                    ]
+                    await session.execute(insert(RequirementCaseAssociation).values(assoc_values))
+
+                for new_case_obj in new_case_list:
+                    await CaseDynamicMapper.new_dynamic(
+                        cr=user,
+                        test_case=new_case_obj,
+                        session=session
                     )
 
-                await CaseDynamicMapper.new_dynamic(
-                    cr=user,
-                    test_case=new_case_obj,
-                    session=session
-                )
+                return new_case_list
         except Exception as e:
-            log.error(f"copy_case error: caseId={caseId}, requirement_id={requirement_id}, error={e}")
+            log.error(f"copy_cases error: case_ids={case_ids}, requirement_id={requirement_id}, error={e}")
             raise
 
     @classmethod
@@ -655,3 +690,4 @@ class TestCaseMapper(Mapper[TestCase]):
         except Exception as e:
             log.error(f"add_default_case error: requirement_id={requirement_id}, error={e}")
             raise
+        

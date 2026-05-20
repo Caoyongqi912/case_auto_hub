@@ -6,6 +6,7 @@
 # @Software: PyCharm
 from sqlalchemy import Column, ForeignKey, String, Boolean, Integer
 
+from sqlalchemy.orm import relationship
 from app.model.base import User
 from app.model.basic import BaseModel
 
@@ -24,6 +25,10 @@ class TestCase(BaseModel):
     is_common = Column(Boolean, default=False, index=True, comment="用例库")
     module_id = Column(Integer, ForeignKey('module.id'), nullable=False, comment="所属模块")
     project_id = Column(Integer, ForeignKey('project.id'), nullable=False, comment="所属项目")
+
+    
+    from app.model.caseHub.test_case_step import TestCaseStep
+    case_sub_steps = relationship(TestCaseStep, back_populates="case", lazy="select", order_by=TestCaseStep.order)
 
     async def set_default(self, user: User):
         self.case_name = "测试用例"

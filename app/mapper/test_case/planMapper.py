@@ -177,6 +177,7 @@ class PlanMapper(Mapper[CasePlan]):
                         PlanRequirementAssociation.requirement_id == Requirement.id
                     )
                     .where(and_(*conditions))
+                  
                     .order_by(Requirement.create_time.desc())
                 )
                 result = await session.execute(stmt)

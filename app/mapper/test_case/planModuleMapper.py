@@ -7,11 +7,12 @@
 # @Desc: 计划分组数据访问层
 from typing import List, Optional
 
-from sqlalchemy import select, delete, and_
+from sqlalchemy import select, delete, and_, func
 
 from app.mapper import Mapper
 from app.model.base import User
 from app.model.caseHub.plan_module import PlanModule
+from app.model.caseHub.association import PlanCaseAssociation
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils import log
 
@@ -191,20 +192,47 @@ class PlanModuleMapper(Mapper[PlanModule]):
         """
         try:
             async with cls.transaction() as session:
-                stmt = select(PlanModule).where(
-                    PlanModule.plan_id == plan_id
-                ).order_by(PlanModule.order, PlanModule.create_time)
-                result = await session.execute(stmt)
-                modules = result.scalars().all()
-                log.info(f"build_tree: {modules}")
-                module_list = [m.map for m in modules]
-                module_dict = {m["id"]: m for m in module_list}
+                count_subq = (
+                    select(
+                        PlanCaseAssociation.plan_module_id,
+                        func.count(PlanCaseAssociation.case_id).label("case_nums")
+                    )
+                    .where(PlanCaseAssociation.plan_id == plan_id)
+                    .group_by(PlanCaseAssociation.plan_module_id)
+                    .subquery()
+                )
                 
-                for module in module_list:
-                    module["children"] = []
+                total_count_subq = (
+                    select(func.count(PlanCaseAssociation.case_id))
+                    .where(PlanCaseAssociation.plan_id == plan_id)
+                    .scalar_subquery()
+                )
+                
+                stmt = (
+                    select(
+                        PlanModule,
+                        func.coalesce(count_subq.c.case_nums, 0).label("case_nums"),
+                        total_count_subq.label("total_case_nums")
+                    )
+                    .outerjoin(count_subq, PlanModule.id == count_subq.c.plan_module_id)
+                    .where(PlanModule.plan_id == plan_id)
+                    .order_by(PlanModule.order, PlanModule.create_time)
+                )
+                result = await session.execute(stmt)
+                rows = result.all()
+                
+                module_dict = {}
+                for row in rows:
+                    module_map = row.PlanModule.map.copy()
+                    if module_map.get("parent_id") is None:
+                        module_map["case_nums"] = row.total_case_nums
+                    else:
+                        module_map["case_nums"] = row.case_nums
+                    module_map["children"] = []
+                    module_dict[module_map["id"]] = module_map
                 
                 root_modules = []
-                for module in module_list:
+                for module in module_dict.values():
                     parent_id = module.get("parent_id")
                     if parent_id is None:
                         root_modules.append(module)
@@ -213,4 +241,5 @@ class PlanModuleMapper(Mapper[PlanModule]):
                 
                 return root_modules
         except Exception as e:
+            log.error(f"build_tree error: {e}")
             raise

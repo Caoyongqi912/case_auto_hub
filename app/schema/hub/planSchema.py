@@ -134,11 +134,32 @@ class UpdatePlanCaseStatusSchema(BaseModel):
     case_status: Optional[int] = Field(None, description="用例状态 0:未开始 1:通过 2:失败")
     bug_url: Optional[str] = Field(None, description="缺陷链接")
 
+class CopyCaseToCasePlan(BaseModel):
+    """复制计划用例到新的分组模型"""
+    case_id_list: List[int] = Field(..., description="用例ID列表")
+    plan_id: int = Field(..., description="计划ID")
+    plan_case_module_id: int = Field(..., description="计划分组ID")
+    is_review: bool = Field(None, description="是否审核")
+    
+    
+class UpdateCaseToCasePlan(BaseModel):
+    """更新计划用例模型"""
+    case_id_list: List[int] = Field(..., description="用例ID列表")
+    plan_id: int = Field(..., description="计划ID")
+    is_review: Optional[int] = Field(None, description="是否审核")
+    case_status: Optional[int] = Field(None, description="用例状态 0:未开始 1:通过 2:失败..")
+    
+    
+class MoveCaseToCasePlan(BaseModel):
+    """移动计划用例到新的分组模型"""
+    case_id_list: List[int] = Field(..., description="用例ID列表")
+    plan_id: int = Field(..., description="计划ID")
+    plan_case_module_id: int = Field(..., description="计划分组ID")
 
 class RemovePlanCaseSchema(BaseModel):
     """移除计划用例关联模型"""
-    plan_case_id: int = Field(..., description="计划用例关联ID")
-
+    case_ids: List[int] = Field(..., description="用例ID列表")
+    plan_id: int = Field(..., description="计划ID")
 
 class PagePlanCaseSchema(PageSchema):
     """计划用例分页查询模型"""
