@@ -15,13 +15,14 @@ from app.schema.hub.planSchema import (
     AddPlanSchema, UpdatePlanSchema, RemovePlanSchema,
     MoveCaseToCasePlan, PagePlanSchema,
     AssociateRequirementSchema, DisassociateRequirementSchema,
-    QueryPlanRequirementsSchema,
+    QueryPlanRequirementsSchema,CopyOneCaseToCasePlan,
     AddPlanModuleSchema, UpdatePlanModuleSchema,
     RemovePlanModuleSchema, MovePlanModuleSchema,
-    AddPlanCaseSchema, UpdatePlanCaseStatusSchema,
+    UpdatePlanCaseStepResultSchema,
     RemovePlanCaseSchema, CopyCaseToCasePlan,
     UpdatePlanPhaseSchema,UpdateCaseToCasePlan
 )
+from app.schema.hub.testCaseSchema import AddPlanCaseSchema
 from app.mapper.test_case.planMapper import PlanMapper
 from app.mapper.test_case.planModuleMapper import PlanModuleMapper
 from app.mapper.test_case.planCaseMapper import PlanCaseMapper
@@ -252,6 +253,7 @@ async def associate_cases(data: AddPlanCaseSchema, _: User = Depends(Authenticat
         plan_id=data.plan_id,
         case_ids=data.case_ids,
         plan_module_id=data.plan_module_id,
+        order=data.order,
     )
     return Response.success(data={"count": count})
 
@@ -268,22 +270,16 @@ async def remove_case_association(data: RemovePlanCaseSchema, _: User = Depends(
     return Response.success(count)
 
 
-@router.post("/case/updateStatus", description="更新用例关联状态")
-async def update_case_status(data: UpdatePlanCaseStatusSchema, user: User = Depends(Authentication())):
+@router.post("/case/updateStepResult", description="更新用例步骤结果")
+async def update_case_step_result(data: UpdatePlanCaseStepResultSchema, user: User = Depends(Authentication())):
     """
-    更新用例关联状态（审核、执行状态、缺陷链接）
+    更新用例步骤结果
     :param data: 更新数据
     :param user: 认证用户
     :return: 操作结果
     """
     log.info(data)
-    await PlanCaseMapper.update_case_status(
-        plan_case_id=data.plan_case_id,
-        user=user,
-        is_review=data.is_review,
-        case_status=data.case_status,
-        bug_url=data.bug_url
-    )
+    await PlanCaseMapper.update_case_step_result(**data.model_dump(exclude_unset=True,exclude_none=True))
     return Response.success()
 
 
@@ -302,6 +298,21 @@ async def move_plan_cases(data: MoveCaseToCasePlan, _: User = Depends(Authentica
     return Response.success(values)
 
 
+@router.post("/cases/copy_one", description="复制单个计划用例")
+async def copy_plan_case(data: CopyOneCaseToCasePlan, user: User = Depends(Authentication())):
+    """
+    复制单个计划用例到新的分组下
+    :param data: 种制参数
+    :param user: 认证用户
+    :return: 种制数量
+    """
+    log.info(data)
+    values =  await PlanCaseMapper.copy_plan_case(
+        **data.model_dump(),
+        user=user
+    )
+    return Response.success(values)
+
 @router.post("/cases/copy", description="复制计划用例")
 async def copy_plan_cases(data: CopyCaseToCasePlan, user: User = Depends(Authentication())):
     """
@@ -311,7 +322,7 @@ async def copy_plan_cases(data: CopyCaseToCasePlan, user: User = Depends(Authent
     :return: 种制数量
     """
     log.info(data)
-    values =  await PlanCaseMapper.copy_case(
+    values =  await PlanCaseMapper.copy_cases(
         **data.model_dump(),
         user=user
     )
@@ -332,6 +343,23 @@ async def update_plan_cases(data: UpdateCaseToCasePlan, user: User = Depends(Aut
         user=user
     )
     return Response.success(values)
+
+
+@router.post("/cases/insert", description="添加计划用例")
+async def insert_plan_cases(data: AddPlanCaseSchema, user: User = Depends(Authentication())):
+    """
+    添加计划关联的用例
+    :param data: 添加参数
+    :param user: 认证用户
+    """
+    log.info(data)
+    values =  await PlanCaseMapper.insert_plan_case(
+        user=user,
+        **data.model_dump(),
+    )
+    return Response.success(values)
+
+
 
 @router.get("/cases", description="获取计划用例列表")
 async def get_plan_cases(

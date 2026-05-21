@@ -480,7 +480,7 @@ class TestCaseMapper(Mapper[TestCase]):
                         requirement_id=requirement_id,
                         case_id=case_obj.id
                     )
-
+       
                 await CaseDynamicMapper.new_dynamic(
                     cr=user,
                     test_case=case_obj,
@@ -565,6 +565,7 @@ class TestCaseMapper(Mapper[TestCase]):
                 new_case_list = []
                 for source_case in source_cases:
                     new_case_data = source_case.copy_map()
+                    new_case_data["case_name"] += " - 副本"
                     new_case_data["creator"] = user.id
                     new_case_data["creatorName"] = user.username
                     new_case_model = TestCase(**new_case_data)

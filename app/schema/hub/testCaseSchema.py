@@ -29,9 +29,9 @@ class TestCaseField(BaseModel):
     case_type: Optional[int] = Field(1, description="用例类型: 1'普通' | 2'冒烟' | 3 回归")
     case_tag: Optional[str] = Field(None, description="用例标签")
     case_setup: Optional[str] = Field(None, description="用例前置条件")
-    case_status: Optional[int] = Field(0, description="用例状态")
+    # case_status: Optional[int] = Field(0, description="用例状态")
     case_mark: Optional[str] = Field(None, description="用例备注")
-    is_review: Optional[bool] = Field(False, description="是否审核")
+    # is_review: Optional[bool] = Field(False, description="是否审核")
     is_common: Optional[bool] = Field(False, description="是否公共用例")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
@@ -46,7 +46,22 @@ class AddTestCaseSchema(TestCaseField):
     case_tag: str = Field(..., description="用例标签")
     case_mark: Optional[str] = Field(None, description="用例备注")
     module_id: Optional[int] = Field(None, description="模块ID")
-    project_id: Optional[int] = Field(None, description="项目ID")
+    project_id: int = Field(..., description="项目ID")
+
+class AddPlanCaseSchema(TestCaseField):
+    """添加计划关联的用例模型"""
+    plan_id: int = Field(..., description="计划ID")
+    plan_module_id: Optional[int] = Field(None, description="计划分组ID，NULL表示未分组")
+    case_name: str = Field(..., description="用例名称")
+    case_tag: str = Field(..., description="用例标签")
+    case_mark: Optional[str] = Field(None, description="用例备注")
+    module_id: Optional[int] = Field(None, description="模块ID")
+
+class UpdatePlanCaseSchema(BaseModel):
+    """更新计划关联的用例模型"""
+    plan_id: Optional[int] = Field(None, description="计划ID")
+    plan_module_id: Optional[int] = Field(None, description="计划分组ID，NULL表示未分组")
+    case_ids: Optional[List[int]] = Field(None, description="用例ID列表")
 
 
 class UpdateTestCaseSchema(TestCaseField):

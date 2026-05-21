@@ -120,18 +120,12 @@ class MovePlanModuleSchema(BaseModel):
     order: Optional[int] = Field(None, description="排序顺序")
 
 
-class AddPlanCaseSchema(BaseModel):
-    """添加用例到计划模型"""
-    plan_id: int = Field(..., description="计划ID")
-    plan_module_id: Optional[int] = Field(None, description="计划分组ID，NULL表示未分组")
-    case_ids: List[int] = Field(..., description="用例ID列表")
-
-
-class UpdatePlanCaseStatusSchema(BaseModel):
-    """更新计划用例状态模型"""
-    plan_case_id: int = Field(..., description="计划用例关联ID")
-    is_review: Optional[bool] = Field(None, description="是否审核")
-    case_status: Optional[int] = Field(None, description="用例状态 0:未开始 1:通过 2:失败")
+class UpdatePlanCaseStepResultSchema(BaseModel):
+    """更新计划用例步骤结果模型"""
+    plan_id: int = Field(..., description="计划用例关联ID")
+    step_id: Optional[int] = Field(None, description="用例步骤ID")
+    actual_result: Optional[str] = Field(None, description="实际结果")
+    status: Optional[int] = Field(None, description="用例状态 0:未填写 1:通过 2:阻塞 3:跳过 4:其他")
     bug_url: Optional[str] = Field(None, description="缺陷链接")
 
 class CopyCaseToCasePlan(BaseModel):
@@ -141,6 +135,13 @@ class CopyCaseToCasePlan(BaseModel):
     plan_case_module_id: int = Field(..., description="计划分组ID")
     is_review: bool = Field(None, description="是否审核")
     
+
+class CopyOneCaseToCasePlan(BaseModel):
+    """复制单个计划用例到新的分组模型"""
+    case_id: int = Field(..., description="用例ID")
+    plan_id: int = Field(..., description="计划ID")
+    plan_module_id: int = Field(..., description="计划分组ID")
+    
     
 class UpdateCaseToCasePlan(BaseModel):
     """更新计划用例模型"""
@@ -148,7 +149,7 @@ class UpdateCaseToCasePlan(BaseModel):
     plan_id: int = Field(..., description="计划ID")
     is_review: Optional[int] = Field(None, description="是否审核")
     case_status: Optional[int] = Field(None, description="用例状态 0:未开始 1:通过 2:失败..")
-    
+
     
 class MoveCaseToCasePlan(BaseModel):
     """移动计划用例到新的分组模型"""
