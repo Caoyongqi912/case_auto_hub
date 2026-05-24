@@ -8,7 +8,7 @@
 import json
 from contextlib import asynccontextmanager
 from math import ceil
-from typing import TypeVar, List, Type, Any, Optional, Generic, Dict, Union, Sequence, AsyncIterator
+from typing import TypeVar, List, Type, Any, Optional, Generic, Dict, Union, Sequence, AsyncIterator, AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, text, delete, update
@@ -52,7 +52,7 @@ class Mapper(Generic[M]):
 
     @classmethod
     @asynccontextmanager
-    async def session_scope(cls, session: AsyncSession = None) -> AsyncIterator[AsyncSession]:
+    async def session_scope(cls, session: AsyncSession = None) -> AsyncGenerator[AsyncSession, None]:
         """
         Session 上下文管理器
 
@@ -808,7 +808,7 @@ class Mapper(Generic[M]):
 
     @classmethod
     @asynccontextmanager
-    async def transaction(cls):
+    async def transaction(cls) -> AsyncGenerator[AsyncSession, None]:
         """
         事务上下文管理器
         :yield: 数据库会话

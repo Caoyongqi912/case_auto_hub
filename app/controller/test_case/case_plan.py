@@ -18,7 +18,7 @@ from app.schema.hub.planSchema import (
     QueryPlanRequirementsSchema,CopyOneCaseToCasePlan,
     AddPlanModuleSchema, UpdatePlanModuleSchema,
     RemovePlanModuleSchema, MovePlanModuleSchema,
-    UpdatePlanCaseStepResultSchema,
+    UpdatePlanCaseStepResultSchema,AssociatePlanCaseSchema,
     RemovePlanCaseSchema, CopyCaseToCasePlan,
     UpdatePlanPhaseSchema,UpdateCaseToCasePlan
 )
@@ -242,7 +242,7 @@ async def get_module_tree(plan_id: int, _: User = Depends(Authentication())):
 
 
 @router.post("/case/associate", description="关联用例到计划")
-async def associate_cases(data: AddPlanCaseSchema, _: User = Depends(Authentication())):
+async def associate_cases(data: AssociatePlanCaseSchema, _: User = Depends(Authentication())):
     """
     批量关联用例到计划
     :param data: 计划ID和用例ID列表
@@ -253,7 +253,6 @@ async def associate_cases(data: AddPlanCaseSchema, _: User = Depends(Authenticat
         plan_id=data.plan_id,
         case_ids=data.case_ids,
         plan_module_id=data.plan_module_id,
-        order=data.order,
     )
     return Response.success(data={"count": count})
 

@@ -5,6 +5,7 @@
 # @File : planSchema
 # @Software: PyCharm
 # @Desc: 测试计划相关的Schema定义
+from datetime import datetime
 from typing import Optional, List
 
 from pydantic import BaseModel, Field
@@ -18,13 +19,12 @@ class PlanField(BaseModel):
     project_id: Optional[int] = Field(None, description="项目ID")
     plan_name: Optional[str] = Field(None, description="计划名称")
     plan_description: Optional[str] = Field(None, description="计划描述")
-    plan_status: Optional[str] = Field(None, description="状态")
-    plan_completion_rate: Optional[float] = Field(None, description="完成率")
+    plan_status: Optional[int] = Field(None, description="计划状态 0:进行中 1:已完成")
     plan_mark: Optional[str] = Field(None, description="备注")
     charge_id: Optional[int] = Field(None, description="负责人ID")
     charge_name: Optional[str] = Field(None, description="负责人姓名")
-    plan_start_time: Optional[str] = Field(None, description="开始时间")
-    plan_end_time: Optional[str] = Field(None, description="结束时间")
+    plan_start_time: Optional[datetime] = Field(None, description="开始时间")
+    plan_end_time: Optional[datetime] = Field(None, description="结束时间")
 
 
 class AddPlanSchema(BaseModel):
@@ -32,12 +32,12 @@ class AddPlanSchema(BaseModel):
     project_id: int = Field(..., description="项目ID")
     plan_name: str = Field(..., description="计划名称")
     plan_description: Optional[str] = Field(None, description="计划描述")
-    plan_status: str = Field("RUNNING", description="状态 RUNNING/DONE")
+    plan_status: Optional[int] = Field(0, description="计划状态 0:进行中 1:已完成")
     plan_mark: Optional[str] = Field(None, description="备注")
     charge_id: int = Field(..., description="负责人ID")
     charge_name: str = Field(..., description="负责人姓名")
-    plan_start_time: Optional[str] = Field(None, description="开始时间")
-    plan_end_time: Optional[str] = Field(None, description="结束时间")
+    plan_start_time: Optional[datetime] = Field(None, description="开始时间")
+    plan_end_time: Optional[datetime] = Field(None, description="结束时间")
 
 
 class UpdatePlanSchema(BaseModel):
@@ -45,13 +45,12 @@ class UpdatePlanSchema(BaseModel):
     id: int = Field(..., description="计划ID")
     plan_name: Optional[str] = Field(None, description="计划名称")
     plan_description: Optional[str] = Field(None, description="计划描述")
-    plan_status: Optional[str] = Field(None, description="状态")
-    plan_completion_rate: Optional[float] = Field(None, description="完成率")
+    plan_status: Optional[int] = Field(None, description="计划状态 0:进行中 1:已完成")
     plan_mark: Optional[str] = Field(None, description="备注")
     charge_id: Optional[int] = Field(None, description="负责人ID")
     charge_name: Optional[str] = Field(None, description="负责人姓名")
-    plan_start_time: Optional[str] = Field(None, description="开始时间")
-    plan_end_time: Optional[str] = Field(None, description="结束时间")
+    plan_start_time: Optional[datetime] = Field(None, description="开始时间")
+    plan_end_time: Optional[datetime] = Field(None, description="结束时间")
 
 
 class RemovePlanSchema(BaseModel):
@@ -68,7 +67,7 @@ class PagePlanSchema(PageSchema):
     """测试计划分页查询模型"""
     project_id: Optional[int] = Field(None, description="项目ID")
     plan_name: Optional[str] = Field(None, description="计划名称")
-    plan_status: Optional[str] = Field(None, description="状态")
+    plan_status: Optional[int] = Field(None, description="计划状态 0:进行中 1:已完成")
     charge_id: Optional[int] = Field(None, description="负责人ID")
 
 
@@ -76,6 +75,12 @@ class AssociateRequirementSchema(BaseModel):
     """计划关联需求模型"""
     plan_id: int = Field(..., description="计划ID")
     requirement_ids: List[int] = Field(..., description="需求ID列表")
+
+class AssociatePlanCaseSchema(BaseModel):
+    """关联计划用例模型"""
+    plan_id: int = Field(..., description="计划ID")
+    case_ids: List[int] = Field(..., description="用例ID列表")
+    plan_module_id: int = Field(..., description="计划分组ID")
 
 
 class DisassociateRequirementSchema(BaseModel):
@@ -122,7 +127,7 @@ class MovePlanModuleSchema(BaseModel):
 
 class UpdatePlanCaseStepResultSchema(BaseModel):
     """更新计划用例步骤结果模型"""
-    plan_id: int = Field(..., description="计划用例关联ID")
+    plan_id: int = Field(..., description="计划ID")
     step_id: Optional[int] = Field(None, description="用例步骤ID")
     actual_result: Optional[str] = Field(None, description="实际结果")
     status: Optional[int] = Field(None, description="用例状态 0:未填写 1:通过 2:阻塞 3:跳过 4:其他")
@@ -134,23 +139,23 @@ class CopyCaseToCasePlan(BaseModel):
     plan_id: int = Field(..., description="计划ID")
     plan_case_module_id: int = Field(..., description="计划分组ID")
     is_review: bool = Field(None, description="是否审核")
-    
+
 
 class CopyOneCaseToCasePlan(BaseModel):
     """复制单个计划用例到新的分组模型"""
     case_id: int = Field(..., description="用例ID")
     plan_id: int = Field(..., description="计划ID")
     plan_module_id: int = Field(..., description="计划分组ID")
-    
-    
+
+
 class UpdateCaseToCasePlan(BaseModel):
     """更新计划用例模型"""
     case_id_list: List[int] = Field(..., description="用例ID列表")
     plan_id: int = Field(..., description="计划ID")
     is_review: Optional[int] = Field(None, description="是否审核")
-    case_status: Optional[int] = Field(None, description="用例状态 0:未开始 1:通过 2:失败..")
+    case_status: Optional[int] = Field(None, description="用例状态 0:未开始 1:通过 2:失败")
 
-    
+
 class MoveCaseToCasePlan(BaseModel):
     """移动计划用例到新的分组模型"""
     case_id_list: List[int] = Field(..., description="用例ID列表")

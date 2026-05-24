@@ -132,16 +132,19 @@ class PlanMapper(Mapper[CasePlan]):
         :param plan_id: 计划ID
         :return: 需求列表
         """
-        try:
-            async with cls.transaction() as session:
-                stmt = select(PlanRequirementAssociation).where(
-                    PlanRequirementAssociation.plan_id == plan_id
+        async with cls.transaction() as session:
+            stmt = (
+                select(Requirement)
+                .join(
+                    PlanRequirementAssociation,
+                    PlanRequirementAssociation.requirement_id == Requirement.id
                 )
-                result = await session.execute(stmt)
-                associations = result.scalars().all()
-                return [assoc.map for assoc in associations]
-        except Exception as e:
-            raise
+                .where(PlanRequirementAssociation.plan_id == plan_id)
+                .order_by(Requirement.create_time.desc())
+            )
+            result = await session.execute(stmt)
+            requirements = result.scalars().all()
+            return [req.map for req in requirements]
 
     @classmethod
     async def query_requirements_by_field(

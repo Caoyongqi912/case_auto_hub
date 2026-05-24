@@ -57,6 +57,9 @@ class AddPlanCaseSchema(TestCaseField):
     case_mark: Optional[str] = Field(None, description="用例备注")
     module_id: Optional[int] = Field(None, description="模块ID")
 
+
+
+
 class UpdatePlanCaseSchema(BaseModel):
     """更新计划关联的用例模型"""
     plan_id: Optional[int] = Field(None, description="计划ID")
