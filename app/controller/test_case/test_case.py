@@ -15,8 +15,11 @@ from app.schema.hub.testCaseSchema import (
     AddTestCaseSchema, PageTestCaseSchema, AddDefaultCaseSchema,
     UpdateTestCaseSchema, QueryTestCaseSchemaByField, RemoveCaseSchema, RemoveCaseStep,
     CopyCase, CopyCaseStep, AddDefaultCaseStep, UpdateTestCaseStep, ReorderCaseStep,
-    UpdateTestCaseStatusSchema, SetCasesCommonSchema
+    UpdateTestCaseStatusSchema, SetCasesCommonSchema, UploadPreviewResult,
+    UploadCommitSchema, UploadCancelSchema
 )
+from app.service.uploadCacheService import UploadCacheService
+from common import rc
 from app.controller import Authentication
 from app.model.base import User
 from app.response import Response
@@ -228,39 +231,7 @@ async def set_test_case_result(data: UpdateTestCaseStatusSchema, user: User = De
     return Response.success()
 
 
-@router.post("/upload", description="批量导入用例")
-async def upload_cases(
-        project_id: int = Form(..., description="项目ID"),
-        module_id: int = Form(..., description="模块ID"),
-        file: UploadFile = File(..., description="Excel文件"),
-        requirement_id: Optional[int] = Form(None, description="所属需求"),
-        is_common: bool = Form(True, description="是否公共"),
-        user: User = Depends(Authentication())
-):
-    """
-    从Excel文件批量导入测试用例
-    :param project_id: 项目ID
-    :param module_id: 模块ID
-    :param requirement_id: 需求
-    :param file: 上传的Excel文件
-    :param is_common: 公共
-    :param user: 认证用户
-    :return: 导入结果信息
-    """
-    from utils.aioFileReader import AsyncFilesReader
-    data, messages = await AsyncFilesReader().async_read_excel_for_case(file)
-    if messages:
-        return Response.error(msg=f"导入失败，请检查数据格式：{''.join(messages)}")
-    log.debug(data)
-    await TestCaseMapper.insert_upload_case(
-        cases=data,
-        project_id=project_id,
-        module_id=module_id,
-        requirement_id=requirement_id,
-        user=user,
-        is_common=is_common
-    )
-    return Response.success()
+
 
 
 @router.get("/downloadCaseDemo", description="下载用例导入模板")
@@ -288,3 +259,111 @@ async def batch_set_common(data: SetCasesCommonSchema, _: User = Depends(Authent
     """
     await TestCaseMapper.update_cases_common(**data.model_dump())
     return Response.success()
+
+
+
+
+@router.post("/upload/preview", description="上传文件并预览")
+async def upload_preview(
+        project_id: int = Form(..., description="项目ID"),
+        module_id: int = Form(..., description="模块ID"),
+        file: UploadFile = File(..., description="Excel文件"),
+        user: User = Depends(Authentication())
+):
+    from utils.aioFileReader import AsyncFilesReader
+    result = await AsyncFilesReader().async_read_excel_for_case(file)
+
+    cache_service = UploadCacheService(rc)
+    preview_data = result.valid_cases[:10]
+
+    await cache_service.save_preview(
+        file_md5=result.file_md5,
+        user_id=user.id,
+        valid_cases=result.valid_cases,
+        errors=result.errors,
+        total_count=result.total_count,
+        project_id=project_id,
+        module_id=module_id,
+    )
+
+    return Response.success(UploadPreviewResult(
+        file_md5=result.file_md5,
+        total_count=result.total_count,
+        valid_count=result.valid_count,
+        invalid_count=result.invalid_count,
+        errors=result.errors,
+        preview_data=preview_data,
+        file_exists=await cache_service.exists(result.file_md5, user.id)
+    ))
+
+
+@router.post("/upload/commit", description="确认并入库用例")
+async def upload_commit(
+        data: UploadCommitSchema,
+        user: User = Depends(Authentication())
+):
+    cache_service = UploadCacheService(rc)
+
+    if await cache_service.is_committed(data.file_md5, user.id):
+        return Response.error(msg="该文件已提交过，不能重复提交")
+
+    preview_data = await cache_service.get_preview(data.file_md5, user.id)
+    if not preview_data:
+        return Response.error(msg="预览数据已过期，请重新上传文件")
+
+    valid_cases = preview_data.get("valid_cases", [])
+    selected_cases = [valid_cases[i] for i in data.valid_case_ids if 0 <= i < len(valid_cases)]
+
+    if not selected_cases:
+        return Response.error(msg="请选择要入库的用例")
+
+    try:
+        await TestCaseMapper.insert_upload_case(
+            cases=selected_cases,
+            project_id=data.project_id,
+            module_id=data.module_id,
+            requirement_id=data.requirement_id,
+            user=user,
+            is_common=data.is_common
+        )
+        await cache_service.mark_committed(data.file_md5, user.id)
+        return Response.success({"imported_count": len(selected_cases)})
+    except Exception as e:
+        log.error(f"入库失败: {e}")
+        return Response.error(msg=f"入库失败: {str(e)}")
+
+
+@router.post("/upload/cancel", description="取消上传")
+async def upload_cancel(
+        data: UploadCancelSchema,
+        user: User = Depends(Authentication())
+):
+    cache_service = UploadCacheService(rc)
+    await cache_service.delete(data.file_md5, user.id)
+    return Response.success()
+
+
+@router.post("/upload", description="批量导入用例校验")
+async def upload_cases(
+        file: UploadFile = File(..., description="Excel文件"),
+        _: User = Depends(Authentication())
+):
+    from utils.aioFileReader import AsyncFilesReader
+    result = await AsyncFilesReader().async_read_excel_for_case(file)
+
+    if result.errors:
+        error_msgs = []
+        for err in result.errors[:5]:
+            row = err.get("row", "?")
+            err_list = err.get("errors", [])
+            for e in err_list:
+                error_msgs.append(f"第{row}行: {e.get('message', str(e))}")
+        return Response.error(msg=f"导入失败: {', '.join(error_msgs[:3])}")
+
+    return Response.success({
+        "file_md5": result.file_md5,
+        "total_count": result.total_count,
+        "valid_count": result.valid_count,
+        "invalid_count": result.invalid_count,
+        "errors": result.errors
+    })
