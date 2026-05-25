@@ -58,6 +58,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         case_sub_steps = kwargs.pop("case_sub_steps", [])
 
         kwargs = set_creator(user, **kwargs)
+        kwargs['is_common'] = True
 
         try:
             async with cls.transaction() as session:

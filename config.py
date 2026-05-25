@@ -48,7 +48,7 @@ class LocalConfig(BaseConfig):
     DOMAIN = f"http://{SERVER_HOST}:{SERVER_PORT}"
     TASK_WORKER_POOL_SIZE = 10
     FILE_AVATAR_PATH = DOMAIN + "/file/avatar/uid="
-
+    WORKER_POOL = False
     Record_Proxy = False
     # 硬编码MySQL配置
     MYSQL_SERVER = "127.0.0.1"
