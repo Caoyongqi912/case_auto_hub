@@ -45,6 +45,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         """
         case_sub_steps = kwargs.pop("case_sub_steps", [])
         kwargs = set_creator(user, **kwargs)
+        kwargs['is_common'] = True
 
         async with cls.transaction() as session:
             case_obj: TestCase = await TestCaseMapper.save(session=session, **kwargs)

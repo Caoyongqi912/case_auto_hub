@@ -198,31 +198,13 @@ async def init_proxy():
             log.error(f"record 代理启动失败: {e}")
 
 
-async def start_proxy():
-    """
-    启动代理不好用
-    """
-    from mitmproxy.tools.dump import DumpMaster
-    from mitmproxy import options
-    from croe.interface.recoder import InterfaceRecoder
-    dm = DumpMaster(
-        options=options.Options(
-            listen_host="0.0.0.0",
-            listen_port=7777,
-        ),
-        with_termlog=False,
-        with_dumper=False,
-    )
-    dm.addons.add(InterfaceRecoder())
-    await dm.run()
-
 
 async def init_worker_pool(rc):
     from common.worker_pool import r_pool
-
-    await r_pool.set_redis_client(rc)
-    await r_pool.start()
-    return r_pool
+    if  Config.WORKER_POOL:
+        await r_pool.set_redis_client(rc)
+        await r_pool.start()
+        return r_pool
 
 
 

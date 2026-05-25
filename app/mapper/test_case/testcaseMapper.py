@@ -230,7 +230,7 @@ class TestCaseMapper(Mapper[TestCase]):
             user: User,
             requirement_id: Optional[int] = None,
             is_common: bool = True,
-    ):
+    ) -> int:
         """
         从Excel批量导入用例
 
@@ -246,78 +246,76 @@ class TestCaseMapper(Mapper[TestCase]):
         :param requirement_id: 需求ID（可选）
         :param user: 操作用户
         :param is_common: 公共
+        :return: 导入的用例数量
         """
         if not cases:
-            return
+            return 0
 
         log.info(f"开始导入用例，共 {len(cases)} 条")
-        try:
-            async with cls.transaction() as session:
-                case_objects = []
-                all_steps = []
-                requirement_associations = []
-                last_order = await get_last_index(session, requirement_id) if requirement_id else 0
+        async with cls.transaction() as session:
+            case_objects = []
+            all_steps = []
+            requirement_associations = []
+            last_order = await get_last_index(session, requirement_id) if requirement_id else 0
 
-                for case_index, case_data in enumerate(cases):
-                    action = case_data.pop("action", None)
-                    expected_result = case_data.pop("expected_result", None)
+            for case_index, case_data in enumerate(cases):
+                action = case_data.pop("action", None)
+                expected_result = case_data.pop("expected_result", None)
 
-                    case_data.update({
-                        "project_id": project_id,
-                        "module_id": module_id,
+                case_data.update({
+                    "project_id": project_id,
+                    "module_id": module_id,
+                    "creator": user.id,
+                    "creatorName": user.username,
+                    "is_common": is_common,
+                })
+
+                case_objects.append(cls.__model__(**case_data))
+                log.debug(f"case_objects {case_objects}")
+                steps = _parse_steps(action, expected_result)
+                for step_index, step_data in enumerate(steps):
+                    step_data.update({
+                        "test_case_index": case_index,
+                        "order": step_index,
                         "creator": user.id,
                         "creatorName": user.username,
-                        "is_common": is_common,
-
                     })
+                    all_steps.append(step_data)
 
-                    case_objects.append(cls.__model__(**case_data))
-                    log.debug(f"case_objects {case_objects}")
-                    steps = _parse_steps(action, expected_result)
-                    for step_index, step_data in enumerate(steps):
-                        step_data.update({
-                            "test_case_index": case_index,
-                            "order": step_index,
-                            "creator": user.id,
-                            "creatorName": user.username,
-                        })
-                        all_steps.append(step_data)
-
-                    if requirement_id:
-                        last_order += 1
-                        requirement_associations.append(
-                            RequirementCaseAssociation(
-                                requirement_id=requirement_id,
-                                case_id=case_index,
-                                order=last_order,
-                                is_review=False,
-                                case_type=case_data.get("case_type", None),
-                                case_status=case_data.get("case_status", None),
-                            )
+                if requirement_id:
+                    last_order += 1
+                    requirement_associations.append(
+                        RequirementCaseAssociation(
+                            requirement_id=requirement_id,
+                            case_id=case_index,
+                            order=last_order,
+                            is_review=False,
+                            case_type=case_data.get("case_type", None),
+                            case_status=case_data.get("case_status", None),
                         )
+                    )
 
-                session.add_all(case_objects)
-                await session.flush()
+            session.add_all(case_objects)
+            await session.flush()
 
-                case_id_map = {i: case_obj.id for i, case_obj in enumerate(case_objects)}
+            case_id_map = {i: case_obj.id for i, case_obj in enumerate(case_objects)}
 
-                step_objects = [
-                    TestCaseStepMapper.__model__(**cls._map_step_id(step_data, case_id_map))
-                    for step_data in all_steps
-                ]
-                session.add_all(step_objects)
+            step_objects = [
+                TestCaseStepMapper.__model__(**cls._map_step_id(step_data, case_id_map))
+                for step_data in all_steps
+            ]
+            session.add_all(step_objects)
 
-                if requirement_associations:
-                    for assoc in requirement_associations:
-                        assoc.case_id = case_id_map[assoc.case_id]
-                    session.add_all(requirement_associations)
+            if requirement_associations:
+                for assoc in requirement_associations:
+                    assoc.case_id = case_id_map[assoc.case_id]
+                session.add_all(requirement_associations)
 
-                    req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
-                    req.case_number += len(case_objects)
+                req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
+                req.case_number += len(case_objects)
 
-        except Exception as e:
-            log.error(f"insert_upload_case error: {e}")
-            raise
+            log.info(f"成功导入用例 {len(case_objects)} 条")
+            return len(case_objects)
 
     @staticmethod
     def _map_step_id(step_data: Dict[str, Any], case_id_map: Dict[int, int]) -> Dict[str, Any]:

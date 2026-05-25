@@ -5,7 +5,7 @@
 # @File : testCaseSchema
 # @Software: PyCharm
 # @Desc: 测试用例相关的Schema定义
-from typing import List, Optional
+from typing import List, Optional,Dict,Any
 
 from pydantic import BaseModel, Field
 
@@ -180,3 +180,29 @@ class SetCasesCommonSchema(BaseModel):
     case_ids: List[int] = Field(..., description="用例ID列表")
     module_id: int = Field(..., description="模块ID")
     project_id: int = Field(..., description="项目ID")
+
+
+class UploadPreviewResult(BaseModel):
+    """上传预览结果模型"""
+    file_md5: str = Field(..., description="文件唯一标识")
+    total_count: int = Field(..., description="总行数")
+    valid_count: int = Field(..., description="有效用例数")
+    invalid_count: int = Field(..., description="无效行数")
+    errors: List[Dict[str, Any]] = Field(default_factory=list, description="具体错误信息")
+    preview_data: List[Dict[str, Any]] = Field(default_factory=list, description="预览数据（前10条）")
+    file_exists: bool = Field(False, description="文件是否已存在")
+
+
+class UploadCommitSchema(BaseModel):
+    """确认入库请求模型"""
+    file_md5: str = Field(..., description="文件唯一标识")
+    valid_case_ids: List[int] = Field(..., description="要入库的用例索引列表")
+    project_id: int = Field(..., description="项目ID")
+    module_id: int = Field(..., description="模块ID")
+    requirement_id: Optional[int] = Field(None, description="需求ID")
+    is_common: bool = Field(True, description="是否公共")
+
+
+class UploadCancelSchema(BaseModel):
+    """取消上传请求模型"""
+    file_md5: str = Field(..., description="文件唯一标识")
