@@ -66,7 +66,7 @@ class ModuleMapper(Mapper[Module]):
     __model__ = Module
 
     @classmethod
-    async def query_tree_by(cls, project_id: int, module_type: int):
+    async def query_tree_by(cls, project_id: int, module_type: int, no_group: bool = False):
         """
         查询模块树，包含未分组数据汇总
         :param project_id:
@@ -79,7 +79,9 @@ class ModuleMapper(Mapper[Module]):
                 return []
 
             tree = await list2Tree(query_modules)
-
+            if no_group:
+                return tree
+            
             ungrouped_modules = [m for m in query_modules if m.parent_id is None and m.title != "未分组"]
             if ungrouped_modules:
                 ungrouped_node = {

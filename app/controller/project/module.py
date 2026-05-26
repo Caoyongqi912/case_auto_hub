@@ -40,6 +40,6 @@ async def drop_module(moduleInfo: DropModuleSchema, ur: User = Depends(Authentic
 
 
 @router.get("/queryTreeByProject", description="查询模块树")
-async def tree_module(project_id: int, module_type: int, _=Depends(Authentication())):
-    data = await ModuleMapper.query_tree_by(project_id=project_id, module_type=module_type)
+async def tree_module(project_id: int, module_type: int, no_group: bool = False, _=Depends(Authentication())):
+    data = await ModuleMapper.query_tree_by(project_id=project_id, module_type=module_type, no_group=no_group)  
     return Response.success(data)

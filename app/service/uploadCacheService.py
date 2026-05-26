@@ -33,8 +33,6 @@ class UploadCacheService:
             valid_cases: List[Dict[str, Any]],
             errors: List[Dict[str, Any]],
             total_count: int,
-            project_id: int,
-            module_id: int,
     ) -> bool:
         key = self._get_key(file_md5, user_id)
         cache_data = {
@@ -43,8 +41,6 @@ class UploadCacheService:
             "valid_cases": valid_cases,
             "errors": errors,
             "total_count": total_count,
-            "project_id": project_id,
-            "module_id": module_id,
         }
         try:
             await self.redis.r.set(key, json.dumps(cache_data), ex=self.expires)

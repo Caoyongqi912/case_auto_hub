@@ -19,7 +19,6 @@ from utils.threadPool import ThreadPoolHelper
 
 FIELD_MAPPING = {
     "标题*": "case_name",
-    "用例状态": "case_status",
     "前置条件": "case_setup",
     "步骤描述*": "action",
     "预期结果*": "expected_result",
@@ -31,6 +30,7 @@ FIELD_MAPPING = {
 
 VALID_CASE_LEVELS = {"P0", "P1", "P2", "P3", "P4"}
 UPLOAD_CACHE_EXPIRES = 1800
+MAX_FILE_SIZE = 10 * 1024 * 1024
 
 
 @dataclass
@@ -56,9 +56,12 @@ class AsyncFilesReader:
 
     async def async_read_excel_for_case(self, file: UploadFile) -> ParseResult:
         file_content = await file.read()
+        if len(file_content) > MAX_FILE_SIZE:
+            raise ValueError(f"文件大小超过限制，最大支持 {MAX_FILE_SIZE // 1024 // 1024}MB")
         file_bytes = BytesIO(file_content)
         file_md5 = self._calculate_md5(file_content)
         loop = asyncio.get_event_loop()
+        await file.seek(0)
         return await self.tph.run_in_exe(loop, self.__read, file_bytes, file_md5)
 
     @staticmethod
@@ -66,9 +69,16 @@ class AsyncFilesReader:
         return hashlib.md5(content).hexdigest()
 
     @staticmethod
+    def _is_empty_row(row_dict: Dict[str, Any]) -> bool:
+        for value in row_dict.values():
+            if value is not None and not pd.isna(value) and str(value).strip():
+                return False
+        return True
+
+    @staticmethod
     def __read(file: BytesIO, file_md5: str) -> ParseResult:
         result = ParseResult(file_md5=file_md5)
-        start_row_num = 4
+        start_row_num = 2
 
         try:
             excel_file = pd.ExcelFile(file, engine='openpyxl')
@@ -77,7 +87,7 @@ class AsyncFilesReader:
 
             df = pd.read_excel(
                 file,
-                header=1,
+                header=0,
                 keep_default_na=False,
                 na_values=['', 'nan'],
                 sheet_name=sheet_name,
@@ -89,19 +99,19 @@ class AsyncFilesReader:
 
             for df_index, row in df.iterrows():
                 row_dict = dict(row)
+
+                if AsyncFilesReader._is_empty_row(row_dict):
+                    continue
+
                 current_row = df_index + start_row_num
 
-                case_tag = row_dict.get("标签")
                 case_name = row_dict.get("标题*")
 
                 is_valid = True
                 errors = []
 
-                if not case_tag:
-                    is_valid = False
-                    errors.append({"field": "标签", "message": "用例标签不能为空"})
-
-                if not case_name:
+   
+                if not case_name or pd.isna(case_name):
                     is_valid = False
                     errors.append({"field": "标题*", "message": "用例名称不能为空"})
 
@@ -127,10 +137,9 @@ class AsyncFilesReader:
                     })
 
         except Exception as e:
-            result.errors.append({
-                "row": 0,
-                "errors": [f"读取Excel时发生错误: {str(e)}"]
-            })
+            log.error(f"读取Excel时发生错误: {e}")
+            raise ValueError(f"读取Excel时发生错误")
+     
 
         return result
 

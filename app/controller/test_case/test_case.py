@@ -27,6 +27,8 @@ from utils import  log
 
 router = APIRouter(prefix="/hub/cases", tags=['用例'])
 
+_cache_service = UploadCacheService(rc)
+
 
 @router.get("/info", description="用例信息")
 async def case_info(case_id: int, _: User = Depends(Authentication())):
@@ -262,72 +264,34 @@ async def batch_set_common(data: SetCasesCommonSchema, _: User = Depends(Authent
 
 
 
-
-@router.post("/upload/preview", description="上传文件并预览")
-async def upload_preview(
-        project_id: int = Form(..., description="项目ID"),
-        module_id: int = Form(..., description="模块ID"),
-        file: UploadFile = File(..., description="Excel文件"),
-        user: User = Depends(Authentication())
-):
-    from utils.aioFileReader import AsyncFilesReader
-    result = await AsyncFilesReader().async_read_excel_for_case(file)
-
-    cache_service = UploadCacheService(rc)
-    preview_data = result.valid_cases[:10]
-
-    await cache_service.save_preview(
-        file_md5=result.file_md5,
-        user_id=user.id,
-        valid_cases=result.valid_cases,
-        errors=result.errors,
-        total_count=result.total_count,
-        project_id=project_id,
-        module_id=module_id,
-    )
-
-    return Response.success(UploadPreviewResult(
-        file_md5=result.file_md5,
-        total_count=result.total_count,
-        valid_count=result.valid_count,
-        invalid_count=result.invalid_count,
-        errors=result.errors,
-        preview_data=preview_data,
-        file_exists=await cache_service.exists(result.file_md5, user.id)
-    ))
-
-
 @router.post("/upload/commit", description="确认并入库用例")
 async def upload_commit(
         data: UploadCommitSchema,
         user: User = Depends(Authentication())
 ):
-    cache_service = UploadCacheService(rc)
-
-    if await cache_service.is_committed(data.file_md5, user.id):
+    if await _cache_service.is_committed(data.file_md5, user.id):
         return Response.error(msg="该文件已提交过，不能重复提交")
 
-    preview_data = await cache_service.get_preview(data.file_md5, user.id)
+    preview_data = await _cache_service.get_preview(data.file_md5, user.id)
     if not preview_data:
         return Response.error(msg="预览数据已过期，请重新上传文件")
 
     valid_cases = preview_data.get("valid_cases", [])
-    selected_cases = [valid_cases[i] for i in data.valid_case_ids if 0 <= i < len(valid_cases)]
 
-    if not selected_cases:
+    if not valid_cases:
         return Response.error(msg="请选择要入库的用例")
 
     try:
         await TestCaseMapper.insert_upload_case(
-            cases=selected_cases,
+            cases=valid_cases,
             project_id=data.project_id,
             module_id=data.module_id,
             requirement_id=data.requirement_id,
             user=user,
             is_common=data.is_common
         )
-        await cache_service.mark_committed(data.file_md5, user.id)
-        return Response.success({"imported_count": len(selected_cases)})
+        await _cache_service.mark_committed(data.file_md5, user.id)
+        return Response.success({"imported_count": len(valid_cases)})
     except Exception as e:
         log.error(f"入库失败: {e}")
         return Response.error(msg=f"入库失败: {str(e)}")
@@ -338,32 +302,35 @@ async def upload_cancel(
         data: UploadCancelSchema,
         user: User = Depends(Authentication())
 ):
-    cache_service = UploadCacheService(rc)
-    await cache_service.delete(data.file_md5, user.id)
+    await _cache_service.delete(data.file_md5, user.id)
     return Response.success()
 
 
-@router.post("/upload", description="批量导入用例校验")
+@router.post("/upload", description="批量导入用例")
 async def upload_cases(
         file: UploadFile = File(..., description="Excel文件"),
-        _: User = Depends(Authentication())
+        user: User = Depends(Authentication())
 ):
     from utils.aioFileReader import AsyncFilesReader
-    result = await AsyncFilesReader().async_read_excel_for_case(file)
+    try:
+        result = await AsyncFilesReader().async_read_excel_for_case(file)
+    except Exception as e:
+        log.error(f"文件解析失败: {e}")
+        return Response.error(msg=f"文件解析失败: {str(e)}")
 
-    if result.errors:
-        error_msgs = []
-        for err in result.errors[:5]:
-            row = err.get("row", "?")
-            err_list = err.get("errors", [])
-            for e in err_list:
-                error_msgs.append(f"第{row}行: {e.get('message', str(e))}")
-        return Response.error(msg=f"导入失败: {', '.join(error_msgs[:3])}")
+    await _cache_service.save_preview(
+        file_md5=result.file_md5,
+        user_id=user.id,
+        valid_cases=result.valid_cases,
+        errors=result.errors,
+        total_count=result.total_count,
+    )
 
-    return Response.success({
-        "file_md5": result.file_md5,
-        "total_count": result.total_count,
-        "valid_count": result.valid_count,
-        "invalid_count": result.invalid_count,
-        "errors": result.errors
-    })
+
+    return Response.success(UploadPreviewResult(
+        file_md5=result.file_md5,
+        total_count=result.total_count,
+        valid_count=result.valid_count,
+        invalid_count=result.invalid_count,
+        errors=result.errors,
+    ).model_dump())
