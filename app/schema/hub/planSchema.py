@@ -155,6 +155,15 @@ class UpdateCaseToCasePlan(BaseModel):
     is_review: Optional[int] = Field(None, description="是否审核")
     case_status: Optional[int] = Field(None, description="用例状态 0:未开始 1:通过 2:失败")
 
+class UploadCommitSchema(BaseModel):
+    """确认并入库用例模型"""
+    file_md5: str = Field(..., description="文件唯一标识")
+    plan_id: int = Field(..., description="计划ID")
+    plan_module_id: Optional[int] = Field(None, description="计划分组ID")
+    is_review: Optional[bool] = Field(None, description="是否审核")
+    case_status: Optional[int] = Field(None, description="用例状态 0:未开始 1:通过 2:失败") 
+
+
 
 class MoveCaseToCasePlan(BaseModel):
     """移动计划用例到新的分组模型"""

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 from fastapi import UploadFile
 from io import BytesIO
+from utils import log
 
 from utils.threadPool import ThreadPoolHelper
 
@@ -28,7 +29,17 @@ FIELD_MAPPING = {
     "备注": "case_mark"
 }
 
-VALID_CASE_LEVELS = {"P0", "P1", "P2", "P3", "P4"}
+VALID_CASE_LEVELS = {"P1", "P2", "P3", "P4"}
+CASE_TYPE_MAPPING = {
+    "冒烟": 1,
+    "功能": 2,
+    "回归": 3
+}
+CASE_TYPE_REVERSE = {
+    1: "冒烟",
+    2: "功能",
+    3: "回归"
+}
 UPLOAD_CACHE_EXPIRES = 1800
 MAX_FILE_SIZE = 10 * 1024 * 1024
 
@@ -78,7 +89,6 @@ class AsyncFilesReader:
     @staticmethod
     def __read(file: BytesIO, file_md5: str) -> ParseResult:
         result = ParseResult(file_md5=file_md5)
-        start_row_num = 2
 
         try:
             excel_file = pd.ExcelFile(file, engine='openpyxl')
@@ -87,46 +97,57 @@ class AsyncFilesReader:
 
             df = pd.read_excel(
                 file,
-                header=0,
+                header=1,
                 keep_default_na=False,
                 na_values=['', 'nan'],
                 sheet_name=sheet_name,
+                skiprows=[2],
                 engine='openpyxl'
             )
-            df = df.where(pd.notnull(df), None)
+
+            log.info(f"[Excel解析] 数据行数: {len(df)}, 列名: {list(df.columns)}")
+
+            if len(df) == 0:
+                result.errors.append({
+                    "row": 0,
+                    "errors": [{"field": "file", "message": "模板无有效数据"}]
+                })
+                return result
 
             result.total_count = len(df)
 
-            for df_index, row in df.iterrows():
-                row_dict = dict(row)
+            for df_idx, row in df.iterrows():
+                row_dict = {col: (None if pd.isna(val) or val == '' else val) for col, val in row.items()}
 
                 if AsyncFilesReader._is_empty_row(row_dict):
                     continue
 
-                current_row = df_index + start_row_num
-
                 case_name = row_dict.get("标题*")
+                current_row = df_idx + 4
 
                 is_valid = True
                 errors = []
 
-   
-                if not case_name or pd.isna(case_name):
+                if not case_name or (isinstance(case_name, str) and not case_name.strip()):
                     is_valid = False
                     errors.append({"field": "标题*", "message": "用例名称不能为空"})
 
                 mapped_case = {}
                 for excel_col, field_name in FIELD_MAPPING.items():
                     value = row_dict.get(excel_col)
-                    if pd.isna(value) or value == '':
-                        value = None
                     mapped_case[field_name] = value
 
-                if not mapped_case.get("case_level") or mapped_case.get("case_level") not in VALID_CASE_LEVELS:
+                if not mapped_case.get("case_level") or str(mapped_case.get("case_level")).strip() not in VALID_CASE_LEVELS:
                     mapped_case["case_level"] = "P2"
+                else:
+                    mapped_case["case_level"] = str(mapped_case["case_level"]).strip()
 
-                if not mapped_case.get("case_type"):
-                    mapped_case["case_type"] = 1
+                case_type_value = mapped_case.get("case_type")
+                if case_type_value:
+                    case_type_str = str(case_type_value).strip()
+                    mapped_case["case_type"] = CASE_TYPE_MAPPING.get(case_type_str, 2)
+                else:
+                    mapped_case["case_type"] = 2
 
                 if is_valid:
                     result.valid_cases.append(mapped_case)

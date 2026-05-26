@@ -5,28 +5,215 @@
 # @File : planCaseMapper
 # @Software: PyCharm
 # @Desc: 计划用例关联数据访问层
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
-from app.mapper.test_case.testcaseMapper import TestCaseMapper
 from sqlalchemy import insert, update, delete, select, and_, or_, func, case
 from sqlalchemy.dialects.mysql import insert as mysql_insert
-from app.model.caseHub.test_case_step import TestCaseStep
-from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper, set_creator
+from app.mapper.test_case.testcaseMapper import TestCaseMapper
+from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper
 from app.model.base import User
 from app.model.caseHub.association import PlanCaseAssociation, PlanRequirementAssociation
 from app.model.caseHub.test_case import TestCase
+from app.model.caseHub.test_case_step import TestCaseStep, TestCaseStepResult
 from app.model.caseHub.requirement import Requirement
 from app.model.caseHub.plan_module import PlanModule
-from app.model.caseHub.test_case_step import TestCaseStepResult
-from sqlalchemy.ext.asyncio import AsyncSession
 from utils import log
 
 
 class PlanCaseMapper(Mapper[PlanCaseAssociation]):
     __model__ = PlanCaseAssociation
 
+    @classmethod
+    def _prepare_plan_case_data(
+            cls,
+            case_data: Dict[str, Any],
+            project_id: int,
+            user: User
+    ) -> TestCase:
+        """
+        准备单个计划用例数据
+
+        :param case_data: 用例原始数据
+        :param project_id: 项目ID
+        :param user: 操作用户
+        :return: 用例模型实例
+        """
+        case_data.pop("action", None)
+        case_data.pop("expected_result", None)
+        case_data.update({
+            "project_id": project_id,
+            "creator": user.id,
+            "creatorName": user.username,
+            "is_common": True,
+        })
+        return TestCase(**case_data)
+
+    @classmethod
+    def _prepare_plan_steps(
+            cls,
+            action: Optional[str],
+            expected_result: Optional[str],
+            case_index: int,
+            user: User
+    ) -> List[Dict[str, Any]]:
+        """
+        准备计划用例步骤数据
+
+        :param action: 操作步骤文本
+        :param expected_result: 预期结果文本
+        :param case_index: 用例索引
+        :param user: 操作用户
+        :return: 步骤数据字典列表
+        """
+        from app.mapper.test_case.testcaseMapper import _parse_steps
+        steps = _parse_steps(action, expected_result)
+        result = []
+        for step_index, step_data in enumerate(steps):
+            step_data.update({
+                "test_case_index": case_index,
+                "order": step_index,
+                "creator": user.id,
+                "creatorName": user.username,
+            })
+            result.append(step_data)
+        return result
+
+    @classmethod
+    def _prepare_plan_associations(
+            cls,
+            case_index: int,
+            plan_id: int,
+            plan_module_id: Optional[int],
+            order: int,
+            is_review: bool,
+            case_status: int
+    ) -> PlanCaseAssociation:
+        """
+        准备计划用例关联数据
+
+        :param case_index: 用例索引
+        :param plan_id: 计划ID
+        :param plan_module_id: 计划分组ID
+        :param order: 排序号
+        :param is_review: 是否审核
+        :param case_status: 用例状态
+        :return: 计划用例关联模型
+        """
+        return PlanCaseAssociation(
+            plan_id=plan_id,
+            plan_module_id=plan_module_id,
+            case_id=case_index,
+            order=order,
+            is_review=is_review,
+            case_status=case_status,
+        )
+
+    @classmethod
+    async def insert_upload_case(
+            cls,
+            cases: List[Dict[str, Any]],
+            user: User,
+            plan_id: int,
+            plan_module_id: Optional[int] = None,
+            is_review: bool = False,
+            case_status: int = 0
+    ):
+        """
+        批量导入计划用例关联记录
+
+        Args:
+            cases: 用例数据列表
+            user: 操作用户
+            plan_id: 计划ID
+            plan_module_id: 计划分组ID（可选）
+            is_review: 是否审核
+            case_status: 用例状态
+
+        Returns:
+            int: 导入的用例数量
+        """
+        if not cases:
+            return 0
+
+        from app.mapper.test_case.planMapper import PlanMapper
+        from app.mapper.test_case.testcaseMapper import TestCaseStepMapper
+
+        try:
+            async with cls.transaction() as session:
+                plan = await PlanMapper.get_by_id(ident=plan_id, session=session)
+
+                max_order_stmt = select(
+                    func.coalesce(func.max(PlanCaseAssociation.order), 0)
+                ).where(
+                    and_(
+                        PlanCaseAssociation.plan_id == plan_id,
+                        PlanCaseAssociation.plan_module_id == plan_module_id,
+                    )
+                )
+                max_result = await session.execute(max_order_stmt)
+                start_order = max_result.scalar() + 1
+
+                log.info(f"case_data: {cases}")
+
+                case_objects = []
+                all_steps = []
+                case_plan_associations = []
+
+                for case_index, case_data in enumerate(cases):
+                    case_obj = cls._prepare_plan_case_data(
+                        case_data=case_data.copy(),
+                        project_id=plan.project_id,
+                        user=user
+                    )
+                    case_objects.append(case_obj)
+
+                    steps = cls._prepare_plan_steps(
+                        action=case_data.get("action"),
+                        expected_result=case_data.get("expected_result"),
+                        case_index=case_index,
+                        user=user
+                    )
+                    all_steps.extend(steps)
+
+                    start_order += 1
+                    assoc = cls._prepare_plan_associations(
+                        case_index=case_index,
+                        plan_id=plan_id,
+                        plan_module_id=plan_module_id,
+                        order=start_order,
+                        is_review=is_review,
+                        case_status=case_status
+                    )
+                    case_plan_associations.append(assoc)
+
+                session.add_all(case_objects)
+                await session.flush()
+
+                case_id_map = {i: case_obj.id for i, case_obj in enumerate(case_objects)}
+
+                step_objects = [
+                    TestCaseStep(**cls._map_step_id(step_data, case_id_map))
+                    for step_data in all_steps
+                ]
+                session.add_all(step_objects)
+
+                if case_plan_associations:
+                    for assoc in case_plan_associations:
+                        assoc.case_id = case_id_map[assoc.case_id]
+                    session.add_all(case_plan_associations)
+
+                log.info(f"insert_upload_case success, case number: {len(case_objects)}")
+                return len(case_objects)
+        except Exception as e:
+            log.error(f"insert_upload_case error: cases={cases}, error={e}")
+            raise
+            
+            
+            
+        
     @classmethod
     async def insert_plan_case(cls, user: User, plan_id: int, plan_module_id: int, **kwargs):
         """
@@ -173,7 +360,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             ).where(
                 and_(
                     PlanCaseAssociation.plan_id == plan_id,
-                    PlanCaseAssociation.case_id == case_id
+                    PlanCaseAssociation.plan_module_id == plan_module_id,
                 )
             )
             max_result = await session.execute(max_order_stmt)
@@ -653,3 +840,10 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 "case_by_status": case_by_status,
                 "daily_trend": []
             }
+
+    @staticmethod
+    def _map_step_id(step_data: Dict[str, Any], case_id_map: Dict[int, int]) -> Dict[str, Any]:
+        """将步骤的临时索引替换为实际用例ID"""
+        case_index = step_data.pop("test_case_index")
+        step_data["test_case_id"] = case_id_map[case_index]
+        return step_data

@@ -20,13 +20,15 @@ from app.schema.hub.planSchema import (
     RemovePlanModuleSchema, MovePlanModuleSchema,
     UpdatePlanCaseStepResultSchema,AssociatePlanCaseSchema,
     RemovePlanCaseSchema, CopyCaseToCasePlan,
-    UpdatePlanPhaseSchema,UpdateCaseToCasePlan
+    UpdatePlanPhaseSchema,UpdateCaseToCasePlan,UploadCommitSchema
 )
 from app.schema.hub.testCaseSchema import AddPlanCaseSchema
 from app.mapper.test_case.planMapper import PlanMapper
 from app.mapper.test_case.planModuleMapper import PlanModuleMapper
 from app.mapper.test_case.planCaseMapper import PlanCaseMapper
 from utils import log
+from app.service.uploadCacheService import UploadCacheService
+from common import rc
 
 router = APIRouter(prefix="/hub/plan", tags=['测试计划'])
 
@@ -357,6 +359,40 @@ async def insert_plan_cases(data: AddPlanCaseSchema, user: User = Depends(Authen
         **data.model_dump(),
     )
     return Response.success(values)
+
+@router.post("/upload/commit", description="确认并入库用例")
+async def upload_commit(
+        data: UploadCommitSchema,
+        user: User = Depends(Authentication())
+):
+    _cache_service = UploadCacheService(rc)
+    if await _cache_service.is_committed(data.file_md5, user.id):
+        return Response.error(msg="该文件已提交过，不能重复提交")
+
+    preview_data = await _cache_service.get_preview(data.file_md5, user.id)
+    if not preview_data:
+        return Response.error(msg="预览数据已过期，请重新上传文件")
+
+    valid_cases = preview_data.get("valid_cases", [])
+
+    if not valid_cases:
+        return Response.error(msg="请选择要入库的用例")
+
+    try:
+        await PlanCaseMapper.insert_upload_case(
+            cases=valid_cases,
+            plan_id=data.plan_id,
+            plan_module_id=data.plan_module_id,
+            user=user,
+            is_review=data.is_review,
+            case_status=data.case_status,
+        )
+        await _cache_service.mark_committed(data.file_md5, user.id)
+        return Response.success({"imported_count": len(valid_cases)})
+    except Exception as e:
+        log.exception(f"入库失败: {e}")
+        return Response.error(msg=f"入库失败: {str(e)}")
+
 
 
 

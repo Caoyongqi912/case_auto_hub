@@ -197,7 +197,7 @@ class UploadCommitSchema(BaseModel):
     """确认入库请求模型"""
     file_md5: str = Field(..., description="文件唯一标识")
     project_id: int = Field(..., description="项目ID")
-    module_id: int = Field(..., description="模块ID")
+    module_id: Optional[int] = Field(None, description="模块ID")
     requirement_id: Optional[int] = Field(None, description="需求ID")
     is_common: bool = Field(True, description="是否公共")
 
