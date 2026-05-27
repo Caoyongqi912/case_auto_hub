@@ -16,7 +16,7 @@ from app.schema.hub.testCaseSchema import (
     UpdateTestCaseSchema, QueryTestCaseSchemaByField, RemoveCaseSchema, RemoveCaseStep,
     CopyCase, CopyCaseStep, AddDefaultCaseStep, UpdateTestCaseStep, ReorderCaseStep,
     UpdateTestCaseStatusSchema, SetCasesCommonSchema, UploadPreviewResult,
-    UploadCommitSchema, UploadCancelSchema
+    UploadCommitSchema, UploadCancelSchema,UpdateTestCasesSchema,DeleteTestCasesSchema
 )
 from app.service.uploadCacheService import UploadCacheService
 from common import rc
@@ -85,6 +85,27 @@ async def update_case(data: UpdateTestCaseSchema, user: User = Depends(Authentic
     await TestCaseMapper.update_case(ur=user, **data.model_dump(exclude_unset=True, exclude_none=True))
     return Response.success()
 
+@router.post("/batchUpdate", description="批量更新测试用例信息")
+async def update_cases_batch(data: UpdateTestCasesSchema, user: User = Depends(Authentication())):
+    """
+    根据用例ID更新用例基本信息
+    :param data: 用例更新数据
+    :param user: 认证用户
+    :return: 操作结果
+    """
+    rows = await TestCaseMapper.update_batch_cases(user=user, **data.model_dump(exclude_unset=True, exclude_none=True))
+    return Response.success(rows)
+
+@router.post("/batchDelete", description="批量删除测试用例信息")
+async def delete_cases_batch(data: DeleteTestCasesSchema, user: User = Depends(Authentication())):
+    """
+    根据用例ID删除用例基本信息
+    :param data: 用例更新数据
+    :param user: 认证用户
+    :return: 操作结果
+    """
+    rows = await TestCaseMapper.delete_batch_cases(data.delete_case_list)
+    return Response.success(rows)
 
 @router.get("/queryByField", description="根据条件查询用例列表")
 async def query_cases_by_field(data: QueryTestCaseSchemaByField = Depends(), _: User = Depends(Authentication())):

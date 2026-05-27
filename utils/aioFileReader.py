@@ -21,8 +21,8 @@ from utils.threadPool import ThreadPoolHelper
 FIELD_MAPPING = {
     "标题*": "case_name",
     "前置条件": "case_setup",
-    "步骤描述*": "action",
-    "预期结果*": "expected_result",
+    "步骤描述": "action",
+    "预期结果": "expected_result",
     "标签": "case_tag",
     "用例等级*": "case_level",
     "用例类型": "case_type",
@@ -93,7 +93,7 @@ class AsyncFilesReader:
         try:
             excel_file = pd.ExcelFile(file, engine='openpyxl')
             available_sheets = excel_file.sheet_names
-            sheet_name = "用例" if "用例" in available_sheets else "template"
+            sheet_name = "导入模版" if "导入模版" in available_sheets else "template"
 
             df = pd.read_excel(
                 file,

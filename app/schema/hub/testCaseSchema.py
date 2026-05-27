@@ -70,6 +70,14 @@ class UpdatePlanCaseSchema(BaseModel):
 class UpdateTestCaseSchema(TestCaseField):
     id: int = Field(..., description="ID")
 
+class UpdateTestCasesSchema(TestCaseField):
+    """更新测试用例模型"""
+    update_case_list: List[int] = Field(..., description="更新用例ID列表")
+
+class DeleteTestCasesSchema(BaseModel):
+    """删除测试用例模型"""
+    delete_case_list: List[int] = Field(..., description="删除用例ID列表")
+
 
 class InsertMindCaseSchema(BaseModel):
     """插入思维导图用例模型"""

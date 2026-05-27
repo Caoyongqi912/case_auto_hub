@@ -14,12 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper import Mapper, set_creator
 from app.mapper.test_case.requirementMapper import RequirementMapper
 from app.mapper.test_case.testCaseStepMapper import TestCaseStepMapper
-from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper
+from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper, diff_dict
 from app.model import async_session
 from app.model.base import User
 from app.model.caseHub.test_case import TestCase
 from app.model.caseHub.test_case_step import TestCaseStep
 from app.model.caseHub.association import RequirementCaseAssociation
+from app.model.caseHub.case_step_dynamic import CaseStepDynamic
 from utils import log
 
 
@@ -581,7 +582,104 @@ class TestCaseMapper(Mapper[TestCase]):
         except Exception as e:
             log.error(f"save_case error: kwargs={kwargs}, error={e}")
             raise
+    
+    @classmethod
+    async def delete_batch_cases(cls, delete_case_list: List[int]) -> int:
+        """
+        批量删除测试用例及其关联数据
 
+        高性能策略：
+        1. 单次 DELETE 删除关联表记录（步骤、需求关联）
+        2. 单次 DELETE 删除用例主表
+        3. 批量记录删除动态
+
+        :param delete_case_list: 用例ID列表
+        :return: 删除的用例数量
+        """
+        if not delete_case_list:
+            return 0
+        try:
+            async with cls.transaction() as session:
+             
+                case_stmt = delete(TestCase).where(TestCase.id.in_(delete_case_list))
+                result = await session.execute(case_stmt)
+                delete_count = result.rowcount
+                log.info(f"批量删除成功: 删除{delete_count}条用例")
+                return delete_count
+
+        except Exception as e:
+            log.error(f"delete_batch_cases error: ids={delete_case_list}, error={e}")
+            raise
+    
+    @classmethod
+    async def update_batch_cases(cls, update_case_list: List[int], user: User, **kwargs):
+        """
+        批量更新测试用例信息，并记录变更动态
+
+        使用高性能的批量更新策略：
+        1. 单次 UPDATE 语句更新所有记录
+        2. 批量获取更新前的数据
+        3. 批量记录变更动态
+
+        :param update_case_list: 用例ID列表
+        :param user: 更新者用户
+        :param kwargs: 更新字段数据（排除id）
+        """
+        if not update_case_list or not kwargs:
+            return 0
+
+        log.info(f"批量更新用例: ids={update_case_list}, fields={kwargs}")
+
+        try:
+            async with cls.transaction() as session:
+                old_cases_stmt = select(TestCase).where(TestCase.id.in_(update_case_list))
+                old_cases_result = await session.execute(old_cases_stmt)
+                old_cases_list = old_cases_result.scalars().all()
+
+                if not old_cases_list:
+                    log.warning(f"未找到要更新的用例: {update_case_list}")
+                    return 0
+
+                old_cases_map = {case.id: case.map for case in old_cases_list}
+
+                stmt = update(TestCase).where(TestCase.id.in_(update_case_list))
+                update_fields = {k: v for k, v in kwargs.items() if k != 'id'}
+                stmt = stmt.values(**update_fields)
+                result = await session.execute(stmt)
+                log.info(f"批量更新影响行数: {result.rowcount}")
+
+                new_cases_stmt = select(TestCase).where(TestCase.id.in_(update_case_list))
+                new_cases_result = await session.execute(new_cases_stmt)
+                new_cases_list = new_cases_result.scalars().all()
+
+                dynamic_records = []
+                for new_case in new_cases_list:
+                    old_data = old_cases_map.get(new_case.id, {})
+                    new_data = new_case.map
+
+                    if old_data != new_data:
+                        diff_info = diff_dict(old_data, new_data)
+                        if diff_info:
+                            dynamic_records.append(
+                                CaseStepDynamic(
+                                    description=f"{user.username} 批量更新了测试用例 :{diff_info}",
+                                    test_case_id=new_case.id,
+                                    creator=user.id,
+                                    creatorName=user.username
+                                )
+                            )
+
+                if dynamic_records:
+                    session.add_all(dynamic_records)
+                    await session.flush()
+
+                log.info(f"批量更新成功: 更新{result.rowcount}条, 记录{len(dynamic_records)}条动态")
+                return result.rowcount
+
+        except Exception as e:
+            log.error(f"update_batch_cases error: ids={update_case_list}, kwargs={kwargs}, error={e}")
+            raise
+    
     @classmethod
     async def update_case(cls, ur: User, **kwargs):
         """
