@@ -311,7 +311,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         Args:
             plan_id: 计划ID
             case_id_list: 用例ID列表
-            user: 认证用户（预留，当前未用于更新人记录）
+            user: 认证用户
             is_review: 是否审核
             case_status: 用例状态 (0:未开始 1:通过 2:失败)
 
@@ -328,13 +328,42 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             return 0
 
         async with cls.transaction() as session:
-            stmt = update(PlanCaseAssociation).where(
+            from app.mapper.test_case.planMapper import PlanMapper
+            plan = await PlanMapper.get_by_id(ident=plan_id, session=session)
+            plan_name = plan.plan_name if plan else f"计划{plan_id}"
+
+            changed_fields = list(values.keys())
+            stmt = select(PlanCaseAssociation).where(
+                and_(
+                    PlanCaseAssociation.plan_id == plan_id,
+                    PlanCaseAssociation.case_id.in_(case_id_list),
+                )
+            )
+            result = await session.execute(stmt)
+            old_records = {assoc.case_id: assoc for assoc in result.scalars().all()}
+
+            update_stmt = update(PlanCaseAssociation).where(
                 and_(
                     PlanCaseAssociation.plan_id == plan_id,
                     PlanCaseAssociation.case_id.in_(case_id_list),
                 )
             ).values(values)
-            result = await session.execute(stmt)
+            update_result = await session.execute(update_stmt)
+
+            for case_id, assoc in old_records.items():
+                old_data = {field: getattr(assoc, field) for field in changed_fields}
+                await CaseDynamicMapper.update_plan_case_dynamic(
+                    cr=user,
+                    plan_id=plan_id,
+                    plan_name=plan_name,
+                    case_id=case_id,
+                    old_data=old_data,
+                    new_data=values,
+                    session=session
+                )
+
+            return update_result.rowcount
+
             return result.rowcount
 
     @classmethod

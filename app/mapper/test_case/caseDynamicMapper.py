@@ -5,9 +5,9 @@
 # @File : caseDynamicMapper
 # @Software: PyCharm
 # @Desc: 测试用例动态记录数据访问层
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
@@ -31,6 +31,12 @@ KEY_MAP = {
     "case_status": "用例状态",
     "case_mark": "用例描述",
     "is_review": "是否审核",
+    "case_status": "用例状态",
+}
+
+PLAN_ASSOCIATION_KEY_MAP = {
+    "is_review": "是否审核",
+    "case_status": "用例状态",
 }
 
 VALUE_MAPPINGS = {
@@ -100,18 +106,30 @@ class CaseDynamicMapper(Mapper[CaseStepDynamic]):
     __model__ = CaseStepDynamic
 
     @classmethod
-    async def query_dynamic(cls, case_id: int):
+    async def query_dynamic(cls, case_id: int, plan_id: Optional[int] = None):
         """
         获取用例的变更动态记录
 
         :param case_id: 用例ID
+        :param plan_id: 计划ID（可选，为None时只查用例自身变更，非None时同时查该计划的变更）
         :return: 动态记录列表
         """
         try:
             async with async_session() as session:
+                conditions = [CaseStepDynamic.test_case_id == case_id]
+                if plan_id is not None:
+                    conditions.append(
+                        or_(
+                            CaseStepDynamic.plan_id.is_(None),
+                            CaseStepDynamic.plan_id == plan_id
+                        )
+                    )
+                else:
+                    conditions.append(CaseStepDynamic.plan_id.is_(None))
+
                 dynamics = await session.scalars(
                     select(CaseStepDynamic)
-                    .where(CaseStepDynamic.test_case_id == case_id)
+                    .where(and_(*conditions))
                     .order_by(CaseStepDynamic.create_time.desc())
                 )
                 return dynamics.all()
@@ -166,3 +184,66 @@ class CaseDynamicMapper(Mapper[CaseStepDynamic]):
             )
         )
         await session.flush()
+
+    @classmethod
+    async def update_plan_case_dynamic(
+            cls,
+            cr: User,
+            plan_id: int,
+            plan_name: str,
+            case_id: int,
+            old_data: Dict[str, Any],
+            new_data: Dict[str, Any],
+            session: AsyncSession
+    ):
+        """
+        记录计划关联用例的更新动态
+
+        :param cr: 更新者用户
+        :param plan_id: 计划ID
+        :param plan_name: 计划名称
+        :param case_id: 用例ID
+        :param old_data: 更新前数据（仅包含变更字段）
+        :param new_data: 更新后数据（仅包含变更字段）
+        :param session: 数据库会话
+        """
+        diff_info = diff_plan_case_dict(old_data, new_data)
+        if not diff_info:
+            return
+
+        session.add(
+            CaseStepDynamic(
+                description=f"{cr.username} 更新了计划【{plan_name}】中的用例 :{diff_info}",
+                test_case_id=case_id,
+                plan_id=plan_id,
+                creator=cr.id,
+                creatorName=cr.username
+            )
+        )
+        await session.flush()
+
+
+def diff_plan_case_dict(old_data: Dict[str, Any], new_data: Dict[str, Any]) -> str | None:
+    """
+    比较计划关联用例的变更，生成变更描述
+
+    :param old_data: 变更前的数据（仅变更字段）
+    :param new_data: 变更后的数据（仅变更字段）
+    :return: 变更描述字符串，如果无变更则返回None
+    """
+    diff_args = []
+    changed_keys = set(old_data.keys()) & set(new_data.keys())
+    for key in changed_keys:
+        old_value = old_data.get(key)
+        new_value = new_data.get(key)
+
+        if old_value == new_value:
+            continue
+
+        field_name = PLAN_ASSOCIATION_KEY_MAP.get(key, key)
+        old_display = _transform_value(key, old_value)
+        new_display = _transform_value(key, new_value)
+
+        diff_args.append(f"{field_name} 从 {old_display} 变更为 {new_display}")
+
+    return "\n".join(diff_args) if diff_args else None

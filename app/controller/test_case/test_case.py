@@ -231,14 +231,16 @@ async def update_sub_step(data: UpdateTestCaseStep, user: User = Depends(Authent
 
 
 @router.get("/queryDynamic/{caseId}", description="查询用例动态信息")
-async def query_case_dynamic(caseId: int, _: User = Depends(Authentication())):
+async def query_case_dynamic(caseId: int, plan_id: Optional[int] = None, _: User = Depends(Authentication())):
     """
     查询指定用例的动态信息（如创建人、创建时间、修改记录等）
+
     :param caseId: 用例ID
+    :param plan_id: 计划ID（可选，为None时只查用例自身变更，非None时同时查该计划的变更）    
     :param _: 认证用户
     :return: 用例动态信息
     """
-    result = await CaseDynamicMapper.query_dynamic(caseId)
+    result = await CaseDynamicMapper.query_dynamic(caseId, plan_id)
     return Response.success(result)
 
 
