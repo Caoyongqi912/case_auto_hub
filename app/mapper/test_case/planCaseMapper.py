@@ -738,7 +738,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             data = [
                 {
                     **case.to_dict(),
-                    "plan_case_id": assoc.case_id,
+                    "case_id": assoc.case_id,
                     "plan_module_id": assoc.plan_module_id,
                     "is_review": assoc.is_review,
                     "case_status": assoc.case_status,

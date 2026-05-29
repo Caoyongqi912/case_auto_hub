@@ -1,5 +1,5 @@
 from app.model.basic import BaseModel
-from sqlalchemy import Column, INTEGER, String, DATETIME, ForeignKey, Index
+from sqlalchemy import Column, INTEGER, String, ForeignKey, Index,Date
 
 
 class CasePlan(BaseModel):
@@ -19,8 +19,8 @@ class CasePlan(BaseModel):
     charge_id = Column(INTEGER, nullable=False, comment="负责人ID")
     charge_name = Column(String(20), nullable=False, comment="负责人姓名")
 
-    plan_start_time = Column(DATETIME, nullable=True, comment="计划开始时间")
-    plan_end_time = Column(DATETIME, nullable=True, comment="计划结束时间")
+    plan_start_time = Column(Date, nullable=True, comment="计划开始时间")
+    plan_end_time = Column(Date, nullable=True, comment="计划结束时间")
 
     __table_args__ = (
         Index('idx_plan_status', 'plan_status'),

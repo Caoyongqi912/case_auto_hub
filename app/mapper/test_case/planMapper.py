@@ -8,11 +8,11 @@
 from typing import List, Optional
 
 from app.model.base.user import User
-from sqlalchemy import insert, delete, select, and_
+from sqlalchemy import insert, delete, select, and_, func, case
 
 from app.mapper import Mapper
 from app.model.caseHub.case_plan import CasePlan
-from app.model.caseHub.association import PlanRequirementAssociation
+from app.model.caseHub.association import PlanRequirementAssociation, PlanCaseAssociation
 from app.model.caseHub.requirement import Requirement
 from utils import log
 from app.model import async_session
@@ -188,3 +188,76 @@ class PlanMapper(Mapper[CasePlan]):
                 return [req.map for req in requirements]
         except Exception as e:
             raise
+
+    @classmethod
+    async def page_query_with_stats(cls, current: int, pageSize: int, **kwargs):
+        """
+        分页查询测试计划（含完成率统计）
+
+        完成率 = 已执行用例数(case_status != 0) / 用例总数
+
+        Args:
+            current: 当前页码
+            pageSize: 每页大小
+            **kwargs: 查询条件和排序
+
+        Returns:
+            dict: 分页结果，items 中包含 case_total、case_executed、completion_rate
+        """
+        async with async_session() as session:
+            sort = kwargs.pop("sort", None)
+            conditions = await cls.search_conditions(**kwargs)
+
+            # 子查询：每个计划的用例统计
+            stats_subq = (
+                select(
+                    PlanCaseAssociation.plan_id,
+                    func.count().label("case_total"),
+                    func.sum(
+                        case((PlanCaseAssociation.case_status != 0, 1), else_=0)
+                    ).label("case_executed")
+                )
+                .group_by(PlanCaseAssociation.plan_id)
+                .subquery()
+            )
+
+            # 主查询：计划 + 统计
+            base_query = (
+                select(
+                    CasePlan,
+                    func.coalesce(stats_subq.c.case_total, 0).label("case_total"),
+                    func.coalesce(stats_subq.c.case_executed, 0).label("case_executed"),
+                    case(
+                        (stats_subq.c.case_total > 0,
+                         func.round(stats_subq.c.case_executed * 100.0 / stats_subq.c.case_total, 2)),
+                        else_=0
+                    ).label("completion_rate")
+                )
+                .outerjoin(stats_subq, stats_subq.c.plan_id == CasePlan.id)
+                .filter(and_(*conditions))
+            )
+
+            # 排序
+            base_query = await cls.sorted_search(base_query, sort)
+
+            # 统计总数
+            total_query = select(func.count()).select_from(CasePlan).filter(*conditions)
+            total = (await session.execute(total_query)).scalar()
+
+            # 分页
+            paginated_query = base_query.offset((current - 1) * pageSize).limit(pageSize)
+            result = await session.execute(paginated_query)
+            rows = result.all()
+
+            # 组装数据
+            items = []
+            for plan, case_total, case_executed, completion_rate in rows:
+                plan_dict = plan.map if hasattr(plan, 'map') else plan.to_dict()
+                plan_dict.update({
+                    "case_total": int(case_total),
+                    "case_executed": int(case_executed),
+                    "completion_rate": float(completion_rate)
+                })
+                items.append(plan_dict)
+
+            return await cls.map_page_data(items, total, pageSize, current)

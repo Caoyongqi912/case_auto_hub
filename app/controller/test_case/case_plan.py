@@ -99,9 +99,8 @@ async def page_plans(data: PagePlanSchema, _: User = Depends(Authentication())):
     :param _: 认证用户
     :return: 计划分页数据
     """
-    log.info(data.model_dump(exclude_none=True, exclude_unset=True))
 
-    result = await PlanMapper.page_query(**data.model_dump(exclude_none=True, exclude_unset=True))
+    result = await PlanMapper.page_query_with_stats(**data.model_dump(exclude_none=True, exclude_unset=True))
     return Response.success(result)
 
 
