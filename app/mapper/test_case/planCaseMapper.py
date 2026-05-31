@@ -349,6 +349,10 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 )
             ).values(values)
             update_result = await session.execute(update_stmt)
+            
+            # 更新子步骤结果状态
+            if case_status is not None and case_id_list:
+                await cls._sync_step_result_status(session, plan_id, case_id_list, case_status)
 
             for case_id, assoc in old_records.items():
                 old_data = {field: getattr(assoc, field) for field in changed_fields}
@@ -364,7 +368,49 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
 
             return update_result.rowcount
 
-            return result.rowcount
+    @classmethod
+    async def _sync_step_result_status(
+        cls,
+        session: AsyncSession,
+        plan_id: int,
+        case_id_list: List[int],
+        case_status: int
+    ) -> int:
+        """
+        同步更新计划下用例的子步骤结果状态
+
+        状态映射关系：
+        - case_status 0(未开始) -> step_result status 0(未填写)
+        - case_status 1(通过) -> step_result status 1(通过)
+        - case_status 2(失败) -> step_result status 2(阻塞)
+        ...
+
+        Args:
+            session: 数据库会话
+            plan_id: 计划ID
+            case_id_list: 用例ID列表
+            case_status: 用例状态 (0:未开始 1:通过 2:失败)
+
+        Returns:
+            int: 实际更新的记录数
+        """
+
+        step_status = case_status
+        subquery = select(TestCaseStep.id).where(
+            TestCaseStep.test_case_id.in_(case_id_list)
+        )
+        step_ids_subquery = subquery.subquery()
+
+        update_stmt = update(TestCaseStepResult).where(
+            and_(
+                TestCaseStepResult.plan_id == plan_id,
+                TestCaseStepResult.step_id.in_(select(step_ids_subquery))
+            )
+        ).values(status=step_status)
+
+        result = await session.execute(update_stmt)
+        log.info(f"同步更新计划{plan_id}下{len(case_id_list)}个用例的子步骤结果状态为{step_status}，影响{result.rowcount}条记录")
+        return result.rowcount
 
     @classmethod
     async def copy_plan_case(cls, case_id: int, plan_id: int, plan_module_id: int, user: User) -> int:
