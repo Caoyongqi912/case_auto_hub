@@ -273,7 +273,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         新增或更新计划用例步骤执行结果（upsert）
 
         基于 (plan_id, step_id) 唯一约束，若记录已存在则更新，否则插入新记录。
-        使用 MySQL INSERT ... ON DUPLICATE KEY UPDATE 实现，保证原子性。
+
+        如果 case 下 step 全部为 通过 则更新 case状态为 通过
+        单个状态修改则、修改case 状态为该状态
 
         Args:
             plan_id: 计划ID
@@ -294,7 +296,51 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 status=status,
                 bug_url=bug_url
             )
+            
             await session.execute(stmt)
+
+            if status is None:
+                return
+
+            step_stmt = select(TestCaseStep.test_case_id).where(TestCaseStep.id == step_id)
+            step_result = await session.execute(step_stmt)
+            test_case_id = step_result.scalar_one_or_none()
+            if test_case_id is None:
+                return
+
+            if status != 1:
+                update_assoc_stmt = update(PlanCaseAssociation).where(
+                    and_(
+                        PlanCaseAssociation.plan_id == plan_id,
+                        PlanCaseAssociation.case_id == test_case_id
+                    )
+                ).values(case_status=status)
+                await session.execute(update_assoc_stmt)
+            else:
+                all_steps_stmt = select(TestCaseStep.id).where(TestCaseStep.test_case_id == test_case_id)
+                all_steps_result = await session.execute(all_steps_stmt)
+                all_step_ids = [row[0] for row in all_steps_result.fetchall()]
+
+                if not all_step_ids:
+                    return
+
+                result_stmt = select(TestCaseStepResult.status).where(
+                    and_(
+                        TestCaseStepResult.plan_id == plan_id,
+                        TestCaseStepResult.step_id.in_(all_step_ids)
+                    )
+                )
+                result_data = await session.execute(result_stmt)
+                step_statuses = [row[0] for row in result_data.fetchall()]
+
+                if len(step_statuses) == len(all_step_ids) and all(s == 1 for s in step_statuses):
+                    update_assoc_stmt = update(PlanCaseAssociation).where(
+                        and_(
+                            PlanCaseAssociation.plan_id == plan_id,
+                            PlanCaseAssociation.case_id == test_case_id
+                        )
+                    ).values(case_status=1)
+                    await session.execute(update_assoc_stmt)
 
     @classmethod
     async def update_case(
@@ -308,6 +354,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         """
         批量更新计划用例关联属性
 
+        
         Args:
             plan_id: 计划ID
             case_id_list: 用例ID列表
@@ -381,7 +428,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
 
         状态映射关系：
         - case_status 0(未开始) -> step_result status 0(未填写)
-        - case_status 1(通过) -> step_result status 1(通过)
+        - case_status 1(通过) -> step_result status 1(通过) 且 actual_result 写入预期结果
         - case_status 2(失败) -> step_result status 2(阻塞)
         ...
 
@@ -394,6 +441,39 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         Returns:
             int: 实际更新的记录数
         """
+
+        if case_status == 1:
+            step_with_expected_stmt = select(
+                TestCaseStep.id,
+                TestCaseStep.expected_result
+            ).where(
+                TestCaseStep.test_case_id.in_(case_id_list)
+            )
+            step_with_expected_result = await session.execute(step_with_expected_stmt)
+            step_expected_map = {row[0]: row[1] for row in step_with_expected_result.fetchall()}
+
+            if not step_expected_map:
+                return 0
+
+            step_ids = list(step_expected_map.keys())
+            insert_values = [
+                {
+                    "plan_id": plan_id,
+                    "step_id": step_id,
+                    "actual_result": step_expected_map[step_id],
+                    "status": 1,
+                }
+                for step_id in step_ids
+            ]
+            mysql_insert_stmt = mysql_insert(TestCaseStepResult).values(insert_values)
+            update_values = {
+                "actual_result": mysql_insert_stmt.inserted.actual_result,
+                "status": mysql_insert_stmt.inserted.status,
+            }
+            upsert_stmt = mysql_insert_stmt.on_duplicate_key_update(update_values)
+            result = await session.execute(upsert_stmt)
+            log.info(f"同步更新计划{plan_id}下{len(case_id_list)}个用例的子步骤结果状态为通过(actual_result=expected_result)，影响{result.rowcount}条记录")
+            return result.rowcount
 
         step_status = case_status
         subquery = select(TestCaseStep.id).where(
@@ -429,17 +509,28 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             int: 复制数量 (1=成功, 0=失败)
         """
         async with cls.transaction() as session:
-            # 获取原用例在当前计划中的最大排序位置
-            max_order_stmt = select(
-                func.coalesce(func.max(PlanCaseAssociation.order), 0)
-            ).where(
+            origin_order_stmt = select(PlanCaseAssociation.order).where(
                 and_(
                     PlanCaseAssociation.plan_id == plan_id,
-                    PlanCaseAssociation.plan_module_id == plan_module_id,
+                    PlanCaseAssociation.case_id == case_id
                 )
             )
-            max_result = await session.execute(max_order_stmt)
-            case_order = max_result.scalar()
+            origin_result = await session.execute(origin_order_stmt)
+            origin_order = origin_result.scalar_one_or_none()
+            if origin_order is None:
+                return 0
+
+            await session.execute(
+                update(PlanCaseAssociation)
+                .where(
+                    and_(
+                        PlanCaseAssociation.plan_id == plan_id,
+                        PlanCaseAssociation.plan_module_id == plan_module_id,
+                        PlanCaseAssociation.order > origin_order
+                    )
+                )
+                .values(order=PlanCaseAssociation.order + 1)
+            )
 
             new_cases = await TestCaseMapper.copy_cases(
                 case_ids=[case_id],
@@ -454,7 +545,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 plan_id=plan_id,
                 case_ids=[new_case.id],
                 plan_module_id=plan_module_id,
-                order=case_order + 1,
+                order=origin_order + 1,
                 session=session
             )
             return 1
