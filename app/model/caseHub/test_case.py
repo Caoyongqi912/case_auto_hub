@@ -19,7 +19,7 @@ class TestCase(BaseModel):
     case_setup = Column(String(500), nullable=True, comment="用例步骤前置条件")
     case_mark = Column(String(500), nullable=True, comment="用例步骤备注")
 
-    case_level = Column(String(10), default="P2", comment="用例等级")
+    case_level = Column(String(10), default="P2", index=True, comment="用例等级")
     case_type = Column(Integer, nullable=True, comment="用例类型 1 冒烟 2功能 3回归")
 
     is_common = Column(Boolean, default=False, index=True, comment="用例库")

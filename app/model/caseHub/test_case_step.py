@@ -14,7 +14,7 @@ class TestCaseStep(BaseModel):
     __tablename__ = "case_sub_step"
 
     test_case_id = Column(Integer, ForeignKey("test_case.id", ondelete="cascade"), nullable=False,
-                          comment="用例步骤id")
+                          index=True, comment="用例步骤id")
     action = Column(String(500), nullable=True, comment="执行")
     expected_result = Column(String(500), nullable=True, comment="预期")
     order = Column(Integer, nullable=False, comment="排序")
