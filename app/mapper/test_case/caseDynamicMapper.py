@@ -37,12 +37,18 @@ KEY_MAP = {
 PLAN_ASSOCIATION_KEY_MAP = {
     "is_review": "是否审核",
     "case_status": "用例状态",
+    "first_status": "一轮测试状态",
+    "second_status": "二轮测试状态",
+    "actual_result": "实际结果",
+    "bug_url": "缺陷链接",
 }
 
 VALUE_MAPPINGS = {
     "case_type": {1: "冒烟", 2: "普通"},
     "case_status": {1: "成功", 2: "失败", 0: "待执行", 3: "阻塞"},
-    "is_review": {True: "已评审", False: "未评审"}
+    "is_review": {True: "已评审", False: "未评审"},
+    "first_status": {0: "未开始", 1: "通过", 2: "失败", 3: "阻塞", 4: "跳过"},
+    "second_status": {0: "未开始", 1: "通过", 2: "失败", 3: "阻塞", 4: "跳过"},
 }
 
 

@@ -51,6 +51,10 @@ class PlanCaseAssociation(base):
 
     is_review = Column(Boolean, default=False, comment="是否审核")
     case_status = Column(Integer, default=0, comment="用例状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
+    
+    first_status = Column(Integer, default=0, comment="一轮测试 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
+    second_status = Column(Integer, default=0, comment="二轮测试 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
+    
     bug_url = Column(String(500), nullable=True, comment="缺陷链接")
     order = Column(Integer, default=0, comment="排序顺序")
 

@@ -14,6 +14,7 @@ from app.mapper.test_case.mindcaseMapper import MindCaseMapper
 from app.mapper.test_case.planMapper import PlanMapper
 from app.mapper.test_case.planModuleMapper import PlanModuleMapper
 from app.mapper.test_case.planCaseMapper import PlanCaseMapper
+from app.mapper.test_case.caseConfigMapper import CaseConfigMapper
 
 __all__ = [
     "TestCaseMapper",
@@ -24,4 +25,5 @@ __all__ = [
     "PlanMapper",
     "PlanModuleMapper",
     "PlanCaseMapper",
+    "CaseConfigMapper",
 ]

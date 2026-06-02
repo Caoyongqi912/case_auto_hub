@@ -89,7 +89,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             plan_module_id: Optional[int],
             order: int,
             is_review: bool,
-            case_status: int
+            first_status: int = 0,
+            second_status: int = 0
     ) -> PlanCaseAssociation:
         """
         准备计划用例关联数据
@@ -99,7 +100,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         :param plan_module_id: 计划分组ID
         :param order: 排序号
         :param is_review: 是否审核
-        :param case_status: 用例状态
+        :param first_status: 一轮测试状态
+        :param second_status: 二轮测试状态
         :return: 计划用例关联模型
         """
         return PlanCaseAssociation(
@@ -108,7 +110,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             case_id=case_index,
             order=order,
             is_review=is_review,
-            case_status=case_status,
+            first_status=first_status,
+            second_status=second_status,
         )
 
     @classmethod
@@ -119,7 +122,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             plan_id: int,
             plan_module_id: Optional[int] = None,
             is_review: bool = False,
-            case_status: int = 0
+            first_status: int = 0,
+            second_status: int = 0
     ):
         """
         批量导入计划用例关联记录
@@ -130,7 +134,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             plan_id: 计划ID
             plan_module_id: 计划分组ID（可选）
             is_review: 是否审核
-            case_status: 用例状态
+            first_status: 一轮测试状态
+            second_status: 二轮测试状态
 
         Returns:
             int: 导入的用例数量
@@ -185,7 +190,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                         plan_module_id=plan_module_id,
                         order=start_order,
                         is_review=is_review,
-                        case_status=case_status
+                        first_status=first_status,
+                        second_status=second_status
                     )
                     case_plan_associations.append(assoc)
 
@@ -265,82 +271,302 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         cls,
         plan_id: int,
         step_id: int,
+        user: User,
         actual_result: Optional[str] = None,
-        status: Optional[int] = None,
-        bug_url: Optional[str] = None
+        bug_url: Optional[str] = None,
+        first_status: Optional[int] = None,
+        second_status: Optional[int] = None
     ):
         """
         新增或更新计划用例步骤执行结果（upsert）
 
         基于 (plan_id, step_id) 唯一约束，若记录已存在则更新，否则插入新记录。
-
-        如果 case 下 step 全部为 通过 则更新 case状态为 通过
-        单个状态修改则、修改case 状态为该状态
+        任意字段变更都会触发：
+        1. 状态字段变更 → 自动同步父级用例的对应状态
+        2. 任意字段变更 → 记录操作动态
 
         Args:
             plan_id: 计划ID
             step_id: 用例步骤ID
+            user: 操作用户
             actual_result: 实际结果
-            status: 步骤状态 (0:未填写 1:通过 2:阻塞 3:跳过 4:其他)
             bug_url: 缺陷链接
+            first_status: 一轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
+            second_status: 二轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
+
+        Returns:
+            dict: {"test_case_id": int} 用例ID（供调用方使用）
         """
-        async with cls.transaction() as session:
-            stmt = mysql_insert(TestCaseStepResult).values(
+        try:
+            return await cls._do_update_case_step_result(
                 plan_id=plan_id,
                 step_id=step_id,
+                user=user,
                 actual_result=actual_result,
-                status=status,
-                bug_url=bug_url
-            ).on_duplicate_key_update(
-                actual_result=actual_result,
-                status=status,
-                bug_url=bug_url
+                bug_url=bug_url,
+                first_status=first_status,
+                second_status=second_status,
             )
-            
-            await session.execute(stmt)
+        except Exception as err:
+            log.error(
+                "更新步骤结果失败: plan_id=%s, step_id=%s, error=%s",
+                plan_id, step_id, err,
+            )
+            raise
 
-            if status is None:
-                return
+    @classmethod
+    async def _do_update_case_step_result(
+        cls,
+        plan_id: int,
+        step_id: int,
+        user: User,
+        actual_result: Optional[str],
+        bug_url: Optional[str],
+        first_status: Optional[int],
+        second_status: Optional[int],
+    ) -> dict:
+        """实际执行 upsert 同步 dynamic 记录的核心方法"""
+        from app.mapper.test_case.planMapper import PlanMapper
 
-            step_stmt = select(TestCaseStep.test_case_id).where(TestCaseStep.id == step_id)
-            step_result = await session.execute(step_stmt)
-            test_case_id = step_result.scalar_one_or_none()
+        async with cls.transaction() as session:
+            # 1. 查询旧数据（用于 dynamic 记录和变更对比）
+            old_record = await cls._fetch_step_result(
+                session=session, plan_id=plan_id, step_id=step_id
+            )
+
+            # 2. 执行 upsert
+            await session.execute(
+                mysql_insert(TestCaseStepResult).values(
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    actual_result=actual_result,
+                    bug_url=bug_url,
+                    first_status=first_status,
+                    second_status=second_status,
+                ).on_duplicate_key_update(
+                    actual_result=actual_result,
+                    bug_url=bug_url,
+                    first_status=first_status,
+                    second_status=second_status,
+                )
+            )
+
+            # 3. 查询步骤所属用例
+            test_case_id = await cls._fetch_step_case_id(
+                session=session, step_id=step_id
+            )
             if test_case_id is None:
+                log.warning("步骤不存在: step_id=%s", step_id)
+                return {"test_case_id": None}
+
+            # 4. 收集状态变更（用于同步父级用例）
+            status_changes: Dict[str, int] = {}
+            if first_status is not None:
+                status_changes["first_status"] = first_status
+            if second_status is not None:
+                status_changes["second_status"] = second_status
+
+            # 5. 同步父级用例状态
+            for status_field, status_value in status_changes.items():
+                await cls._sync_single_step_status(
+                    session=session,
+                    plan_id=plan_id,
+                    case_id=test_case_id,
+                    step_id=step_id,
+                    status=status_value,
+                    status_field=status_field,
+                )
+
+            # 6. 收集所有变更字段（用于 dynamic 记录）
+            old_data, new_data = cls._build_diff_data(
+                old_record=old_record,
+                first_status=first_status,
+                second_status=second_status,
+                actual_result=actual_result,
+                bug_url=bug_url,
+            )
+
+            # 7. 记录操作动态（任意字段变更都会触发）
+            if old_data or new_data:
+                await cls._record_step_result_dynamic(
+                    session=session,
+                    user=user,
+                    plan_id=plan_id,
+                    test_case_id=test_case_id,
+                    old_data=old_data,
+                    new_data=new_data,
+                )
+
+            return {"test_case_id": test_case_id}
+
+    @classmethod
+    async def _fetch_step_result(
+        cls,
+        session: AsyncSession,
+        plan_id: int,
+        step_id: int,
+    ) -> Optional[TestCaseStepResult]:
+        """查询步骤执行结果（用于 dynamic 记录）"""
+        stmt = select(TestCaseStepResult).where(
+            and_(
+                TestCaseStepResult.plan_id == plan_id,
+                TestCaseStepResult.step_id == step_id,
+            )
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    @classmethod
+    async def _fetch_step_case_id(
+        cls,
+        session: AsyncSession,
+        step_id: int,
+    ) -> Optional[int]:
+        """查询步骤所属的用例ID"""
+        stmt = select(TestCaseStep.test_case_id).where(TestCaseStep.id == step_id)
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    def _build_diff_data(
+        old_record: Optional[TestCaseStepResult],
+        first_status: Optional[int],
+        second_status: Optional[int],
+        actual_result: Optional[str],
+        bug_url: Optional[str],
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        构建变更前后数据字典
+
+        :returns: (old_data, new_data) - 仅包含发生变更或新增的字段
+        """
+        old_data: Dict[str, Any] = {}
+        new_data: Dict[str, Any] = {}
+
+        # 字段映射：(入参名, old 取值方式, new 取值方式)
+        field_mappings = [
+            ("first_status", first_status),
+            ("second_status", second_status),
+            ("actual_result", actual_result),
+            ("bug_url", bug_url),
+        ]
+
+        for field_name, new_value in field_mappings:
+            if new_value is None:
+                # 入参未提供，跳过该字段
+                continue
+
+            new_data[field_name] = new_value
+            if old_record is not None:
+                old_value = getattr(old_record, field_name, None)
+                if old_value is not None and old_value != new_value:
+                    old_data[field_name] = old_value
+
+        return old_data, new_data
+
+    @classmethod
+    async def _record_step_result_dynamic(
+        cls,
+        session: AsyncSession,
+        user: User,
+        plan_id: int,
+        test_case_id: int,
+        old_data: Dict[str, Any],
+        new_data: Dict[str, Any],
+    ) -> None:
+        """记录步骤结果变更的 dynamic 动态"""
+        from app.mapper.test_case.planMapper import PlanMapper
+
+        plan = await PlanMapper.get_by_id(ident=plan_id, session=session)
+        plan_name = plan.plan_name if plan else f"计划{plan_id}"
+
+        await CaseDynamicMapper.update_plan_case_dynamic(
+            cr=user,
+            plan_id=plan_id,
+            plan_name=plan_name,
+            case_id=test_case_id,
+            old_data=old_data,
+            new_data=new_data,
+            session=session,
+        )
+        log.info(
+            "记录步骤结果动态成功: plan_id=%s, case_id=%s, changes=%s",
+            plan_id, test_case_id, list(new_data.keys()),
+        )
+
+    @classmethod
+    async def _sync_single_step_status(
+        cls,
+        session: AsyncSession,
+        plan_id: int,
+        case_id: int,
+        step_id: int,
+        status: int,
+        status_field: str
+    ) -> None:
+        """
+        同步单个步骤的状态到父级用例
+
+        根据当前步骤的状态更新，决定是否需要更新父级 PlanCaseAssociation 的对应状态字段。
+        - 如果当前步骤状态为非通过（!=1），则直接更新父级用例状态为该状态
+        - 如果当前步骤状态为通过（==1），则检查同用例下所有步骤是否都通过
+
+        Args:
+            session: 数据库会话
+            plan_id: 计划ID
+            case_id: 用例ID
+            step_id: 当前更新的步骤ID
+            status: 当前步骤的新状态值
+            status_field: 要更新的状态字段名 ('first_status', 'second_status')
+        """
+        if status != 1:
+            # 非通过状态：直接更新父级用例状态
+            update_assoc_stmt = update(PlanCaseAssociation).where(
+                and_(
+                    PlanCaseAssociation.plan_id == plan_id,
+                    PlanCaseAssociation.case_id == case_id
+                )
+            ).values(**{status_field: status})
+            await session.execute(update_assoc_stmt)
+        else:
+            # 通过状态：检查该用例下所有步骤是否都为通过
+            all_steps_stmt = select(TestCaseStep.id).where(
+                TestCaseStep.test_case_id == case_id
+            )
+            all_steps_result = await session.execute(all_steps_stmt)
+            all_step_ids = [row[0] for row in all_steps_result.fetchall()]
+
+            if not all_step_ids:
                 return
 
-            if status != 1:
+            # 确定要查询的目标字段
+            if status_field == 'first_status':
+                target_column = TestCaseStepResult.first_status
+            elif status_field == 'second_status':
+                target_column = TestCaseStepResult.second_status
+            else:
+                return
+
+            # 查询所有步骤的对应状态
+            result_stmt = select(target_column).where(
+                and_(
+                    TestCaseStepResult.plan_id == plan_id,
+                    TestCaseStepResult.step_id.in_(all_step_ids)
+                )
+            )
+            result_data = await session.execute(result_stmt)
+            step_statuses = [row[0] for row in result_data.fetchall()]
+
+            # 如果所有步骤都为通过（或NULL视为未执行），则更新父级用例为通过
+            executed_statuses = [s for s in step_statuses if s is not None and s != 0]
+            if len(executed_statuses) == len(all_step_ids) and all(s == 1 for s in executed_statuses):
                 update_assoc_stmt = update(PlanCaseAssociation).where(
                     and_(
                         PlanCaseAssociation.plan_id == plan_id,
-                        PlanCaseAssociation.case_id == test_case_id
+                        PlanCaseAssociation.case_id == case_id
                     )
-                ).values(case_status=status)
+                ).values(**{status_field: 1})
                 await session.execute(update_assoc_stmt)
-            else:
-                all_steps_stmt = select(TestCaseStep.id).where(TestCaseStep.test_case_id == test_case_id)
-                all_steps_result = await session.execute(all_steps_stmt)
-                all_step_ids = [row[0] for row in all_steps_result.fetchall()]
-
-                if not all_step_ids:
-                    return
-
-                result_stmt = select(TestCaseStepResult.status).where(
-                    and_(
-                        TestCaseStepResult.plan_id == plan_id,
-                        TestCaseStepResult.step_id.in_(all_step_ids)
-                    )
-                )
-                result_data = await session.execute(result_stmt)
-                step_statuses = [row[0] for row in result_data.fetchall()]
-
-                if len(step_statuses) == len(all_step_ids) and all(s == 1 for s in step_statuses):
-                    update_assoc_stmt = update(PlanCaseAssociation).where(
-                        and_(
-                            PlanCaseAssociation.plan_id == plan_id,
-                            PlanCaseAssociation.case_id == test_case_id
-                        )
-                    ).values(case_status=1)
-                    await session.execute(update_assoc_stmt)
 
     @classmethod
     async def update_case(
@@ -349,18 +575,20 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         case_id_list: List[int],
         user: User,
         is_review: Optional[int] = None,
-        case_status: Optional[int] = None
+        first_status: Optional[int] = None,
+        second_status: Optional[int] = None
     ) -> int:
         """
         批量更新计划用例关联属性
 
-        
+
         Args:
             plan_id: 计划ID
             case_id_list: 用例ID列表
             user: 认证用户
             is_review: 是否审核
-            case_status: 用例状态 (0:未开始 1:通过 2:失败)
+            first_status: 一轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
+            second_status: 二轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
 
         Returns:
             int: 实际更新的记录数
@@ -368,8 +596,10 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         values = {}
         if is_review is not None:
             values["is_review"] = is_review
-        if case_status is not None:
-            values["case_status"] = case_status
+        if first_status is not None:
+            values["first_status"] = first_status
+        if second_status is not None:
+            values["second_status"] = second_status
 
         if not values:
             return 0
@@ -396,10 +626,13 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 )
             ).values(values)
             update_result = await session.execute(update_stmt)
-            
+
             # 更新子步骤结果状态
-            if case_status is not None and case_id_list:
-                await cls._sync_step_result_status(session, plan_id, case_id_list, case_status)
+            if case_id_list:
+                if first_status is not None:
+                    await cls._sync_step_result_status(session, plan_id, case_id_list, first_status, 'first_status')
+                if second_status is not None:
+                    await cls._sync_step_result_status(session, plan_id, case_id_list, second_status, 'second_status')
 
             for case_id, assoc in old_records.items():
                 old_data = {field: getattr(assoc, field) for field in changed_fields}
@@ -421,61 +654,36 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         session: AsyncSession,
         plan_id: int,
         case_id_list: List[int],
-        case_status: int
+        status: int,
+        status_field: str = 'status'
     ) -> int:
         """
         同步更新计划下用例的子步骤结果状态
 
         状态映射关系：
-        - case_status 0(未开始) -> step_result status 0(未填写)
-        - case_status 1(通过) -> step_result status 1(通过) 且 actual_result 写入预期结果
-        - case_status 2(失败) -> step_result status 2(阻塞)
+        - status 0(未开始) -> step_result 对应状态字段 0(未填写)
+        - status 1(通过) -> step_result 对应状态字段 1(通过)
+        - status 2(失败) -> step_result 对应状态字段 2(失败)
         ...
 
         Args:
             session: 数据库会话
             plan_id: 计划ID
             case_id_list: 用例ID列表
-            case_status: 用例状态 (0:未开始 1:通过 2:失败)
+            status: 用例状态值 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
+            status_field: 要更新的状态字段名 ('first_status', 'second_status')
 
         Returns:
             int: 实际更新的记录数
         """
 
-        if case_status == 1:
-            step_with_expected_stmt = select(
-                TestCaseStep.id,
-                TestCaseStep.expected_result
-            ).where(
-                TestCaseStep.test_case_id.in_(case_id_list)
-            )
-            step_with_expected_result = await session.execute(step_with_expected_stmt)
-            step_expected_map = {row[0]: row[1] for row in step_with_expected_result.fetchall()}
+        if status_field == 'first_status':
+            target_column = TestCaseStepResult.first_status
+        elif status_field == 'second_status':
+            target_column = TestCaseStepResult.second_status
+        else:
+            return 0
 
-            if not step_expected_map:
-                return 0
-
-            step_ids = list(step_expected_map.keys())
-            insert_values = [
-                {
-                    "plan_id": plan_id,
-                    "step_id": step_id,
-                    "actual_result": step_expected_map[step_id],
-                    "status": 1,
-                }
-                for step_id in step_ids
-            ]
-            mysql_insert_stmt = mysql_insert(TestCaseStepResult).values(insert_values)
-            update_values = {
-                "actual_result": mysql_insert_stmt.inserted.actual_result,
-                "status": mysql_insert_stmt.inserted.status,
-            }
-            upsert_stmt = mysql_insert_stmt.on_duplicate_key_update(update_values)
-            result = await session.execute(upsert_stmt)
-            log.info(f"同步更新计划{plan_id}下{len(case_id_list)}个用例的子步骤结果状态为通过(actual_result=expected_result)，影响{result.rowcount}条记录")
-            return result.rowcount
-
-        step_status = case_status
         subquery = select(TestCaseStep.id).where(
             TestCaseStep.test_case_id.in_(case_id_list)
         )
@@ -486,10 +694,11 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 TestCaseStepResult.plan_id == plan_id,
                 TestCaseStepResult.step_id.in_(select(step_ids_subquery))
             )
-        ).values(status=step_status)
+        ).values(**{target_column.key: status})
 
         result = await session.execute(update_stmt)
-        log.info(f"同步更新计划{plan_id}下{len(case_id_list)}个用例的子步骤结果状态为{step_status}，影响{result.rowcount}条记录")
+        field_name = {'first_status': '一轮测试状态', 'second_status': '二轮测试状态'}.get(status_field, '未知')
+        log.info(f"同步更新计划{plan_id}下{len(case_id_list)}个用例的子步骤{field_name}为{status}，影响{result.rowcount}条记录")
         return result.rowcount
 
     @classmethod
@@ -757,7 +966,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         plan_case_id: int,
         user: User,
         is_review: Optional[bool] = None,
-        case_status: Optional[int] = None,
+        first_status: Optional[int] = None,
+        second_status: Optional[int] = None,
         bug_url: Optional[str] = None
     ) -> PlanCaseAssociation:
         """
@@ -767,7 +977,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             plan_case_id: 计划用例关联ID（作为 update_by_id 的查询条件）
             user: 操作用户
             is_review: 是否审核
-            case_status: 用例状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
+            first_status: 一轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
+            second_status: 二轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
             bug_url: 缺陷链接
 
         Returns:
@@ -776,8 +987,10 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         kwargs = {"id": plan_case_id}
         if is_review is not None:
             kwargs["is_review"] = is_review
-        if case_status is not None:
-            kwargs["case_status"] = case_status
+        if first_status is not None:
+            kwargs["first_status"] = first_status
+        if second_status is not None:
+            kwargs["second_status"] = second_status
         if bug_url is not None:
             kwargs["bug_url"] = bug_url
 
@@ -789,20 +1002,18 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         plan_id: int,
         plan_module_id: Optional[int] = None,
         case_level: Optional[str] = None,
-        case_status: Optional[int] = None,
         is_review: Optional[bool] = None,
     ) -> list:
         """
         获取计划用例列表（含步骤及步骤执行结果）
 
-        支持按分组（含子分组）、用例等级、状态、审核状态筛选。
+        支持按分组（含子分组）、用例等级、审核状态筛选。
         采用两次查询策略：先查用例再查步骤，避免 JOIN 笛卡尔积导致数据膨胀。
 
         Args:
             plan_id: 计划ID
             plan_module_id: 计划分组ID（包含其子模块下的用例）
             case_level: 用例等级筛选
-            case_status: 用例状态筛选 (0:未开始 1:通过 2:失败)
             is_review: 是否审核筛选
 
         Returns:
@@ -823,8 +1034,6 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
 
             if case_level is not None:
                 conditions.append(TestCase.case_level == case_level)
-            if case_status is not None:
-                conditions.append(PlanCaseAssociation.case_status == case_status)
             if is_review is not None:
                 conditions.append(PlanCaseAssociation.is_review == is_review)
 
@@ -867,8 +1076,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 step_map[step.test_case_id].append({
                     **step.to_dict(),
                     "actual_result": step_result.actual_result if step_result else None,
-                    "status": step_result.status if step_result else 0,
                     "bug_url": step_result.bug_url if step_result else None,
+                    "first_status": step_result.first_status if step_result else 0,
+                    "second_status": step_result.second_status if step_result else 0,
                 })
 
             # 组装返回数据：用例信息 + 关联属性 + 步骤结果
@@ -878,7 +1088,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     "case_id": assoc.case_id,
                     "plan_module_id": assoc.plan_module_id,
                     "is_review": assoc.is_review,
-                    "case_status": assoc.case_status,
+                    "first_status": assoc.first_status,
+                    "second_status": assoc.second_status,
                     "bug_url": assoc.bug_url,
                     "order": assoc.order,
                     "case_sub_steps": step_map.get(case.id, [])
@@ -901,21 +1112,35 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             dict: 概览统计数据
         """
         async with cls.transaction() as session:
-            # 用例状态分布统计
-            status_stmt = (
+            # 一轮测试状态分布统计
+            first_status_stmt = (
                 select(
-                    PlanCaseAssociation.case_status,
+                    PlanCaseAssociation.first_status,
                     func.count().label("count")
                 )
                 .where(PlanCaseAssociation.plan_id == plan_id)
-                .group_by(PlanCaseAssociation.case_status)
+                .group_by(PlanCaseAssociation.first_status)
             )
-            status_result = await session.execute(status_stmt)
-            status_counts = {row.case_status: row.count for row in status_result.all()}
+            first_status_result = await session.execute(first_status_stmt)
+            first_status_counts = {row.first_status: row.count for row in first_status_result.all()}
 
-            case_total = sum(status_counts.values())
-            case_passed = status_counts.get(1, 0)
-            case_failed = status_counts.get(2, 0)
+            # 二轮测试状态分布统计
+            second_status_stmt = (
+                select(
+                    PlanCaseAssociation.second_status,
+                    func.count().label("count")
+                )
+                .where(PlanCaseAssociation.plan_id == plan_id)
+                .group_by(PlanCaseAssociation.second_status)
+            )
+            second_status_result = await session.execute(second_status_stmt)
+            second_status_counts = {row.second_status: row.count for row in second_status_result.all()}
+
+            case_total = sum(first_status_counts.values())
+            first_passed = first_status_counts.get(1, 0)
+            first_failed = first_status_counts.get(2, 0)
+            second_passed = second_status_counts.get(1, 0)
+            second_failed = second_status_counts.get(2, 0)
 
             # 缺陷链接统计（SQL 层已过滤 NULL 和空串，无需 Python 层再过滤）
             bug_urls_stmt = select(PlanCaseAssociation.bug_url).where(
@@ -946,17 +1171,26 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             requirement_completed = int(req_row.completed or 0)
 
             # 计算派生指标
-            case_not_executed = case_total - case_passed - case_failed
-            case_completion_rate = round((case_passed + case_failed) / case_total * 100, 2) if case_total > 0 else 0
+            case_not_executed = case_total - first_passed - first_failed
+            first_completion_rate = round((first_passed + first_failed) / case_total * 100, 2) if case_total > 0 else 0
+            second_completion_rate = round((second_passed + second_failed) / case_total * 100, 2) if case_total > 0 else 0
             requirement_completion_rate = round(requirement_completed / requirement_total * 100, 2) if requirement_total > 0 else 0
 
             return {
                 "plan_id": plan_id,
                 "case_total": case_total,
-                "case_passed": case_passed,
-                "case_failed": case_failed,
-                "case_not_executed": case_not_executed,
-                "case_completion_rate": case_completion_rate,
+                "first_round": {
+                    "passed": first_passed,
+                    "failed": first_failed,
+                    "not_executed": case_total - first_passed - first_failed,
+                    "completion_rate": first_completion_rate
+                },
+                "second_round": {
+                    "passed": second_passed,
+                    "failed": second_failed,
+                    "not_executed": case_total - second_passed - second_failed,
+                    "completion_rate": second_completion_rate
+                },
                 "bug_total": len(bug_urls),
                 "bug_urls": bug_urls,
                 "requirement_total": requirement_total,
@@ -969,61 +1203,83 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         """
         批量获取计划下每个模块的用例状态分布统计
 
-        一次 SQL 按 (plan_module_id, case_status) 分组聚合，避免前端对每个模块
+        一次 SQL 按 (plan_module_id, first_status, second_status) 分组聚合，避免前端对每个模块
         单独调用 /api/hub/plan/cases 造成的 N+1。
 
         Args:
             plan_id: 计划ID
 
         Returns:
-            字典：{module_id_str: {total, passed, failed, pending, blocked, skipped,
-                                   pass_rate, execution_rate}}
+            字典：{module_id_str: {total, first_round: {passed, failed, ...}, second_round: {passed, failed, ...}}}
             只包含至少有一条用例关联的模块（plan_module_id 非空）。
         """
         async with cls.transaction() as session:
             stmt = (
                 select(
                     PlanCaseAssociation.plan_module_id,
-                    PlanCaseAssociation.case_status,
+                    PlanCaseAssociation.first_status,
+                    PlanCaseAssociation.second_status,
                     func.count().label("count"),
                 )
                 .where(PlanCaseAssociation.plan_id == plan_id)
                 .group_by(
                     PlanCaseAssociation.plan_module_id,
-                    PlanCaseAssociation.case_status,
+                    PlanCaseAssociation.first_status,
+                    PlanCaseAssociation.second_status,
                 )
             )
             result = await session.execute(stmt)
             rows = result.all()
 
-            stats: Dict[str, Dict[str, int]] = {}
+            stats: Dict[str, Dict[str, Any]] = {}
             for row in rows:
                 mid = row.plan_module_id
                 if mid is None:
-                    # 未归类到任何模块的用例不入模块统计
                     continue
                 key = str(mid)
-                bucket = stats.setdefault(key, {
-                    "total": 0, "passed": 0, "failed": 0,
-                    "pending": 0, "blocked": 0, "skipped": 0,
-                })
-                cnt = row.count
-                bucket["total"] += cnt
-                if row.case_status == 1:
-                    bucket["passed"] += cnt
-                elif row.case_status == 2:
-                    bucket["failed"] += cnt
-                elif row.case_status == 0:
-                    bucket["pending"] += cnt
-                elif row.case_status == 3:
-                    bucket["blocked"] += cnt
-                elif row.case_status == 4:
-                    bucket["skipped"] += cnt
+                if key not in stats:
+                    stats[key] = {
+                        "total": 0,
+                        "first_round": {"passed": 0, "failed": 0, "pending": 0, "blocked": 0, "skipped": 0},
+                        "second_round": {"passed": 0, "failed": 0, "pending": 0, "blocked": 0, "skipped": 0},
+                    }
 
+                cnt = row.count
+                stats[key]["total"] += cnt
+
+                # 统计一轮测试状态
+                first_bucket = stats[key]["first_round"]
+                if row.first_status == 1:
+                    first_bucket["passed"] += cnt
+                elif row.first_status == 2:
+                    first_bucket["failed"] += cnt
+                elif row.first_status == 0:
+                    first_bucket["pending"] += cnt
+                elif row.first_status == 3:
+                    first_bucket["blocked"] += cnt
+                elif row.first_status == 4:
+                    first_bucket["skipped"] += cnt
+
+                # 统计二轮测试状态
+                second_bucket = stats[key]["second_round"]
+                if row.second_status == 1:
+                    second_bucket["passed"] += cnt
+                elif row.second_status == 2:
+                    second_bucket["failed"] += cnt
+                elif row.second_status == 0:
+                    second_bucket["pending"] += cnt
+                elif row.second_status == 3:
+                    second_bucket["blocked"] += cnt
+                elif row.second_status == 4:
+                    second_bucket["skipped"] += cnt
+
+            # 计算通过率和执行率
             for s in stats.values():
-                executed = s["passed"] + s["failed"]
-                s["pass_rate"] = round((s["passed"] / executed) * 100) if executed > 0 else 0
-                s["execution_rate"] = round((executed / s["total"]) * 100) if s["total"] > 0 else 0
+                for round_name in ["first_round", "second_round"]:
+                    round_data = s[round_name]
+                    executed = round_data["passed"] + round_data["failed"]
+                    round_data["pass_rate"] = round((round_data["passed"] / executed) * 100) if executed > 0 else 0
+                    round_data["execution_rate"] = round((executed / s["total"]) * 100) if s["total"] > 0 else 0
 
             return stats
 
@@ -1032,41 +1288,52 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         """
         获取计划详细统计数据
 
-        按用例等级和状态两个维度进行分组统计。
+        按用例等级和多轮测试状态两个维度进行分组统计。
         通过 JOIN TestCase 获取 case_level（PlanCaseAssociation 无此字段）。
 
         Args:
             plan_id: 计划ID
 
         Returns:
-            dict: 统计数据，包含 case_by_level、case_by_status、daily_trend
+            dict: 统计数据，包含 case_by_level、case_by_first_status、case_by_second_status、daily_trend
         """
         async with cls.transaction() as session:
             stmt = (
                 select(
                     TestCase.case_level,
-                    PlanCaseAssociation.case_status,
+                    PlanCaseAssociation.first_status,
+                    PlanCaseAssociation.second_status,
                     func.count().label("count")
                 )
                 .join(TestCase, TestCase.id == PlanCaseAssociation.case_id)
                 .where(PlanCaseAssociation.plan_id == plan_id)
-                .group_by(TestCase.case_level, PlanCaseAssociation.case_status)
+                .group_by(TestCase.case_level, PlanCaseAssociation.first_status, PlanCaseAssociation.second_status)
             )
             result = await session.execute(stmt)
             rows = result.all()
 
             case_by_level = {}
-            case_by_status = {}
+            case_by_first_status = {}
+            case_by_second_status = {}
             status_map = {0: "未开始", 1: "通过", 2: "失败", 3: "阻塞", 4: "跳过"}
+
             for row in rows:
+                # 按等级统计
                 case_by_level[row.case_level] = case_by_level.get(row.case_level, 0) + row.count
-                status_key = status_map.get(row.case_status, "未知")
-                case_by_status[status_key] = case_by_status.get(status_key, 0) + row.count
+
+                # 按一轮状态统计
+                first_key = status_map.get(row.first_status, "未知")
+                case_by_first_status[first_key] = case_by_first_status.get(first_key, 0) + row.count
+
+                # 按二轮状态统计
+                second_key = status_map.get(row.second_status, "未知")
+                case_by_second_status[second_key] = case_by_second_status.get(second_key, 0) + row.count
 
             return {
                 "plan_id": plan_id,
                 "case_by_level": case_by_level,
-                "case_by_status": case_by_status,
+                "case_by_first_status": case_by_first_status,
+                "case_by_second_status": case_by_second_status,
                 "daily_trend": []
             }
 

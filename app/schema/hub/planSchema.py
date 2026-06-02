@@ -130,8 +130,9 @@ class UpdatePlanCaseStepResultSchema(BaseModel):
     plan_id: int = Field(..., description="计划ID")
     step_id: Optional[int] = Field(None, description="用例步骤ID")
     actual_result: Optional[str] = Field(None, description="实际结果")
-    status: Optional[int] = Field(None, description="用例状态 0:未填写 1:通过 2:阻塞 3:跳过 4:其他")
     bug_url: Optional[str] = Field(None, description="缺陷链接")
+    first_status: Optional[int] = Field(None, description="一轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
+    second_status: Optional[int] = Field(None, description="二轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
 
 class CopyCaseToCasePlan(BaseModel):
     """复制计划用例到新的分组模型"""
@@ -153,7 +154,8 @@ class UpdateCaseToCasePlan(BaseModel):
     case_id_list: List[int] = Field(..., description="用例ID列表")
     plan_id: int = Field(..., description="计划ID")
     is_review: Optional[int] = Field(None, description="是否审核")
-    case_status: Optional[int] = Field(None, description="用例状态 0:未开始 1:通过 2:失败")
+    first_status: Optional[int] = Field(None, description="一轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
+    second_status: Optional[int] = Field(None, description="二轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
 
 class UploadCommitSchema(BaseModel):
     """确认并入库用例模型"""
@@ -161,7 +163,8 @@ class UploadCommitSchema(BaseModel):
     plan_id: int = Field(..., description="计划ID")
     plan_module_id: Optional[int] = Field(None, description="计划分组ID")
     is_review: Optional[bool] = Field(None, description="是否审核")
-    case_status: Optional[int] = Field(None, description="用例状态 0:未开始 1:通过 2:失败") 
+    first_status: Optional[int] = Field(None, description="一轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
+    second_status: Optional[int] = Field(None, description="二轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过") 
 
 
 
@@ -181,7 +184,6 @@ class PagePlanCaseSchema(PageSchema):
     plan_id: int = Field(..., description="计划ID")
     plan_module_id: Optional[int] = Field(None, description="计划分组ID")
     case_level: Optional[str] = Field(None, description="用例等级")
-    case_status: Optional[int] = Field(None, description="用例状态")
     is_review: Optional[bool] = Field(None, description="是否审核")
 
 
@@ -196,10 +198,8 @@ class PlanOverviewSchema(BaseModel):
     plan_id: int = Field(..., description="计划ID")
 
     case_total: int = Field(0, description="用例总数")
-    case_passed: int = Field(0, description="通过用例数")
-    case_failed: int = Field(0, description="失败用例数")
-    case_not_executed: int = Field(0, description="未执行用例数")
-    case_completion_rate: float = Field(0.0, description="用例完成率")
+    first_round: Optional[dict] = Field(None, description="一轮测试统计 {passed, failed, not_executed, completion_rate}")
+    second_round: Optional[dict] = Field(None, description="二轮测试统计 {passed, failed, not_executed, completion_rate}")
 
     bug_total: int = Field(0, description="缺陷总数")
     bug_urls: List[str] = Field(default_factory=list, description="缺陷链接列表")
@@ -222,5 +222,6 @@ class PlanStatisticsSchema(BaseModel):
     plan_id: int = Field(..., description="计划ID")
 
     case_by_level: dict = Field(default_factory=dict, description="用例等级分布")
-    case_by_status: dict = Field(default_factory=dict, description="用例状态分布")
+    case_by_first_status: dict = Field(default_factory=dict, description="一轮测试状态分布")
+    case_by_second_status: dict = Field(default_factory=dict, description="二轮测试状态分布")
     daily_trend: List[DailyTrendSchema] = Field(default_factory=list, description="每日趋势")

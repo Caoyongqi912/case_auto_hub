@@ -291,7 +291,10 @@ async def update_case_step_result(data: UpdatePlanCaseStepResultSchema, user: Us
     :return: 操作结果
     """
     log.info(data)
-    await PlanCaseMapper.update_case_step_result(**data.model_dump(exclude_unset=True,exclude_none=True))
+    await PlanCaseMapper.update_case_step_result(
+        **data.model_dump(exclude_unset=True, exclude_none=True),
+        user=user
+    )
     return Response.success()
 
 
@@ -396,7 +399,8 @@ async def upload_commit(
             plan_module_id=data.plan_module_id,
             user=user,
             is_review=data.is_review,
-            case_status=data.case_status,
+            first_status=data.first_status,
+            second_status=data.second_status,
         )
         await _cache_service.mark_committed(data.file_md5, user.id)
         return Response.success({"imported_count": len(valid_cases)})
@@ -412,7 +416,6 @@ async def get_plan_cases(
     plan_id: int,
     plan_module_id: Optional[int] = None,
     case_level: Optional[str] = None,
-    case_status: Optional[int] = None,
     is_review: Optional[bool] = None,
     _: User = Depends(Authentication())
 ):
@@ -421,7 +424,6 @@ async def get_plan_cases(
     :param plan_id: 计划ID
     :param plan_module_id: 计划分组ID
     :param case_level: 用例等级
-    :param case_status: 用例状态
     :param is_review: 是否审核
     :param current: 当前页
     :param pageSize: 每页大小
@@ -432,7 +434,6 @@ async def get_plan_cases(
         plan_id=plan_id,
         plan_module_id=plan_module_id,
         case_level=case_level,
-        case_status=case_status,
         is_review=is_review,
     )
     return Response.success(result)
