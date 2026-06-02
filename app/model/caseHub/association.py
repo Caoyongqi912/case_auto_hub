@@ -50,7 +50,6 @@ class PlanCaseAssociation(base):
     case_id = Column(Integer, ForeignKey('test_case.id', ondelete='CASCADE'), nullable=False, primary_key=True, comment="用例ID")
 
     is_review = Column(Boolean, default=False, comment="是否审核")
-    case_status = Column(Integer, default=0, comment="用例状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
     
     first_status = Column(Integer, default=0, comment="一轮测试 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
     second_status = Column(Integer, default=0, comment="二轮测试 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")

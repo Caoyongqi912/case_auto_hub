@@ -34,7 +34,6 @@ class TestCaseStepResult(BaseModel):
     step_id = Column(Integer, ForeignKey("case_sub_step.id", ondelete="cascade"), nullable=False,
                           comment="用例步骤id")
     actual_result = Column(String(500), nullable=True, comment="实际结果")
-    status = Column(Integer, default=0, nullable=True, comment="0 未填写 1 通过 2 阻塞 3 跳过 4 其他")
     
     first_status = Column(Integer, default=0, nullable=True, comment="一轮测试状态")
     second_status = Column(Integer, default=0, nullable=True, comment="二轮测试状态")   

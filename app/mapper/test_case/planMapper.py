@@ -214,7 +214,7 @@ class PlanMapper(Mapper[CasePlan]):
                     PlanCaseAssociation.plan_id,
                     func.count().label("case_total"),
                     func.sum(
-                        case((PlanCaseAssociation.case_status != 0, 1), else_=0)
+                        case((PlanCaseAssociation.first_status != 0, 1), else_=0)
                     ).label("case_executed")
                 )
                 .group_by(PlanCaseAssociation.plan_id)
