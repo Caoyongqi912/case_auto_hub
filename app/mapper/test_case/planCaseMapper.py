@@ -874,6 +874,69 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             }
 
     @classmethod
+    async def get_module_stats(cls, plan_id: int) -> Dict[str, Dict[str, int]]:
+        """
+        批量获取计划下每个模块的用例状态分布统计
+
+        一次 SQL 按 (plan_module_id, case_status) 分组聚合，避免前端对每个模块
+        单独调用 /api/hub/plan/cases 造成的 N+1。
+
+        Args:
+            plan_id: 计划ID
+
+        Returns:
+            字典：{module_id_str: {total, passed, failed, pending, blocked, skipped,
+                                   pass_rate, execution_rate}}
+            只包含至少有一条用例关联的模块（plan_module_id 非空）。
+        """
+        async with cls.transaction() as session:
+            stmt = (
+                select(
+                    PlanCaseAssociation.plan_module_id,
+                    PlanCaseAssociation.case_status,
+                    func.count().label("count"),
+                )
+                .where(PlanCaseAssociation.plan_id == plan_id)
+                .group_by(
+                    PlanCaseAssociation.plan_module_id,
+                    PlanCaseAssociation.case_status,
+                )
+            )
+            result = await session.execute(stmt)
+            rows = result.all()
+
+            stats: Dict[str, Dict[str, int]] = {}
+            for row in rows:
+                mid = row.plan_module_id
+                if mid is None:
+                    # 未归类到任何模块的用例不入模块统计
+                    continue
+                key = str(mid)
+                bucket = stats.setdefault(key, {
+                    "total": 0, "passed": 0, "failed": 0,
+                    "pending": 0, "blocked": 0, "skipped": 0,
+                })
+                cnt = row.count
+                bucket["total"] += cnt
+                if row.case_status == 1:
+                    bucket["passed"] += cnt
+                elif row.case_status == 2:
+                    bucket["failed"] += cnt
+                elif row.case_status == 0:
+                    bucket["pending"] += cnt
+                elif row.case_status == 3:
+                    bucket["blocked"] += cnt
+                elif row.case_status == 4:
+                    bucket["skipped"] += cnt
+
+            for s in stats.values():
+                executed = s["passed"] + s["failed"]
+                s["pass_rate"] = round((s["passed"] / executed) * 100) if executed > 0 else 0
+                s["execution_rate"] = round((executed / s["total"]) * 100) if s["total"] > 0 else 0
+
+            return stats
+
+    @classmethod
     async def get_statistics(cls, plan_id: int) -> dict:
         """
         获取计划详细统计数据

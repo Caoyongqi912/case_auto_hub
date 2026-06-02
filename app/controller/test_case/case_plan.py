@@ -241,6 +241,19 @@ async def get_module_tree(plan_id: int, _: User = Depends(Authentication())):
     return Response.success(data=modules)
 
 
+@router.get("/modules/stats", description="批量获取计划下各模块用例统计")
+async def get_plan_modules_stats(plan_id: int, _: User = Depends(Authentication())):
+    """
+    一次返回计划下所有模块的用例状态分布
+    用于替换前端对每个模块单独调用 /api/hub/plan/cases 的 N+1 模式
+    :param plan_id: 计划ID
+    :param _: 认证用户
+    :return: {module_id: {total, passed, failed, pending, blocked, skipped, pass_rate, execution_rate}}
+    """
+    data = await PlanCaseMapper.get_module_stats(plan_id=plan_id)
+    return Response.success(data=data)
+
+
 @router.post("/case/associate", description="关联用例到计划")
 async def associate_cases(data: AssociatePlanCaseSchema, _: User = Depends(Authentication())):
     """
