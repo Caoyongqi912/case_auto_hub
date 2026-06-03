@@ -20,92 +20,180 @@ from utils import log
 
 IGNORE_KEYS = {"id", "uid", "create_time", "update_time", "creator", "creatorName", "updater", "updaterName"}
 
-KEY_MAP = {
-    "action": "操作步骤",
-    "expected_result": "预期结果",
-    "case_name": "用例名称",
-    "case_level": "用例等级",
-    "case_type": "用例类型",
-    "case_tag": "用例标签",
-    "case_setup": "前置条件",
-    "case_status": "用例状态",
-    "case_mark": "用例描述",
-    "is_review": "是否审核",
-    "case_status": "用例状态",
-}
 
-PLAN_ASSOCIATION_KEY_MAP = {
-    "is_review": "是否审核",
-    "case_status": "用例状态",
-    "first_status": "一轮测试状态",
-    "second_status": "二轮测试状态",
-    "actual_result": "实际结果",
-    "bug_url": "缺陷链接",
-}
-
-VALUE_MAPPINGS = {
-    "case_type": {1: "冒烟", 2: "普通"},
-    "case_status": {1: "成功", 2: "失败", 0: "待执行", 3: "阻塞"},
-    "is_review": {True: "已评审", False: "未评审"},
-    "first_status": {0: "未开始", 1: "通过", 2: "失败", 3: "阻塞", 4: "跳过"},
-    "second_status": {0: "未开始", 1: "通过", 2: "失败", 3: "阻塞", 4: "跳过"},
-}
-
-
-def _transform_value(field_key: str, value: Any) -> str:
+class CaseDynamicRenderer:
     """
-    根据字段类型转换值的显示格式
+    用例变更动态渲染器，持有枚举配置映射（从 CaseConfig 表加载）。
 
-    :param field_key: 字段名
-    :param value: 字段值
-    :return: 可读的字符串表示
+    将字段值转换为可读文本、比较字典差异并生成变更描述。
+    实例级隔离，无全局状态，便于测试和按需刷新。
+
+    用法::
+
+        renderer = await CaseDynamicRenderer.from_db(session=session)
+        diff_info = renderer.diff_dict(old_data, new_data)
     """
-    if value is None:
-        return "空"
 
-    if field_key in VALUE_MAPPINGS and value in VALUE_MAPPINGS[field_key]:
-        return VALUE_MAPPINGS[field_key][value]
+    # 字段名 → 中文显示名（用例自身字段）
+    KEY_MAP: Dict[str, str] = {
+        "action": "操作步骤",
+        "expected_result": "预期结果",
+        "case_name": "用例名称",
+        "case_level": "用例等级",
+        "case_type": "用例类型",
+        "case_tag": "用例标签",
+        "case_setup": "前置条件",
+        "case_status": "用例状态",
+        "case_mark": "用例描述",
+        "is_review": "是否审核",
+    }
 
-    if isinstance(value, list):
-        return "、".join(str(v) for v in value) if value else "空"
+    # 字段名 → 中文显示名（计划关联字段）
+    PLAN_ASSOCIATION_KEY_MAP: Dict[str, str] = {
+        "is_review": "是否审核",
+        "case_status": "用例状态",
+        "first_status": "一轮测试状态",
+        "second_status": "二轮测试状态",
+        "actual_result": "实际结果",
+        "bug_url": "缺陷链接",
+    }
 
-    if isinstance(value, bool):
-        return "是" if value else "否"
+    # 字段名 → CaseConfig.config_key 的映射
+    FIELD_CONFIG_KEY_MAP: Dict[str, str] = {
+        "case_type": "CASE_TYPE",
+        "case_level": "CASE_LEVEL",
+        "case_status": "CASE_STATUS",
+        "is_review": "IS_REVIEW",
+        "first_status": "CASE_STATUS",
+        "second_status": "CASE_STATUS",
+    }
 
-    return str(value)
+    def __init__(self, value_mappings: Optional[Dict[str, Dict[Any, str]]] = None):
+        """
+        :param value_mappings: 字段名 -> {原始值: 显示文本} 的映射；
+                               为 None 时 transform_value 对枚举字段 fallback 到 str(value)
+        """
+        self._value_mappings = value_mappings or {}
 
+    @classmethod
+    async def from_db(cls, session: AsyncSession) -> "CaseDynamicRenderer":
+        """
+        从 CaseConfig 表加载所有枚举配置，构建渲染器实例。
 
-def diff_dict(old_case: Dict[str, Any], new_case: Dict[str, Any]) -> str | None:
-    """
-    比较两个字典的差异，生成变更描述
+        :param session: 数据库会话；为 None 时创建临时会话
+        :return: 持有最新配置的渲染器实例
+        """
+        from app.mapper.test_case.caseConfigMapper import CaseConfigMapper
 
-    :param old_case: 变更前的用例数据
-    :param new_case: 变更后的用例数据
-    :return: 变更描述字符串，如果无变更则返回None
-    """
-    all_keys = set(old_case.keys()) | set(new_case.keys())
-    relevant_keys = all_keys - IGNORE_KEYS
-    diff_args = []
+        mappings: Dict[str, Dict[Any, str]] = {}
+        config_keys = list(cls.FIELD_CONFIG_KEY_MAP.values())
 
-    for key in relevant_keys:
-        old_value = old_case.get(key)
-        new_value = new_case.get(key)
+        try:
+            rows = []
+            for key in config_keys:
+                try:
+                    rows.extend(await CaseConfigMapper.query_by_key(key, session=session))
+                except Exception as err:
+                    log.warning("CaseDynamicRenderer 加载 config_key=%s 失败: %s", key, err)
+            for row in rows:
+                config_key = row.config_key
+                mappings.setdefault(config_key, {})[row.value] = row.label
+        except Exception as err:
+            log.error("CaseDynamicRenderer.from_db 加载失败，将使用空映射: %s", err)
 
-        if old_value == new_value:
-            continue
+        return cls(mappings)
 
-        field_name = KEY_MAP.get(key, key)
-        old_display = _transform_value(key, old_value)
-        new_display = _transform_value(key, new_value)
+    def _resolve_config_key(self, field_key: str) -> Optional[str]:
+        """根据字段名查找对应的 CaseConfig config_key"""
+        return self.FIELD_CONFIG_KEY_MAP.get(field_key)
 
-        if old_value is None:
-            diff_args.append(f"{field_name} 新增 {new_display}")
-        elif new_value is None:
-            diff_args.append(f"{field_name} 从 {old_display} 变更为 空")
-        else:
+    def transform_value(self, field_key: str, value: Any) -> str:
+        """
+        根据字段类型转换值的显示格式。
+
+        优先从 DB 配置映射取值，未命中时按类型降级处理。
+        该方法为同步调用，不产生 IO。
+
+        :param field_key: 字段名
+        :param value: 字段值
+        :return: 可读的字符串表示
+        """
+        if value is None:
+            return "空"
+
+        # 优先从 CaseConfig 加载的映射中查找
+        config_key = self._resolve_config_key(field_key)
+        if config_key and config_key in self._value_mappings:
+            mapping = self._value_mappings[config_key]
+            str_value = str(value)
+            if str_value in mapping:
+                return mapping[str_value]
+
+        if isinstance(value, list):
+            return "、".join(str(v) for v in value) if value else "空"
+
+        if isinstance(value, bool):
+            return "是" if value else "否"
+
+        return str(value)
+
+    def diff_dict(self, old_case: Dict[str, Any], new_case: Dict[str, Any]) -> Optional[str]:
+        """
+        比较两个字典的差异，生成变更描述（用例自身字段）。
+
+        :param old_case: 变更前的用例数据
+        :param new_case: 变更后的用例数据
+        :return: 变更描述字符串，如果无变更则返回 None
+        """
+        all_keys = set(old_case.keys()) | set(new_case.keys())
+        relevant_keys = all_keys - IGNORE_KEYS
+        diff_args: list[str] = []
+
+        for key in relevant_keys:
+            old_value = old_case.get(key)
+            new_value = new_case.get(key)
+
+            if old_value == new_value:
+                continue
+
+            field_name = self.KEY_MAP.get(key, key)
+            old_display = self.transform_value(key, old_value)
+            new_display = self.transform_value(key, new_value)
+
+            if old_value is None:
+                diff_args.append(f"{field_name} 新增 {new_display}")
+            elif new_value is None:
+                diff_args.append(f"{field_name} 从 {old_display} 变更为 空")
+            else:
+                diff_args.append(f"{field_name} 从 {old_display} 变更为 {new_display}")
+
+        return "\n".join(diff_args) if diff_args else None
+
+    def diff_plan_case_dict(self, old_data: Dict[str, Any], new_data: Dict[str, Any]) -> Optional[str]:
+        """
+        比较计划关联用例的变更，生成变更描述。
+
+        :param old_data: 变更前的数据（仅变更字段）
+        :param new_data: 变更后的数据（仅变更字段）
+        :return: 变更描述字符串，如果无变更则返回 None
+        """
+        diff_args: list[str] = []
+        changed_keys = set(old_data.keys()) & set(new_data.keys())
+
+        for key in changed_keys:
+            old_value = old_data.get(key)
+            new_value = new_data.get(key)
+
+            if old_value == new_value:
+                continue
+
+            field_name = self.PLAN_ASSOCIATION_KEY_MAP.get(key, key)
+            old_display = self.transform_value(key, old_value)
+            new_display = self.transform_value(key, new_value)
+
             diff_args.append(f"{field_name} 从 {old_display} 变更为 {new_display}")
 
-    return "\n".join(diff_args) if diff_args else None
+        return "\n".join(diff_args) if diff_args else None
 
 
 class CaseDynamicMapper(Mapper[CaseStepDynamic]):
@@ -140,7 +228,7 @@ class CaseDynamicMapper(Mapper[CaseStepDynamic]):
                 )
                 return dynamics.all()
         except Exception as e:
-            log.error(f"query_dynamic error: case_id={case_id}, error={e}")
+            log.error("query_dynamic error: case_id=%s, error=%s", case_id, e)
             raise
 
     @classmethod
@@ -177,7 +265,8 @@ class CaseDynamicMapper(Mapper[CaseStepDynamic]):
         :param new_case: 更新后数据
         :param session: 数据库会话
         """
-        diff_info = diff_dict(old_case, new_case)
+        renderer = await CaseDynamicRenderer.from_db(session=session)
+        diff_info = renderer.diff_dict(old_case, new_case)
         if not diff_info:
             return
 
@@ -213,7 +302,8 @@ class CaseDynamicMapper(Mapper[CaseStepDynamic]):
         :param new_data: 更新后数据（仅包含变更字段）
         :param session: 数据库会话
         """
-        diff_info = diff_plan_case_dict(old_data, new_data)
+        renderer = await CaseDynamicRenderer.from_db(session=session)
+        diff_info = renderer.diff_plan_case_dict(old_data, new_data)
         if not diff_info:
             return
 
@@ -227,29 +317,3 @@ class CaseDynamicMapper(Mapper[CaseStepDynamic]):
             )
         )
         await session.flush()
-
-
-def diff_plan_case_dict(old_data: Dict[str, Any], new_data: Dict[str, Any]) -> str | None:
-    """
-    比较计划关联用例的变更，生成变更描述
-
-    :param old_data: 变更前的数据（仅变更字段）
-    :param new_data: 变更后的数据（仅变更字段）
-    :return: 变更描述字符串，如果无变更则返回None
-    """
-    diff_args = []
-    changed_keys = set(old_data.keys()) & set(new_data.keys())
-    for key in changed_keys:
-        old_value = old_data.get(key)
-        new_value = new_data.get(key)
-
-        if old_value == new_value:
-            continue
-
-        field_name = PLAN_ASSOCIATION_KEY_MAP.get(key, key)
-        old_display = _transform_value(key, old_value)
-        new_display = _transform_value(key, new_value)
-
-        diff_args.append(f"{field_name} 从 {old_display} 变更为 {new_display}")
-
-    return "\n".join(diff_args) if diff_args else None

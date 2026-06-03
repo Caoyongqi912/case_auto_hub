@@ -60,7 +60,7 @@ class UpdateRequirementCaseSchema(BaseModel):
     case_id: int = Field(..., description="用例ID")
     requirement_id:int = Field(...,description="需求")
     case_status: Optional[int] = Field(None, description="用例状态")
-    is_review: Optional[bool] = Field(None, description="时否评审")
+    is_review: Optional[int] = Field(None, description="时否评审 0:未评审 1:已评审")
     case_level:Optional[str] = Field(None,description="用例等级")
     case_type:Optional[int] = Field(None,description="用例类型")
 
@@ -96,7 +96,7 @@ class SetCasesReviewSchema(BaseModel):
     """设置多个用例状态评审"""
     requirement_id: int = Field(...,description="需求ID")
     case_ids: List[int] = Field(..., description="用例ID列表")
-    is_review: bool = Field(..., description="状态值")
+    is_review: int = Field(..., description="状态值 0:未审核 1:已审核")
 
 
 class LinkCommonCasesSchema(BaseModel):

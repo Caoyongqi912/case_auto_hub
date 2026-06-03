@@ -27,9 +27,9 @@ class RequirementMapper(Mapper[Requirement]):
     @classmethod
     async def update_requirement_case(cls, requirement_id: int, case_id: int,
                                       user: User,
-                                      case_type: Optional[int] = None,
+                                      case_type: Optional[str] = None,
                                       case_level: Optional[str] = None,
-                                      is_review: Optional[bool] = None,
+                                      is_review: Optional[int] = None,
                                       case_status: Optional[int] = None):
         """
         更新需求关联用例的属性
@@ -86,7 +86,7 @@ class RequirementMapper(Mapper[Requirement]):
 
     @classmethod
     async def update_cases_review(cls, requirement_id: int, case_ids: List[int], user: User,
-                                  is_review: bool,
+                                  is_review: int,
                                   ):
         """
         批量修改评审状态
@@ -220,7 +220,7 @@ class RequirementMapper(Mapper[Requirement]):
                         "requirement_id": requirement_id,
                         "case_id": case_id,
                         "order": order + idx,
-                        "is_review": False,
+                        "is_review": 0,
                     }
                     for idx, case_id in enumerate(new_cases)
                 ]

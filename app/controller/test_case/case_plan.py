@@ -416,7 +416,7 @@ async def get_plan_cases(
     plan_id: int,
     plan_module_id: Optional[int] = None,
     case_level: Optional[str] = None,
-    is_review: Optional[bool] = None,
+    is_review: Optional[int] = None,
     _: User = Depends(Authentication())
 ):
     """

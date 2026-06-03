@@ -131,15 +131,15 @@ class UpdatePlanCaseStepResultSchema(BaseModel):
     step_id: Optional[int] = Field(None, description="用例步骤ID")
     actual_result: Optional[str] = Field(None, description="实际结果")
     bug_url: Optional[str] = Field(None, description="缺陷链接")
-    first_status: Optional[int] = Field(None, description="一轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
-    second_status: Optional[int] = Field(None, description="二轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
+    first_status: Optional[str] = Field(None, description="一轮测试状态 ")
+    second_status: Optional[str] = Field(None, description="二轮测试状态 ")
 
 class CopyCaseToCasePlan(BaseModel):
     """复制计划用例到新的分组模型"""
     case_id_list: List[int] = Field(..., description="用例ID列表")
     plan_id: int = Field(..., description="计划ID")
     plan_case_module_id: int = Field(..., description="计划分组ID")
-    is_review: bool = Field(None, description="是否审核")
+    is_review: int = Field(None, description="是否审核 0:未审核 1:已审核")
 
 
 class CopyOneCaseToCasePlan(BaseModel):
@@ -153,18 +153,19 @@ class UpdateCaseToCasePlan(BaseModel):
     """更新计划用例模型"""
     case_id_list: List[int] = Field(..., description="用例ID列表")
     plan_id: int = Field(..., description="计划ID")
-    is_review: Optional[int] = Field(None, description="是否审核")
-    first_status: Optional[int] = Field(None, description="一轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
-    second_status: Optional[int] = Field(None, description="二轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
+    is_review: Optional[str] = Field(None, description="审核状态")
+    first_status: Optional[str] = Field(None, description="一轮测试状态 ")
+    second_status: Optional[str] = Field(None, description="二轮测试状态 ")
 
 class UploadCommitSchema(BaseModel):
     """确认并入库用例模型"""
     file_md5: str = Field(..., description="文件唯一标识")
     plan_id: int = Field(..., description="计划ID")
     plan_module_id: Optional[int] = Field(None, description="计划分组ID")
-    is_review: Optional[bool] = Field(None, description="是否审核")
-    first_status: Optional[int] = Field(None, description="一轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过")
-    second_status: Optional[int] = Field(None, description="二轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过") 
+    is_review: Optional[str] = Field(None, description="审核状态")
+    first_status: Optional[str] = Field(None, description="一轮测试状态 ")
+    second_status: Optional[str] = Field(None, description="二轮测试状态 ")
+
 
 
 
@@ -184,7 +185,7 @@ class PagePlanCaseSchema(PageSchema):
     plan_id: int = Field(..., description="计划ID")
     plan_module_id: Optional[int] = Field(None, description="计划分组ID")
     case_level: Optional[str] = Field(None, description="用例等级")
-    is_review: Optional[bool] = Field(None, description="是否审核")
+    is_review: Optional[str] = Field(None, description="审核状态")
 
 
 class UpdatePlanPhaseSchema(BaseModel):

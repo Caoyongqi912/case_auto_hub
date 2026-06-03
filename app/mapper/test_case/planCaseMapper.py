@@ -6,6 +6,7 @@
 # @Software: PyCharm
 # @Desc: 计划用例关联数据访问层
 from collections import defaultdict
+from copy import deepcopy
 from typing import List, Optional, Dict, Any
 
 from sqlalchemy import insert, update, delete, select, and_, or_, func, case
@@ -14,9 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper, set_creator
 from app.mapper.test_case.testcaseMapper import TestCaseMapper
-from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper
+from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper, CaseDynamicRenderer
 from app.model.base import User
 from app.model.caseHub.association import PlanCaseAssociation, PlanRequirementAssociation
+from app.model.caseHub.case_step_dynamic import CaseStepDynamic
 from app.model.caseHub.test_case import TestCase
 from app.model.caseHub.test_case_step import TestCaseStep, TestCaseStepResult
 from app.model.caseHub.requirement import Requirement
@@ -31,14 +33,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
     负责计划与用例之间的关联关系管理，包括：
     - 用例的导入、添加、复制、移动、移除
     - 用例步骤执行结果的 upsert 与状态同步
-    - 计划维度的统计查询（概览、模块统计、详细统计）
-
-    状态编码约定：
-        0 - 未开始
-        1 - 通过
-        2 - 失败
-        3 - 阻塞
-        4 - 跳过
+    - 计划维度的统计查询（概览、模块统计、详细统计）   
     """
     __model__ = PlanCaseAssociation
 
@@ -57,16 +52,6 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         2: "failed",
         3: "blocked",
         4: "skipped",
-    }
-
-    # 状态值 -> 中文标签的映射
-    # 用于统计结果的可读化输出（如 1->通过, 2->失败）
-    _STATUS_LABEL_MAP: Dict[int, str] = {
-        0: "未开始",
-        1: "通过",
-        2: "失败",
-        3: "阻塞",
-        4: "跳过",
     }
 
     # 状态字段名 -> 中文标签的映射
@@ -148,9 +133,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             plan_id: int,
             plan_module_id: Optional[int],
             order: int,
-            is_review: bool,
-            first_status: int = 0,
-            second_status: int = 0
+            is_review: str,
+            first_status: Optional[str] = None,
+            second_status: Optional[str] = None
     ) -> PlanCaseAssociation:
         """
         准备计划用例关联数据
@@ -162,9 +147,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         :param plan_id: 计划ID
         :param plan_module_id: 计划分组ID
         :param order: 排序号
-        :param is_review: 是否审核
-        :param first_status: 一轮测试状态（默认 0=未开始）
-        :param second_status: 二轮测试状态（默认 0=未开始）
+        :param is_review: 审核状态
+        :param first_status: 一轮测试状态（默认 None）
+        :param second_status: 二轮测试状态（默认 None）
         :return: 计划用例关联模型实例（尚未持久化）
         """
         return PlanCaseAssociation(
@@ -385,10 +370,15 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             TestCase: 创建的用例对象
         """
         case_sub_steps = kwargs.pop("case_sub_steps", [])
+    
         kwargs = set_creator(user, **kwargs)
         kwargs['is_common'] = True
 
         async with cls.transaction() as session:
+            from app.mapper.test_case.planMapper import PlanMapper
+            
+            plan = await PlanMapper.get_by_id(ident=plan_id, session=session)
+            kwargs['project_id'] = plan.project_id
             case_obj: TestCase = await TestCaseMapper.save(session=session, **kwargs)
             if case_sub_steps:
                 steps = [
@@ -401,6 +391,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     for i in case_sub_steps
                 ]
                 session.add_all(steps)
+            log.info(f"insert_plan_case success, case_id: {case_obj.id}")
             await cls.associate_cases(
                 plan_id=plan_id,
                 plan_module_id=plan_module_id,
@@ -762,8 +753,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             case_id_list: 用例ID列表
             user: 认证用户
             is_review: 是否审核
-            first_status: 一轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
-            second_status: 二轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
+            first_status: 一轮测试状态
+            second_status: 二轮测试状态
 
         Returns:
             int: 实际更新的记录数
@@ -773,16 +764,14 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             first_status=first_status,
             second_status=second_status
         )
-
         if not values:
             return 0
 
         async with cls.transaction() as session:
             plan_name = await cls._get_plan_name(session=session, plan_id=plan_id)
-
             changed_fields = list(values.keys())
 
-            # 查询旧记录用于 dynamic 记录（必须在 UPDATE 之前查询）
+            # 查询旧记录（必须在 UPDATE 前查询，用 deepcopy 隔离 SQLAlchemy 身份映射）
             stmt = select(PlanCaseAssociation).where(
                 and_(
                     PlanCaseAssociation.plan_id == plan_id,
@@ -790,7 +779,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 )
             )
             result = await session.execute(stmt)
-            old_records = {assoc.case_id: assoc for assoc in result.scalars().all()}
+            old_records = {assoc.case_id: deepcopy(assoc.map()) for assoc in result.scalars().all()}
 
             # 执行批量更新
             update_stmt = update(PlanCaseAssociation).where(
@@ -801,23 +790,35 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             ).values(values)
             update_result = await session.execute(update_stmt)
 
-            # 同步子步骤结果状态（仅当状态字段被更新时才触发）
+            # 同步子步骤结果状态
             if first_status is not None:
                 await cls._sync_step_result_status(session, plan_id, case_id_list, first_status, 'first_status')
             if second_status is not None:
                 await cls._sync_step_result_status(session, plan_id, case_id_list, second_status, 'second_status')
 
-            # 逐条记录操作动态
-            for case_id, assoc in old_records.items():
-                old_data = {field: getattr(assoc, field) for field in changed_fields}
-                await CaseDynamicMapper.update_plan_case_dynamic(
-                    cr=user,
-                    plan_id=plan_id,
-                    plan_name=plan_name,
-                    case_id=case_id,
-                    old_data=old_data,
-                    new_data=values,
-                    session=session
+            # 逐条记录操作动态（renderer 只创建一次）
+            renderer = await CaseDynamicRenderer.from_db(session=session)
+            for case_id, old_record in old_records.items():
+                old_data = {k: old_record[k] for k in changed_fields}
+
+                # 跳过无实际变更的记录（兼容 int/str 类型差异）
+                if all(str(old_data.get(k)) == str(values.get(k)) for k in changed_fields):
+                    continue
+
+                diff_info = renderer.diff_plan_case_dict(old_data, values)
+                if not diff_info:
+                    continue
+
+                log.debug("用例 %d 变更: %s", case_id, diff_info)
+                await cls.add_flush_expunge(
+                    session=session,
+                    model=CaseStepDynamic(
+                        description=f"{user.username} 更新了计划【{plan_name}】中的用例 :{diff_info}",
+                        test_case_id=case_id,
+                        plan_id=plan_id,
+                        creator=user.id,
+                        creatorName=user.username
+                    ),
                 )
 
             return update_result.rowcount
@@ -1152,7 +1153,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         cls,
         plan_case_id: int,
         user: User,
-        is_review: Optional[bool] = None,
+        is_review: Optional[int] = None,
         first_status: Optional[int] = None,
         second_status: Optional[int] = None,
         bug_url: Optional[str] = None
@@ -1161,6 +1162,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         更新单条用例关联状态
 
         通过计划用例关联ID定位记录，仅更新非 None 的字段。
+        更新前后会记录操作动态。
 
         Args:
             plan_case_id: 计划用例关联ID（作为 update_by_id 的查询条件）
@@ -1173,14 +1175,50 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         Returns:
             PlanCaseAssociation: 更新后的关联记录
         """
-        kwargs = cls._build_optional_values(
-            id=plan_case_id,
+        values = cls._build_optional_values(
             is_review=is_review,
             first_status=first_status,
             second_status=second_status,
             bug_url=bug_url
         )
-        return await cls.update_by_id(update_user=user, **kwargs)
+
+        if not values:
+            return await cls.get_by_id(plan_case_id)
+
+        changed_fields = list(values.keys())
+
+        async with cls.transaction() as session:
+            # 查询旧记录用于 dynamic 记录
+            old_assoc = await cls.get_by_id(ident=plan_case_id, session=session)
+            if not old_assoc:
+                raise Exception(f"未找到 plan_case_id={plan_case_id} 的记录")
+
+            old_data = {field: getattr(old_assoc, field) for field in changed_fields}
+
+            # 执行更新
+            updated = await cls.update_by_id(
+                id=plan_case_id,
+                update_user=user,
+                **values
+            )
+
+            # 记录操作动态
+            renderer = await CaseDynamicRenderer.from_db(session=session)
+            diff_info = renderer.diff_plan_case_dict(old_data, values)
+            if diff_info:
+                plan_name = await cls._get_plan_name(session=session, plan_id=updated.plan_id)
+                session.add(
+                    CaseStepDynamic(
+                        description=f"{user.username} 更新了计划【{plan_name}】中的用例 :{diff_info}",
+                        test_case_id=updated.case_id,
+                        plan_id=updated.plan_id,
+                        creator=user.id,
+                        creatorName=user.username
+                    )
+                )
+                await session.flush()
+
+            return updated
 
     # ------------------------------------------------------------------
     #  查询方法
@@ -1192,7 +1230,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         plan_id: int,
         plan_module_id: Optional[int] = None,
         case_level: Optional[str] = None,
-        is_review: Optional[bool] = None,
+        is_review: Optional[int] = None,
     ) -> list:
         """
         获取计划用例列表（含步骤及步骤执行结果）

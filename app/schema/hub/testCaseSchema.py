@@ -26,7 +26,7 @@ class TestCaseField(BaseModel):
     """测试用例基础字段模型"""
     case_name: Optional[str] = Field(None, description="用例名称")
     case_level: Optional[str] = Field(None, description="用例级别")
-    case_type: Optional[int] = Field(1, description="用例类型: 1'普通' | 2'冒烟' | 3 回归")
+    case_type: Optional[str] = Field(None, description="用例类型: 1'普通' | 2'冒烟' | 3 回归")
     case_tag: Optional[str] = Field(None, description="用例标签")
     case_setup: Optional[str] = Field(None, description="用例前置条件")
     # case_status: Optional[int] = Field(0, description="用例状态")
@@ -105,9 +105,9 @@ class PageTestCaseSchema(PageSchema, TestCaseField):
     """测试用例分页查询模型"""
     module_type: int = Field(ModuleEnum.CASE, description="模块类型")
     case_level: Optional[str] = Field(None, description="用例级别")
-    case_type: Optional[int] = Field(None, description="用例类型")
+    case_type: Optional[str] = Field(None, description="用例类型")
     case_status: Optional[int] = Field(None, description="用例状态")
-    is_review: Optional[bool] = Field(None, description="是否审核")
+    is_review: Optional[int] = Field(None, description="是否审核 0:未审核 1:已审核")
 
 
 class QueryTestCaseSchemaByReq(BaseModel):
@@ -133,7 +133,7 @@ class QueryTestCaseSchemaByField(BaseModel):
     case_type: Optional[int] = Field(None, description="用例类型")
     case_tag: Optional[str] = Field(None, description="用例标签")
     case_status: Optional[int] = Field(None, description="用例状态")
-    is_review: Optional[bool] = Field(None, description='是否评审')
+    is_review: Optional[int] = Field(None, description='是否评审 0:未评审 1:已评审')
     is_common: Optional[bool] = Field(None, description='是否公共')
 
 

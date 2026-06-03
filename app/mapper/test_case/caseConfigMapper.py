@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exception import CommonError, ParamsError
 from app.mapper import Mapper, set_updater
 from app.model.base import User
+from app.model import async_session
 from app.model.caseHub.case_config import CaseConfig
 from utils import log
 
@@ -99,6 +100,7 @@ class CaseConfigMapper(Mapper[CaseConfig]):
         cls,
         config_key: str,
         enabled_only: bool = True,
+        session: Optional[AsyncSession] = None,
     ) -> List[CaseConfig]:
         """
         根据 config_key 全量查询配置项
@@ -108,7 +110,7 @@ class CaseConfigMapper(Mapper[CaseConfig]):
         :return: 按 sort 升序排序的 CaseConfig 列表
         """
         try:
-            async with cls.transaction() as session:
+            async with cls.session_scope(session) as session:
                 stmt = select(CaseConfig).where(CaseConfig.config_key == config_key)
                 if enabled_only:
                     stmt = stmt.where(CaseConfig.enabled.is_(True))

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper import Mapper, set_creator
 from app.mapper.test_case.requirementMapper import RequirementMapper
 from app.mapper.test_case.testCaseStepMapper import TestCaseStepMapper
-from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper, diff_dict
+from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper, CaseDynamicRenderer
 from app.model import async_session
 from app.model.base import User
 from app.model.caseHub.test_case import TestCase
@@ -202,39 +202,7 @@ class TestCaseMapper(Mapper[TestCase]):
             log.error(f"_update_association_field error: case_ids={case_ids}, field={field_name}, error={e}")
             raise
 
-    @classmethod
-    async def update_cases_status(cls, case_ids: List[int], status: int, user: User):
-        """
-        批量更新用例状态，并记录变更动态
 
-        :param case_ids: 用例ID列表
-        :param status: 目标状态
-        :param user: 操作用户
-        """
-        await cls._update_association_field(
-            case_ids=case_ids,
-            field_name="case_status",
-            new_value=status,
-            old_field_name="case_status",
-            user=user
-        )
-
-    @classmethod
-    async def update_cases_review(cls, case_ids: List[int], is_review: bool, user: User):
-        """
-        批量更新用例评审状态，并记录变更动态
-
-        :param case_ids: 用例ID列表
-        :param is_review: 是否评审
-        :param user: 操作用户
-        """
-        await cls._update_association_field(
-            case_ids=case_ids,
-            field_name="is_review",
-            new_value=is_review,
-            old_field_name="is_review",
-            user=user
-        )
 
     @classmethod
     def _prepare_case_data(
@@ -316,7 +284,7 @@ class TestCaseMapper(Mapper[TestCase]):
             requirement_id=requirement_id,
             case_id=case_index,
             order=last_order + 1,
-            is_review=False,
+            is_review=0,
             case_type=case_data.get("case_type", None),
             case_status=case_data.get("case_status", None),
         )
@@ -653,12 +621,13 @@ class TestCaseMapper(Mapper[TestCase]):
                 new_cases_list = new_cases_result.scalars().all()
 
                 dynamic_records = []
+                renderer = await CaseDynamicRenderer.from_db(session=session)
                 for new_case in new_cases_list:
                     old_data = old_cases_map.get(new_case.id, {})
                     new_data = new_case.map
 
                     if old_data != new_data:
-                        diff_info = diff_dict(old_data, new_data)
+                        diff_info = renderer.diff_dict(old_data, new_data)
                         if diff_info:
                             dynamic_records.append(
                                 CaseStepDynamic(
@@ -691,19 +660,20 @@ class TestCaseMapper(Mapper[TestCase]):
         log.info(f"更新用例参数: {kwargs}")
 
         try:
-            async with cls.transaction() as session:
-                case_obj = await cls.get_by_id(ident=kwargs.get("id"), session=session)
-                old_data = case_obj.map
-                kwargs.pop("id", None)
-                new_case = await cls.update_cls(case_obj, session, **kwargs)
+            async with async_session() as session:
+                async with session.begin():
+                    case_obj = await cls.get_by_id(ident=kwargs.get("id"), session=session)
+                    old_data = case_obj.map
+                    kwargs.pop("id", None)
+                    new_case = await cls.update_cls(case_obj, session, **kwargs)
 
-                await CaseDynamicMapper.update_dynamic(
-                    cr=ur,
-                    case_id=case_obj.id,
-                    old_case=old_data,
-                    new_case=new_case.map,
-                    session=session
-                )
+                    await CaseDynamicMapper.update_dynamic(
+                        cr=ur,
+                        case_id=case_obj.id,
+                        old_case=old_data,
+                        new_case=new_case.map,
+                        session=session
+                    )
         except Exception as e:
             log.error(f"update_case error: kwargs={kwargs}, error={e}")
             raise
