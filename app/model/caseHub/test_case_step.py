@@ -34,9 +34,8 @@ class TestCaseStepResult(BaseModel):
     step_id = Column(Integer, ForeignKey("case_sub_step.id", ondelete="cascade"), nullable=False,
                           comment="用例步骤id")
     actual_result = Column(String(500), nullable=True, comment="实际结果")
-    
-    first_status = Column(Integer, default=0, nullable=True, comment="一轮测试状态")
-    second_status = Column(Integer, default=0, nullable=True, comment="二轮测试状态")   
+    first_status = Column(String(255),  comment="一轮测试状态")
+    second_status = Column(String(255),  comment="二轮测试状态")   
     bug_url = Column(String(500), nullable=True, comment="bug链接")
 
     __table_args__ = (
@@ -45,4 +44,4 @@ class TestCaseStepResult(BaseModel):
     )
 
     def __repr__(self):
-        return f"<TestCaseStepResult(plan_id={self.plan_id},step_id={self.step_id},actual_result={self.actual_result},status={self.status},bug_url={self.bug_url}) >"
+        return f"<TestCaseStepResult(plan_id={self.plan_id},step_id={self.step_id},actual_result={self.actual_result},bug_url={self.bug_url}) >"
