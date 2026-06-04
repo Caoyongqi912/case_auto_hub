@@ -49,3 +49,73 @@ async def load_case_enum_config() -> CaseEnumConfig:
         default_level=DEFAULT_LEVEL_VALUE,
         default_type=default_type,
     )
+
+
+# ----------------------------------------------------------------------------
+# UploadModuleResolver: Excel "所属分组" 字符串 → module_id
+# ----------------------------------------------------------------------------
+# 分隔符按出现顺序匹配 (任一命中即用). 常见写法都覆盖, 包含全角符号.
+GROUP_PATH_SEPARATORS = ("/", "→", ">", "＞", "|", "｜", "-")
+
+# 用例模块的 module_type, 避免循环导入在调用方 import ModuleEnum
+CASE_MODULE_TYPE = 10  # ModuleEnum.CASE
+
+
+def _split_group_path(raw):
+    """
+    把 Excel 单元格中的"所属分组"原始字符串拆成 title 路径列表.
+
+    - None / 空串 / 全空白 -> []
+    - 命中任一分隔符: 按该分隔符拆, 去空白, 丢空段
+    - 没命中分隔符: 整串作为单级路径
+
+    例: "二手/交易/待办流程/PC" -> ["二手", "交易", "待办流程", "PC"]
+        "根 > 子 > 孙"            -> ["根", "子", "孙"]
+        "单层"                    -> ["单层"]
+    """
+    if raw is None:
+        return []
+    s = str(raw).strip()
+    if not s:
+        return []
+    for sep in GROUP_PATH_SEPARATORS:
+        if sep in s:
+            parts = [p.strip() for p in s.split(sep)]
+            return [p for p in parts if p]
+    return [s]
+
+
+async def resolve_group_path(project_id, raw_group_path, user, module_type=CASE_MODULE_TYPE):
+    """
+    把 Excel "所属分组" 列解析为 Module.id.
+
+    - 空值返回 None (调用方走兜底 module_id)
+    - 拆解路径, 调 ModuleMapper.find_or_create_path 逐级 find-or-create, 返回叶子 id
+    - 任意异常被吞掉返回 None, 不阻塞整批导入 (路径脏数据不影响其他行)
+
+    :param project_id: 项目 ID
+    :param raw_group_path: 原始字符串
+    :param user: 创建人 (find_or_create_path 需要)
+    :param module_type: 模块类型, 默认用例 (ModuleEnum.CASE = 10)
+    :return: 叶子 Module.id, 解析失败返回 None
+    """
+    titles = _split_group_path(raw_group_path)
+    if not titles:
+        return None
+
+    try:
+        from app.mapper.project.moduleMapper import ModuleMapper
+        leaf = await ModuleMapper.find_or_create_path(
+            project_id=project_id,
+            title_path=titles,
+            module_type=module_type,
+            user=user,
+        )
+        return leaf.id
+    except Exception as err:
+        from utils import log
+        log.error(
+            "resolve_group_path error: project_id=%s, raw=%r, err=%s",
+            project_id, raw_group_path, err,
+        )
+        return None

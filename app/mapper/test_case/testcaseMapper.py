@@ -225,6 +225,9 @@ class TestCaseMapper(Mapper[TestCase]):
         """
         case_data.pop("action", None)
         case_data.pop("expected_result", None)
+        # group_path 是解析阶段预留给 UploadModuleResolver 的字段,
+        # 已经在 insert_upload_case 里解析成 module_id, 这里必须弹出
+        case_data.pop("group_path", None)
         case_data.update({
             "project_id": project_id,
             "module_id": module_id,
@@ -319,6 +322,22 @@ class TestCaseMapper(Mapper[TestCase]):
         if not cases:
             return 0
 
+        # 预解析 group_path -> module_id (在事务外逐个独立 resolve,
+        # 避免嵌套事务破坏原子性). 失败的回退到入参 module_id.
+        from utils.caseEnumResolver import resolve_group_path
+        case_module_map: Dict[int, int] = {}
+        for case_index, case_data in enumerate(cases):
+            raw_path = case_data.get("group_path")
+            if not raw_path:
+                continue
+            resolved = await resolve_group_path(
+                project_id=project_id,
+                raw_group_path=raw_path,
+                user=user,
+            )
+            if resolved is not None:
+                case_module_map[case_index] = resolved
+
         log.info(f"开始导入用例，共 {len(cases)} 条")
         async with cls.transaction() as session:
             case_objects = []
@@ -327,10 +346,11 @@ class TestCaseMapper(Mapper[TestCase]):
             last_order = await get_last_index(session, requirement_id) if requirement_id else 0
 
             for case_index, case_data in enumerate(cases):
+                effective_module_id = case_module_map.get(case_index, module_id)
                 case_obj = cls._prepare_case_data(
                     case_data=case_data.copy(),
                     project_id=project_id,
-                    module_id=module_id,
+                    module_id=effective_module_id,
                     user=user,
                     is_common=is_common
                 )
