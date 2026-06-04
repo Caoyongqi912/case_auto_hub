@@ -23,7 +23,7 @@ class TestCase(BaseModel):
     case_type = Column(String(255), nullable=True, comment="用例类型 1 冒烟 2功能 3回归")
 
     is_common = Column(Boolean, default=False, index=True, comment="用例库")
-    module_id = Column(Integer, nullable=True, comment="所属模块")
+    module_id = Column(Integer, ForeignKey('module.id', ondelete='set null'), nullable=True, comment="所属模块")
     project_id = Column(Integer, ForeignKey('project.id'), nullable=False, comment="所属项目")
 
     

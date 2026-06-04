@@ -51,13 +51,23 @@ async def insert_case(data: AddTestCaseSchema, user: User = Depends(Authenticati
 @router.post("/page", description="分页查询用例列表")
 async def page_cases(data: PageTestCaseSchema, _: User = Depends(Authentication())):
     """
-    根据模块ID分页查询测试用例列表
+    分页查询测试用例列表
+    - module_id 不为空: 查询该模块(含子节点)下的用例
+    - module_id 为空或不传: 查询 module_id 为空的用例(未分类)
+    - module_ids 多选: 多个模块各自展开子节点后求并集过滤
+
     :param data: 分页及筛选参数
     :param _: 认证用户
     :return: 用例分页数据
     """
-    log.info(data.model_dump(exclude_none=True, exclude_unset=True))
-    result = await TestCaseMapper.page_by_module(**data.model_dump(exclude_none=True, exclude_unset=True))
+    payload = data.model_dump(exclude_none=True, exclude_unset=True)
+    # module_id 为空 / 不传 -> 代表查询未分类用例(module_id IS NULL)
+    if data.module_id is None and data.module_ids is None:
+        payload.pop("module_id", None)
+        payload["module_id__is_null"] = True
+    log.debug(payload)
+    result = await TestCaseMapper.page_by_module(**payload) 
+        
     return Response.success(result)
 
 
