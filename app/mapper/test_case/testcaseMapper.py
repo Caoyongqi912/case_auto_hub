@@ -322,19 +322,27 @@ class TestCaseMapper(Mapper[TestCase]):
         if not cases:
             return 0
 
-        # 预解析 group_path -> module_id (在事务外逐个独立 resolve,
-        # 避免嵌套事务破坏原子性). 失败的回退到入参 module_id.
-        from utils.caseEnumResolver import resolve_group_path
+        # 预解析 group_path -> module_id (在事务外, 避免嵌套事务破坏原子性)
+        # - 先 dedupe paths: N 条 case 经常只有 K 个 unique path (K << N)
+        # - 每个 unique path 只 resolve 一次, 大幅减少 find_or_create_path 调用
+        # - 失败的回退到入参 module_id
+        from utils.caseEnumResolver import resolve_group_path, _split_group_path
         case_module_map: Dict[int, int] = {}
+        unique_path_resolved: Dict[str, Optional[int]] = {}
         for case_index, case_data in enumerate(cases):
             raw_path = case_data.get("group_path")
             if not raw_path:
                 continue
-            resolved = await resolve_group_path(
-                project_id=project_id,
-                raw_group_path=raw_path,
-                user=user,
-            )
+            # 用拆分后的 tuple 当 cache key (同一原始字符串可能写法不同, e.g. 末尾空格)
+            titles = _split_group_path(raw_path)
+            cache_key = "\x1f".join(titles)  # 用控制符避开业务字符串
+            if cache_key not in unique_path_resolved:
+                unique_path_resolved[cache_key] = await resolve_group_path(
+                    project_id=project_id,
+                    raw_group_path=raw_path,
+                    user=user,
+                )
+            resolved = unique_path_resolved[cache_key]
             if resolved is not None:
                 case_module_map[case_index] = resolved
 

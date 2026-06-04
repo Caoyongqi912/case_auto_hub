@@ -112,10 +112,11 @@ async def resolve_group_path(project_id, raw_group_path, user, module_type=CASE_
             user=user,
         )
         return leaf.id
-    except Exception as err:
+    except Exception:
+        # exception=True 让 loguru 输出完整 stacktrace, 方便定位
         from utils import log
-        log.error(
-            "resolve_group_path error: project_id=%s, raw=%r, err=%s",
-            project_id, raw_group_path, err,
+        log.opt(exception=True).error(
+            f"resolve_group_path failed: project_id={project_id}, "
+            f"raw={raw_group_path!r}, titles={titles}"
         )
         return None
