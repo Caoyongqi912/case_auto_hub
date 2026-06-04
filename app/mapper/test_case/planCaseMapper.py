@@ -1038,6 +1038,149 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
     # ------------------------------------------------------------------
 
     @classmethod
+    async def _resolve_source_to_plan_module_map(
+        cls,
+        sess: AsyncSession,
+        plan_id: int,
+        user: Optional[User],
+        module_ids: List[int],
+    ) -> Dict[int, int]:
+        """
+        根据源项目 module_id 列表，构建 source_module_id -> plan_module_id 映射
+
+        重要约束：**每个 plan 有且仅有一个根分组（parent_id IS NULL）**。
+        所有关联过去的源目录必须挂在这个根下，**不会创建新的根**。
+        若 plan 还没有根（理论上 init_module 会在 plan 创建时建好），兜底建一个
+        名为"全部用例"的根。
+
+        行为：
+        1) 对每个 source module，沿 parent_id 走到根，得到完整路径 [src_root, ..., leaf]
+        2) 取 plan 的根 plan_module 作为挂载点
+        3) 沿路径逐层在 plan_module 中 find-or-create：
+           - 匹配条件：plan_id, title, parent_id（父级已映射的 plan_module_id）
+           - 第一层（src_root）作为 plan 根的子节点
+           - 后续层依次嵌套
+           - 找不到则新建
+        4) 把每条 source module 映射到对应 plan_module（叶子节点就是目标）
+        """
+        from app.model.base.module import Module  # 局部导入避免循环
+
+        if not module_ids:
+            return {}
+
+        # 1) 一次性把涉及的 source modules 全捞出来
+        src_stmt = select(Module).where(Module.id.in_(module_ids))
+        src_modules = (await sess.execute(src_stmt)).scalars().all()
+        if not src_modules:
+            return {}
+
+        # 按 id 索引方便查找
+        src_by_id: Dict[int, Module] = {m.id: m for m in src_modules}
+
+        # 2) 收集所有涉及的 source module（包括所有祖先）
+        involved_ids: set = set()
+        # 用 BFS 走 parent 链
+        queue: List[int] = list(src_by_id.keys())
+        while queue:
+            mid = queue.pop()
+            if mid in involved_ids:
+                continue
+            involved_ids.add(mid)
+            m = src_by_id.get(mid)
+            if m is None:
+                # 不在首次查询中：单独查一次
+                extra = (await sess.execute(select(Module).where(Module.id == mid))).scalars().first()
+                if extra is None:
+                    continue
+                src_by_id[mid] = extra
+                m = extra
+            if m.parent_id and m.parent_id not in involved_ids:
+                queue.append(m.parent_id)
+
+        # 3) 一次查全所有 source modules
+        all_stmt = select(Module).where(Module.id.in_(involved_ids))
+        all_modules = (await sess.execute(all_stmt)).scalars().all()
+        all_by_id: Dict[int, Module] = {m.id: m for m in all_modules}
+
+        # 4) 拉取该 plan 下所有 plan_modules，按 (title, parent_id) 索引
+        plan_mod_stmt = select(PlanModule).where(PlanModule.plan_id == plan_id)
+        plan_modules = (await sess.execute(plan_mod_stmt)).scalars().all()
+        plan_mod_index: Dict[tuple, PlanModule] = {
+            (pm.title, pm.parent_id): pm for pm in plan_modules
+        }
+
+        # 4.1) 关键：每个 plan 有且仅有一个根分组（parent_id IS NULL），
+        #       所有关联过去的源目录都挂在这个根下，不能再造新的根。
+        #       若 plan 还没有初始化根（理论上 init_module 已建好），兜底建一个
+        #       名为"全部用例"的根。
+        plan_root: Optional[PlanModule] = next(
+            (pm for pm in plan_modules if pm.parent_id is None), None
+        )
+        if plan_root is None:
+            plan_root = PlanModule(
+                plan_id=plan_id,
+                title="全部用例",
+                parent_id=None,
+                order=0,
+            )
+            if user is not None:
+                plan_root.creator = user.id
+                plan_root.creatorName = user.username
+            sess.add(plan_root)
+            await sess.flush()
+            plan_mod_index[("全部用例", None)] = plan_root
+
+        # 5) 对每个 leaf source module，沿根到叶逐层 find-or-create
+        # 排序保证父级先处理
+        sorted_ids = sorted(involved_ids, key=lambda i: (all_by_id[i].parent_id or 0))
+        # 上面的排序对单链 OK，多叉场景下我们用更稳的方案：先按层级分批
+        # 找出每个 source module 的 path：[root, ..., self]
+        def build_path(mid: int) -> List[Module]:
+            chain: List[Module] = []
+            cur = all_by_id.get(mid)
+            while cur is not None:
+                chain.append(cur)
+                if cur.parent_id is None:
+                    break
+                cur = all_by_id.get(cur.parent_id)
+            chain.reverse()
+            return chain
+
+        # 6) 对每个 leaf source module 处理一遍
+        #    关键：从 plan 已有根分组起步，源目录树成为它的子树。
+        #    即 source 根节点会作为 plan 根的子节点创建（保留 title），
+        #    中间节点依次嵌套。
+        source_to_plan: Dict[int, int] = {}
+        for leaf_id in module_ids:
+            path = build_path(leaf_id)
+            if not path:
+                continue
+            current_parent_id: int = plan_root.id
+            for node in path:
+                key = (node.title, current_parent_id)
+                existing = plan_mod_index.get(key)
+                if existing is not None:
+                    current_parent_id = existing.id
+                else:
+                    new_pm = PlanModule(
+                        plan_id=plan_id,
+                        title=node.title,
+                        parent_id=current_parent_id,
+                        order=0,
+                    )
+                    if user is not None:
+                        new_pm.creator = user.id
+                        new_pm.creatorName = user.username
+                    sess.add(new_pm)
+                    await sess.flush()
+                    # 同步到索引，避免同批次重复创建
+                    plan_mod_index[key] = new_pm
+                    current_parent_id = new_pm.id
+            source_to_plan[leaf_id] = current_parent_id
+
+        return source_to_plan
+
+    @classmethod
     async def associate_cases(
         cls,
         plan_id: int,
@@ -1045,6 +1188,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         plan_module_id: Optional[int] = None,
         session: Optional[AsyncSession] = None,
         order: Optional[int] = None,
+        module_ids: Optional[List[int]] = None,
+        merge_same_group: bool = False,
+        user: Optional[User] = None,
         **kwargs,
     ) -> int:
         """
@@ -1053,12 +1199,20 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         自动去重（跳过已关联的用例），支持指定插入位置（order），
         若指定 order 则自动后移已有记录的排序。
 
+        两种模式：
+        1) 不传 module_ids：所有 case_ids 关联到同一个 plan_module_id（兼容旧行为）
+        2) 传 module_ids：按源目录结构在 plan 中 find-or-create PlanModule，
+           然后按 case.module_id 把每条用例挂到对应的 plan_module
+
         Args:
             plan_id: 计划ID
             case_ids: 用例ID列表
-            plan_module_id: 计划分组ID
+            plan_module_id: 兜底目标分组（mode1 使用；mode2 找不到映射时也用它）
             session: 数据库会话（外部传入时复用，否则新建）
             order: 插入位置排序值（None 则追加到末尾）
+            module_ids: 源项目模块ID列表（mode2 使用）
+            merge_same_group: 是否合并相同用例分组（暂作语义开关保留，find-or-create 已天然合并同名）
+            user: 操作用户（mode2 创建 plan_module 需要）
             **kwargs: 其他关联属性（如 is_review）
 
         Returns:
@@ -1068,11 +1222,34 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             return 0
 
         async def _execute_association(sess: AsyncSession) -> int:
-            # 查询已关联的用例ID，避免重复关联
+            # 1) 解析 source module -> plan module 映射
+            source_to_plan: Dict[int, int] = {}
+            if module_ids:
+                source_to_plan = await cls._resolve_source_to_plan_module_map(
+                    sess=sess,
+                    plan_id=plan_id,
+                    user=user,
+                    module_ids=module_ids,
+                )
+
+            # 2) 如果有映射，需要把每个 case 按其 module_id 路由到对应 plan_module
+            case_to_plan_module: Dict[int, int] = {}
+            if source_to_plan:
+                # 查询这些 case 的 module_id
+                tc_stmt = select(TestCase.id, TestCase.module_id).where(TestCase.id.in_(case_ids))
+                tc_rows = (await sess.execute(tc_stmt)).all()
+                for cid, mid in tc_rows:
+                    # 映射命中：用映射值；未命中（case 不在选中目录中）：用兜底 plan_module_id
+                    case_to_plan_module[cid] = source_to_plan.get(mid) or plan_module_id
+            else:
+                # mode1：所有 case 走同一个 plan_module_id
+                case_to_plan_module = {cid: plan_module_id for cid in case_ids}
+
+            # 3) 查询已关联的用例ID，避免重复关联
             existing_stmt = select(PlanCaseAssociation.case_id).where(
                 and_(
                     PlanCaseAssociation.plan_id == plan_id,
-                    PlanCaseAssociation.case_id.in_(case_ids)
+                    PlanCaseAssociation.case_id.in_(case_ids),
                 )
             )
             result = await sess.execute(existing_stmt)
@@ -1082,36 +1259,31 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             if not new_case_ids:
                 return 0
 
-            # 处理排序：指定位置插入需后移已有记录，否则追加到末尾
-            if order is not None:
-                await sess.execute(
-                    update(PlanCaseAssociation)
-                    .where(
-                        and_(
-                            PlanCaseAssociation.plan_id == plan_id,
-                            PlanCaseAssociation.order >= order,
-                        )
-                    )
-                    .values(order=PlanCaseAssociation.order + len(new_case_ids))
-                )
-                start_order = order
-            else:
-                max_order_stmt = select(
-                    func.coalesce(func.max(PlanCaseAssociation.order), 0)
-                ).where(PlanCaseAssociation.plan_id == plan_id)
-                max_result = await sess.execute(max_order_stmt)
-                start_order = max_result.scalar() + 1
+            # 4) 处理排序：按 plan_module 分组后分别计算 start_order，
+            #    不同 plan_module 的 order 各自连续追加
+            # 默认行为：mode1 单 plan_module；mode2 按 plan_module 分桶
+            # 这里为了简洁，统一追加到 plan 末尾（不指定 order 时）
 
-            values = [
-                {
-                    "plan_id": plan_id,
-                    "plan_module_id": plan_module_id,
-                    "case_id": case_id,
-                    "order": case_order,
-                    **kwargs,
-                }
-                for case_order, case_id in enumerate(new_case_ids, start=start_order)
-            ]
+            # 计算整张表当前最大 order
+            max_order_stmt = select(
+                func.coalesce(func.max(PlanCaseAssociation.order), 0)
+            ).where(PlanCaseAssociation.plan_id == plan_id)
+            max_result = await sess.execute(max_order_stmt)
+            cursor = (max_result.scalar() or 0) + 1
+
+            values = []
+            for case_id in new_case_ids:
+                values.append(
+                    {
+                        "plan_id": plan_id,
+                        "plan_module_id": case_to_plan_module.get(case_id) or plan_module_id,
+                        "case_id": case_id,
+                        "order": cursor,
+                        **kwargs,
+                    }
+                )
+                cursor += 1
+
             await sess.execute(insert(PlanCaseAssociation).values(values))
             return len(values)
 

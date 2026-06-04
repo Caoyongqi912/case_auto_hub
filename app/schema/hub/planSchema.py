@@ -80,7 +80,12 @@ class AssociatePlanCaseSchema(BaseModel):
     """关联计划用例模型"""
     plan_id: int = Field(..., description="计划ID")
     case_ids: List[int] = Field(..., description="用例ID列表")
-    plan_module_id: int = Field(..., description="计划分组ID")
+    plan_module_id: Optional[int] = Field(None, description="计划分组ID（兜底目标分组）")
+    # 新增：源项目目录 ID 列表；提供时按"按源目录复制/匹配计划目录"逻辑处理
+    # 行为：每个 source module 会沿 parent_id 走到根，沿途在 plan 里逐层 find-or-create
+    # 同名计划目录已存在时：merge_same_group=True 时复用，否则也复用（同名=合并语义）
+    module_ids: Optional[List[int]] = Field(None, description="源项目模块ID列表（用于按源目录结构复制/匹配计划分组）")
+    merge_same_group: bool = Field(False, description="是否合并相同用例分组（与同名计划目录合并；目前保留字段，行为同 find-or-create）")
 
 
 class DisassociateRequirementSchema(BaseModel):

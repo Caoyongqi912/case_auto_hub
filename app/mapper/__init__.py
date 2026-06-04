@@ -615,17 +615,20 @@ class Mapper(Generic[M]):
         pageSize: int,
         module_type: int,
         module_id: int = None,
+        module_ids: list = None,
         filter_field: str = "module_id",
         session: AsyncSession = None,
         **kwargs
     ):
         """
-        按模块分页查询（支持树形模块结构）
+        按模块分页查询（支持树形模块结构 + 多模块联合查询）
 
         :param current: 当前页码
         :param pageSize: 每页大小
         :param module_type: 模块类型
-        :param module_id: 模块ID（为空时查询全部）
+        :param module_id: 单个模块ID（为空时查询全部）
+        :param module_ids: 多个模块ID列表（与 module_id 互斥，module_ids 优先）；
+                          会对每个 ID 展开各自的子节点后求并集过滤
         :param filter_field: 过滤字段名，默认 module_id
         :param session: 外部传入的数据库会话
         :param kwargs: 其他查询条件（支持 sort 排序参数）
@@ -638,7 +641,17 @@ class Mapper(Generic[M]):
         offset = (current - 1) * pageSize
 
         async def _execute_query(sess: AsyncSession):
-            subtree_ids = await get_subtree_ids(sess, module_id, module_type) if module_id else None
+            # 多模块优先：把每个 module 各自展开成子节点后求并集
+            subtree_ids = None
+            if module_ids:
+                merged: set = set()
+                for mid in module_ids:
+                    ids = await get_subtree_ids(sess, mid, module_type)
+                    if ids:
+                        merged.update(ids)
+                subtree_ids = list(merged) if merged else None
+            elif module_id:
+                subtree_ids = await get_subtree_ids(sess, module_id, module_type)
 
             filter_column = getattr(model, filter_field)
             conditions = await cls.search_conditions(**kwargs)
@@ -666,7 +679,7 @@ class Mapper(Generic[M]):
             async with async_session() as sess:
                 return await _execute_query(sess)
         except Exception as e:
-            log.error(f"page_by_module error: module_id={module_id}, error={e}")
+            log.error(f"page_by_module error: module_id={module_id}, module_ids={module_ids}, error={e}")
             return []
 
     @classmethod

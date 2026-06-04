@@ -108,6 +108,9 @@ class PageTestCaseSchema(PageSchema, TestCaseField):
     case_type: Optional[str] = Field(None, description="用例类型")
     case_status: Optional[int] = Field(None, description="用例状态")
     is_review: Optional[int] = Field(None, description="是否审核 0:未审核 1:已审核")
+    # 多模块查询：与 module_id 互斥；同时传入时 module_ids 优先
+    # 用于支持前端多选目录时按多个模块（含各自子节点）联合过滤
+    module_ids: Optional[List[int]] = Field(None, description="模块ID列表（多选）")
 
 
 class QueryTestCaseSchemaByReq(BaseModel):

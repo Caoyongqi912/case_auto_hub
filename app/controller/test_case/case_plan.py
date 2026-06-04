@@ -255,17 +255,27 @@ async def get_plan_modules_stats(plan_id: int, _: User = Depends(Authentication(
 
 
 @router.post("/case/associate", description="关联用例到计划")
-async def associate_cases(data: AssociatePlanCaseSchema, _: User = Depends(Authentication())):
+async def associate_cases(data: AssociatePlanCaseSchema, user: User = Depends(Authentication())):
     """
     批量关联用例到计划
-    :param data: 计划ID和用例ID列表
+
+    支持两种模式：
+    1) 旧模式：仅传 case_ids + plan_module_id，直接把用例挂到指定计划分组下
+    2) 新模式：传 module_ids 时，按"按源目录复制/匹配计划目录"处理
+       - 对每个源 module 沿 parent_id 走到根
+       - 沿途在 plan 里按 title + parent 关系 find-or-create PlanModule
+       - 然后按 case.module_id 把用例挂到对应的（新建/复用）plan module
+    :param data: 计划ID、用例ID列表、源模块ID列表（可选）
     :param user: 认证用户
     :return: 关联数量
     """
     count = await PlanCaseMapper.associate_cases(
+        user=user,
         plan_id=data.plan_id,
         case_ids=data.case_ids,
         plan_module_id=data.plan_module_id,
+        module_ids=data.module_ids,
+        merge_same_group=data.merge_same_group,
     )
     return Response.success(data={"count": count})
 
