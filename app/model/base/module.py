@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Index
+from sqlalchemy import Column, String, Integer, Index, UniqueConstraint
 
 from app.model import BaseModel
 
@@ -15,6 +15,12 @@ class Module(BaseModel):
     __table_args__ = (
         Index('idx_parent_id', 'parent_id'),
         Index('idx_module_type', 'module_type'),
+        # 路径唯一: (project_id, module_type, parent_id, title)
+        # MySQL 下 NULL 不参与唯一比较, 故多个根分组 (parent_id IS NULL) 可共存
+        UniqueConstraint(
+            'project_id', 'module_type', 'parent_id', 'title',
+            name='uq_module_path',
+        ),
     )
     @property
     def map(self):

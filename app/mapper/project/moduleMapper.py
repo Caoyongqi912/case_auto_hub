@@ -115,6 +115,73 @@ class ModuleMapper(Mapper[Module]):
             raise e
 
 
+
+
+    @classmethod
+    async def find_or_create_path(
+        cls,
+        project_id: int,
+        title_path: List[str],
+        module_type: int,
+        user: "User",
+    ) -> Module:
+        """
+        按 title_path 列表逐级 find-or-create, 返回叶子 Module.
+
+        查找维度: (project_id, module_type, parent_id, title)
+        静默复用现有匹配项; 若不存在则新建.
+        并发安全: 依赖表上的 uq_module_path 唯一约束, IntegrityError 时重查一次.
+
+        :param project_id: 项目 ID
+        :param title_path: 标题路径列表, 例 ["二手","交易","待办流程","PC"]; 空列表抛 ValueError
+        :param module_type: 模块类型 (ModuleEnum.CASE / API ...)
+        :param user: 创建人
+        :return: 叶子 Module 实例
+        """
+        if not title_path:
+            raise ValueError("title_path 不能为空")
+        cleaned = [(t or "").strip() for t in title_path]
+        if any(not t for t in cleaned):
+            raise ValueError("title_path 中存在空标题段")
+
+        from sqlalchemy.exc import IntegrityError
+        from app.model.base import User
+
+        async with cls.transaction() as session:
+            parent_id: Optional[int] = None
+            leaf: Optional[Module] = None
+            for title in cleaned:
+                if parent_id is None:
+                    cond = Module.parent_id.is_(None)
+                else:
+                    cond = Module.parent_id == parent_id
+                stmt = select(Module).where(
+                    Module.project_id == project_id,
+                    Module.module_type == module_type,
+                    cond,
+                    Module.title == title,
+                )
+                existing = (await session.execute(stmt)).scalars().first()
+                if existing:
+                    leaf = existing
+                else:
+                    try:
+                        leaf = await cls.save(
+                            creator_user=user, session=session,
+                            project_id=project_id,
+                            parent_id=parent_id,
+                            title=title,
+                            module_type=module_type,
+                        )
+                    except IntegrityError:
+                        # 并发场景: 别人刚创建了同路径节点, 重查一次
+                        await session.rollback()
+                        leaf = (await session.execute(stmt)).scalars().first()
+                        if not leaf:
+                            raise
+                parent_id = leaf.id
+            return leaf
+
     @classmethod
     async def drop(cls, id: int, targetId: int | None):
         try:

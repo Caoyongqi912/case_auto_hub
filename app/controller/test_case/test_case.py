@@ -335,8 +335,10 @@ async def upload_cases(
         user: User = Depends(Authentication())
 ):
     from utils.aioFileReader import AsyncFilesReader
+    from utils.caseEnumResolver import load_case_enum_config
+    enum_config = await load_case_enum_config()
     try:
-        result = await AsyncFilesReader().async_read_excel_for_case(file)
+        result = await AsyncFilesReader(enum_config=enum_config).async_read_excel_for_case(file)
     except Exception as e:
         log.error(f"文件解析失败: {e}")
         return Response.error(msg=f"文件解析失败: {str(e)}")
