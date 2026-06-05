@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 
 from app.controller import Authentication
+from app.exception import CommonError
 from app.model.base import User
 from app.response import Response
 from app.schema.hub.planSchema import (
@@ -20,7 +21,8 @@ from app.schema.hub.planSchema import (
     RemovePlanModuleSchema, MovePlanModuleSchema,
     UpdatePlanCaseStepResultSchema,AssociatePlanCaseSchema,
     RemovePlanCaseSchema, CopyCaseToCasePlan,
-    UpdatePlanPhaseSchema,UpdateCaseToCasePlan,UploadCommitSchema
+    UpdatePlanPhaseSchema,UpdateCaseToCasePlan,UploadCommitSchema,
+    ReorderPlanCaseSchema
 )
 from app.schema.hub.testCaseSchema import AddPlanCaseSchema
 from app.mapper.test_case.planMapper import PlanMapper
@@ -354,19 +356,78 @@ async def copy_plan_cases(data: CopyCaseToCasePlan, user: User = Depends(Authent
     return Response.success(values)
 
 
+@router.post("/cases/reorder", description="重排序计划用例（单 case 移动）")
+async def reorder_plan_cases(
+    data: ReorderPlanCaseSchema,
+    user: User = Depends(Authentication()),
+):
+    """重排序计划下的单个用例。
+
+    相比历史版本（传全量 ``case_ids`` 列表），本接口只传
+    "被移动 case + 锚点"两个 ID，传输量与列表规模无关。
+
+    典型用法
+    --------
+    - 拖拽 A 到 B 上方：``{case_id: A, before_id: B}``
+    - 拖拽 A 到 B 下方：``{case_id: A, after_id: B}``
+    - 移到 module 末尾：``{case_id: A}``（before/after 都为空）
+    - 跨 module 移动：``{case_id: A, target_module_id: M, before_id: X}``
+
+    :param data: 重排序参数
+    :param user: 认证用户
+    :return: 实际更新行数（0 表示幂等无变化）
+    """
+    log.info(
+        "reorder_plan_cases plan=%s case=%s before=%s after=%s module=%s",
+        data.plan_id, data.case_id, data.before_id, data.after_id, data.target_module_id,
+    )
+    try:
+        affected = await PlanCaseMapper.reorder_plan_case(
+            plan_id=data.plan_id,
+            case_id=data.case_id,
+            before_id=data.before_id,
+            after_id=data.after_id,
+            target_module_id=data.target_module_id,
+        )
+    except CommonError as err:
+        log.warning("reorder_plan_cases rejected: %s", err)
+        return Response.error(msg=str(err))
+    except Exception as err:
+        log.exception("reorder_plan_cases 异常: %s", err)
+        return Response.error(msg=f"重排序失败: {err}")
+    return Response.success(affected)
+
+
 @router.post("/cases/update", description="更新计划用例")
 async def update_plan_cases(data: UpdateCaseToCasePlan, user: User = Depends(Authentication())):
     """
     更新计划关联的用例信息
+
+    支持批量更新：审核状态、一轮/二轮测试状态。
+    入参 ``case_id_list`` 超过 2000 或混入其他计划的用例会被拒绝。
+
     :param data: 更新参数
     :param user: 认证用户
-    :return: 更新数量
+    :return: 实际更新的关联记录数；所有状态字段均为空时返回 0
     """
-    log.info(data)
-    values =  await PlanCaseMapper.update_case(
-        **data.model_dump(),
-        user=user
+    log.info(
+        "update_plan_cases plan_id=%s, case_count=%d, fields=%s",
+        data.plan_id,
+        len(data.case_id_list),
+        [k for k in ("is_review", "first_status", "second_status") if getattr(data, k) is not None],
     )
+    try:
+        values = await PlanCaseMapper.update_case(
+            **data.model_dump(),
+            user=user,
+        )
+    except CommonError as err:
+        # 业务校验失败（如越权 / 长度超限），4xx 透传给前端
+        log.warning("update_plan_cases rejected: %s", err)
+        return Response.error(msg=str(err))
+    except Exception as err:
+        log.exception("update_plan_cases 异常: %s", err)
+        return Response.error(msg=f"更新失败: {err}")
     return Response.success(values)
 
 

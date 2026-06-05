@@ -6,13 +6,13 @@
 # @Software: PyCharm
 # @Desc: 计划用例关联数据访问层
 from collections import defaultdict
-from copy import deepcopy
-from typing import List, Optional, Dict, Any
+from typing import List,Tuple, Optional, Dict, Any
 
 from sqlalchemy import insert, update, delete, select, and_, or_, func, case
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exception import CommonError
 from app.mapper import Mapper, set_creator
 from app.mapper.test_case.testcaseMapper import TestCaseMapper
 from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper, CaseDynamicRenderer
@@ -24,6 +24,36 @@ from app.model.caseHub.test_case_step import TestCaseStep, TestCaseStepResult
 from app.model.caseHub.requirement import Requirement
 from app.model.caseHub.plan_module import PlanModule
 from utils import log
+
+
+
+
+
+def _step_to_dict(
+    step: TestCaseStep,
+    step_result: Optional[TestCaseStepResult],
+) -> Dict[str, Any]:
+    """把 (step, step_result) 拍平成返回 dict；未执行步骤默认值 0。
+
+    提取为 module-level 纯函数，便于：
+    - 单测覆盖（不需要 class 实例）
+    - 其它查询步骤的逻辑复用
+    """
+    if step_result is None:
+        return {
+            **step.to_dict(),
+            "actual_result": None,
+            "bug_url": None,
+            "first_status": 0,
+            "second_status": 0,
+        }
+    return {
+        **step.to_dict(),
+        "actual_result": step_result.actual_result,
+        "bug_url": step_result.bug_url,
+        "first_status": step_result.first_status,
+        "second_status": step_result.second_status,
+    }
 
 
 class PlanCaseMapper(Mapper[PlanCaseAssociation]):
@@ -207,8 +237,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         :return: 过滤掉 None 值后的字典
 
         示例:
-            >>> _build_optional_values(is_review=1, first_status=None, second_status=2)
-            {'is_review': 1, 'second_status': 2}
+            >>> _build_optional_values(is_review="1", first_status=None, second_status="2")
+            {'is_review': '1', 'second_status': '2'}
         """
         return {k: v for k, v in field_values.items() if v is not None}
 
@@ -734,44 +764,64 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         plan_id: int,
         case_id_list: List[int],
         user: User,
-        is_review: Optional[int] = None,
-        first_status: Optional[int] = None,
-        second_status: Optional[int] = None
+        is_review: Optional[str] = None,
+        first_status: Optional[str] = None,
+        second_status: Optional[str] = None,
     ) -> int:
-        """
-        批量更新计划用例关联属性
+        """批量更新计划用例关联属性。
 
         更新流程：
-        1. 构建更新值字典（仅包含非 None 的字段）
-        2. 查询更新前的旧记录（用于 dynamic 记录）
-        3. 执行批量 UPDATE
+        1. 入参去重 + 校验 case_id_list 全部属于 plan_id（防越权 + 防脏数据）
+        2. 一次性查询旧记录（仅 SELECT 一次）
+        3. 单次 UPDATE 批量回写
         4. 同步子步骤结果状态
-        5. 逐条记录操作动态
+        5. 收集 dynamic 记录，循环结束后统一 flush 一次
+           （避免每条 dynamic 触发 flush+refresh=2 次 IO）
+
+        事务边界：所有步骤在同一 ``Mapper.transaction()`` 内，
+        任意一步失败将整体回滚，保证 dynamic 记录与状态更新一致。
 
         Args:
             plan_id: 计划ID
-            case_id_list: 用例ID列表
+            case_id_list: 用例ID列表（函数内部去重）
             user: 认证用户
-            is_review: 是否审核
+            is_review: 审核状态（``"0"`` 未审核 / ``"1"`` 已审核）
             first_status: 一轮测试状态
-            second_status: 二轮测试状态
+                （``"0"`` 未开始 / ``"1"`` 通过 / ``"2"`` 失败 / ``"3"`` 阻塞 / ``"4"`` 跳过）
+            second_status: 二轮测试状态（取值同上）
 
         Returns:
-            int: 实际更新的记录数
+            int: 实际更新的关联记录数；所有入参均为 None 时返回 0
         """
+        # ---- 1. 入参归一化 ----
+        case_id_list = list(dict.fromkeys(case_id_list or []))
+        if not case_id_list:
+            return 0
+
         values = cls._build_optional_values(
             is_review=is_review,
             first_status=first_status,
-            second_status=second_status
+            second_status=second_status,
         )
         if not values:
             return 0
+        changed_fields = list(values.keys())
 
         async with cls.transaction() as session:
-            plan_name = await cls._get_plan_name(session=session, plan_id=plan_id)
-            changed_fields = list(values.keys())
+            # ---- 2. 越权 / 脏数据校验 ----
+            existing_ids = await cls._filter_case_ids_belong_to_plan(
+                session=session,
+                plan_id=plan_id,
+                case_id_list=case_id_list,
+            )
+            invalid_ids = set(case_id_list) - existing_ids
+            if invalid_ids:
+                raise CommonError(
+                    f"以下用例不属于计划 {plan_id}，已拒绝更新: {sorted(invalid_ids)[:10]}"
+                    + (" ..." if len(invalid_ids) > 10 else ""),
+                )
 
-            # 查询旧记录（必须在 UPDATE 前查询，用 deepcopy 隔离 SQLAlchemy 身份映射）
+            # ---- 3. 查询旧记录（map() 已返回新 dict，无需 deepcopy） ----
             stmt = select(PlanCaseAssociation).where(
                 and_(
                     PlanCaseAssociation.plan_id == plan_id,
@@ -779,29 +829,40 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 )
             )
             result = await session.execute(stmt)
-            old_records = {assoc.case_id: deepcopy(assoc.map()) for assoc in result.scalars().all()}
+            old_records = {assoc.case_id: assoc.map() for assoc in result.scalars().all()}
 
-            # 执行批量更新
-            update_stmt = update(PlanCaseAssociation).where(
-                and_(
-                    PlanCaseAssociation.plan_id == plan_id,
-                    PlanCaseAssociation.case_id.in_(case_id_list),
+            # ---- 4. 单次批量 UPDATE ----
+            update_stmt = (
+                update(PlanCaseAssociation)
+                .where(
+                    and_(
+                        PlanCaseAssociation.plan_id == plan_id,
+                        PlanCaseAssociation.case_id.in_(case_id_list),
+                    )
                 )
-            ).values(values)
+                .values(values)
+            )
             update_result = await session.execute(update_stmt)
 
-            # 同步子步骤结果状态
+            # ---- 5. 同步子步骤结果状态 ----
             if first_status is not None:
-                await cls._sync_step_result_status(session, plan_id, case_id_list, first_status, 'first_status')
+                await cls._sync_step_result_status(
+                    session, plan_id, case_id_list, first_status, "first_status"
+                )
             if second_status is not None:
-                await cls._sync_step_result_status(session, plan_id, case_id_list, second_status, 'second_status')
+                await cls._sync_step_result_status(
+                    session, plan_id, case_id_list, second_status, "second_status"
+                )
 
-            # 逐条记录操作动态（renderer 只创建一次）
+            # ---- 6. 收集 dynamic 记录（循环外统一 flush） ----
             renderer = await CaseDynamicRenderer.from_db(session=session)
+            plan_name = await cls._get_plan_name(session=session, plan_id=plan_id)
+
+            pending_dynamics: List[CaseStepDynamic] = []
             for case_id, old_record in old_records.items():
                 old_data = {k: old_record[k] for k in changed_fields}
 
-                # 跳过无实际变更的记录（兼容 int/str 类型差异）
+                # 跳过无实际变更的记录（统一用 str 比对，兼容 int/str 历史数据）
                 if all(str(old_data.get(k)) == str(values.get(k)) for k in changed_fields):
                     continue
 
@@ -810,18 +871,215 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     continue
 
                 log.debug("用例 %d 变更: %s", case_id, diff_info)
-                await cls.add_flush_expunge(
-                    session=session,
-                    model=CaseStepDynamic(
-                        description=f"{user.username} 更新了计划【{plan_name}】中的用例 :{diff_info}",
+                pending_dynamics.append(
+                    CaseStepDynamic(
+                        description=(
+                            f"{user.username} 更新了计划【{plan_name}】中的用例 :{diff_info}"
+                        ),
                         test_case_id=case_id,
                         plan_id=plan_id,
                         creator=user.id,
-                        creatorName=user.username
-                    ),
+                        creatorName=user.username,
+                    )
                 )
 
+            if pending_dynamics:
+                session.add_all(pending_dynamics)
+                # 单次 flush：N 条 dynamic 从 N*2 次 IO 降到 1 次
+                await session.flush()
+
             return update_result.rowcount
+
+    # ------------------------------------------------------------------
+    #  单 case 拖拽 / 跨 module 移动
+    # ------------------------------------------------------------------
+
+    @classmethod
+    async def reorder_plan_case(
+        cls,
+        plan_id: int,
+        case_id: int,
+        before_id: Optional[int] = None,
+        after_id: Optional[int] = None,
+        target_module_id: Optional[int] = None,
+    ) -> int:
+        """单 case 移动 / 跨 module 移动。
+
+        实现思路
+        --------
+        1. 读出 ``target_module`` 当前所有 case 的 id 序列（按 order 升序）
+        2. 找到 ``case_id`` 当前所在下标；按 ``before_id`` / ``after_id`` 算出新下标
+        3. 内存里 pop + insert 重排
+        4. 用单条 ``UPDATE ... SET order = CASE id WHEN ... END`` 一次回写
+        5. 若跨 module，同一 UPDATE 顺便改 ``plan_module_id``
+
+        复杂度
+        --------
+        - 1 次 SELECT (读 module 全量)
+        - 1 次 UPDATE (整组回写 order，可顺带切 module)
+        - 传输与计算均为 O(M)，M = 目标 module 的 case 数；
+          但 IO 只 2 次，与 M 大小无关
+
+        越权防护
+        --------
+        入口校验：``case_id`` / ``before_id`` / ``after_id`` 必须都属于
+        ``plan_id``；缺失任意一个会抛 ``CommonError`` 拒绝写入。
+
+        Args:
+            plan_id: 计划ID
+            case_id: 被移动的用例ID
+            before_id: 锚点：被移动 case 放在此 case 之前
+            after_id: 锚点：被移动 case 放在此 case 之后
+            target_module_id: 目标分组；None 表示不切换 module
+
+        Returns:
+            int: 实际更新行数（重排 N 个 case + 至多 1 个 module 切换 = N+1）
+
+        Raises:
+            CommonError: 越权 / 用例不存在 / 锚点不在目标 module 等业务错误
+        """
+        async with cls.transaction() as session:
+            # ---- 1. 越权前置：所有 case_id 都必须属于 plan ----
+            involved_ids = {case_id}
+            if before_id is not None:
+                involved_ids.add(before_id)
+            if after_id is not None:
+                involved_ids.add(after_id)
+            existing = await cls._filter_case_ids_belong_to_plan(
+                session=session,
+                plan_id=plan_id,
+                case_id_list=list(involved_ids),
+            )
+            missing = involved_ids - existing
+            if missing:
+                raise CommonError(
+                    f"以下 case 不属于计划 {plan_id}，已拒绝: {sorted(missing)[:5]}"
+                )
+
+            # ---- 2. 读 case 当前所在 module（target_module_id 未指定时用此值） ----
+            origin_stmt = select(
+                PlanCaseAssociation.plan_module_id
+            ).where(
+                and_(
+                    PlanCaseAssociation.plan_id == plan_id,
+                    PlanCaseAssociation.case_id == case_id,
+                )
+            )
+            origin_module_id = (await session.execute(origin_stmt)).scalar_one_or_none()
+            if origin_module_id is None:
+                raise CommonError(f"用例 {case_id} 不在计划 {plan_id} 中")
+
+            target_module_id = (
+                target_module_id if target_module_id is not None else origin_module_id
+            )
+
+            # ---- 3. 读目标 module 全量，按 order 升序 ----
+            list_stmt = select(
+                PlanCaseAssociation.case_id
+            ).where(
+                and_(
+                    PlanCaseAssociation.plan_id == plan_id,
+                    PlanCaseAssociation.plan_module_id == target_module_id,
+                )
+            ).order_by(PlanCaseAssociation.order.asc(), PlanCaseAssociation.case_id.asc())
+            case_ids_in_module: List[int] = [
+                row[0] for row in (await session.execute(list_stmt)).all()
+            ]
+
+            # ---- 4. 计算新下标 ----
+            new_index = cls._resolve_reorder_index(
+                case_ids=case_ids_in_module,
+                moved_id=case_id,
+                before_id=before_id,
+                after_id=after_id,
+            )
+            old_index = case_ids_in_module.index(case_id)
+            if new_index == old_index and target_module_id == origin_module_id:
+                # 位置没变、module 也没变，幂等返回
+                return 0
+
+            # ---- 5. 内存重排 ----
+            case_ids_in_module.pop(old_index)
+            # 弹出后，新下标可能需要回退 1（如果 old_index < new_index）
+            insert_index = new_index if new_index <= old_index else new_index - 1
+            case_ids_in_module.insert(insert_index, case_id)
+
+            # ---- 6. 单条 UPDATE 一次回写 order；跨 module 时顺便改 plan_module_id ----
+            order_case = case(
+                *[
+                    (PlanCaseAssociation.case_id == cid, idx)
+                    for idx, cid in enumerate(case_ids_in_module, start=1)
+                ],
+                else_=PlanCaseAssociation.order,
+            )
+            update_values: Dict[str, Any] = {"order": order_case}
+            if target_module_id != origin_module_id:
+                update_values["plan_module_id"] = target_module_id
+
+            update_stmt = (
+                update(PlanCaseAssociation)
+                .where(
+                    and_(
+                        PlanCaseAssociation.plan_id == plan_id,
+                        PlanCaseAssociation.case_id.in_(case_ids_in_module),
+                    )
+                )
+                .values(update_values)
+            )
+            result = await session.execute(update_stmt)
+            log.info(
+                "reorder_plan_case plan=%s moved=%s [%s→%s] module=%s→%s affected=%s",
+                plan_id, case_id, old_index, new_index,
+                origin_module_id, target_module_id, result.rowcount,
+            )
+            return result.rowcount
+
+    @staticmethod
+    def _resolve_reorder_index(
+        case_ids: List[int],
+        moved_id: int,
+        before_id: Optional[int],
+        after_id: Optional[int],
+    ) -> int:
+        """根据锚点解析被移动 case 的新下标。
+
+        规则
+        ----
+        - ``before_id`` 优先：返回 ``before_id`` 在当前列表中的下标
+        - ``after_id`` 次之：返回 ``after_id`` 在当前列表中下标 + 1
+        - 都为空：返回 ``len(case_ids)``（追加到末尾）
+
+        锚点不在列表时（极端 case：刚被删除/换 module），
+        一律回退到末尾，避免越界。
+        """
+        if before_id is not None and before_id in case_ids:
+            return case_ids.index(before_id)
+        if after_id is not None and after_id in case_ids:
+            return case_ids.index(after_id) + 1
+        return len(case_ids)
+
+    @classmethod
+    async def _filter_case_ids_belong_to_plan(
+        cls,
+        session: AsyncSession,
+        plan_id: int,
+        case_id_list: List[int],
+    ) -> set:
+        """校验并返回 plan 下真实存在的 case_id 集合。
+
+        越权防护：调用方传 ``(plan_id, case_id_list)`` 时，先用一次 SELECT
+        过滤出真正属于该计划的 case_id，供调用方与入参做差集。
+        """
+        if not case_id_list:
+            return set()
+        stmt = select(PlanCaseAssociation.case_id).where(
+            and_(
+                PlanCaseAssociation.plan_id == plan_id,
+                PlanCaseAssociation.case_id.in_(case_id_list),
+            )
+        )
+        result = await session.execute(stmt)
+        return {row[0] for row in result.all()}
 
     @classmethod
     async def _sync_step_result_status(
@@ -829,50 +1087,69 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         session: AsyncSession,
         plan_id: int,
         case_id_list: List[int],
-        status: int,
-        status_field: str 
+        status: str,
+        status_field: str,
     ) -> int:
-        """
-        同步更新计划下用例的子步骤结果状态
+        """同步 upsert 计划下用例的子步骤结果状态。
 
-        当父级用例状态被批量更新时，需要将变更同步到其下属的所有步骤执行结果。
-        使用子查询关联 TestCaseStep 表，避免先查 ID 再更新的两次交互。
+        行为：把 ``case_id_list`` 下所有步骤对应的 ``(plan_id, step_id)`` 行
+        的 ``status_field`` 列设为 ``status``。
+
+        - 已有 ``TestCaseStepResult`` 行 → 仅更新 ``status_field``，
+          **不动** ``actual_result`` / ``bug_url`` / 另一个 status 列
+        - 没有 result 行 → 新建一行（其余列 NULL）
+
+        实现：先一次 SELECT 拿到所有 ``step_id``，
+        再用 ``INSERT ... ON DUPLICATE KEY UPDATE`` 批量 upsert，
+        利用 ``(plan_id, step_id)`` 唯一约束触发冲突分支。
+
+        父级 → 子级的覆盖是单向的：原 status 被新值直接覆盖，无法回退。
 
         Args:
             session: 数据库会话
             plan_id: 计划ID
             case_id_list: 用例ID列表
-            status: 用例状态值 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
-            status_field: 要更新的状态字段名 ('first_status', 'second_status')
+            status: 状态值字符串
+                （``"0"`` 未开始 / ``"1"`` 通过 / ``"2"`` 失败 / ``"3"`` 阻塞 / ``"4"`` 跳过）
+            status_field: 要更新的状态字段名（``"first_status"`` / ``"second_status"``）
 
         Returns:
-            int: 实际更新的记录数
+            int: 实际 upsert 的步骤数；字段名无效或无步骤时返回 0
         """
         target_column = cls._resolve_status_column(status_field)
         if target_column is None:
             return 0
 
-        # 子查询：查找属于指定用例的所有步骤ID
-        subquery = select(TestCaseStep.id).where(
-            TestCaseStep.test_case_id.in_(case_id_list)
+        # 1) 找到这些 case 下的所有 step_id
+        step_id_rows = await session.execute(
+            select(TestCaseStep.id).where(TestCaseStep.test_case_id.in_(case_id_list))
         )
-        step_ids_subquery = subquery.subquery()
+        step_ids = [row[0] for row in step_id_rows.all()]
+        if not step_ids:
+            return 0
 
-        # 批量更新步骤结果状态
-        update_stmt = update(TestCaseStepResult).where(
-            and_(
-                TestCaseStepResult.plan_id == plan_id,
-                TestCaseStepResult.step_id.in_(select(step_ids_subquery))
-            )
-        ).values(**{target_column.key: status})
+        # 2) 批量 upsert：插入时同时写入 target status（满足 NOT NULL 列），
+        #    冲突时仅更新 target_column，不覆盖 actual_result / bug_url / 另一 status
+        insert_values = [
+            {
+                "plan_id": plan_id,
+                "step_id": step_id,
+                target_column.key: status,
+            }
+            for step_id in step_ids
+        ]
+        upsert_stmt = mysql_insert(TestCaseStepResult).values(insert_values)
+        upsert_stmt = upsert_stmt.on_duplicate_key_update(
+            **{target_column.key: status}
+        )
+        await session.execute(upsert_stmt)
 
-        result = await session.execute(update_stmt)
         field_label = cls._STATUS_FIELD_LABEL_MAP.get(status_field, '未知')
         log.info(
-            f"同步更新计划{plan_id}下{len(case_id_list)}个用例的子步骤{field_label}为{status}，"
-            f"影响{result.rowcount}条记录"
+            f"同步 upsert 计划{plan_id}下{len(case_id_list)}个用例的{len(step_ids)}个子步骤"
+            f"{field_label}为{status}"
         )
-        return result.rowcount
+        return len(step_ids)
 
     # ------------------------------------------------------------------
     #  用例复制与移动
@@ -1131,10 +1408,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             plan_mod_index[("全部用例", None)] = plan_root
 
         # 5) 对每个 leaf source module，沿根到叶逐层 find-or-create
-        # 排序保证父级先处理
-        sorted_ids = sorted(involved_ids, key=lambda i: (all_by_id[i].parent_id or 0))
-        # 上面的排序对单链 OK，多叉场景下我们用更稳的方案：先按层级分批
-        # 找出每个 source module 的 path：[root, ..., self]
+        #    build_path 自然保证父级先于子级被处理（沿 parent 链上溯）
         def build_path(mid: int) -> List[Module]:
             chain: List[Module] = []
             cur = all_by_id.get(mid)
@@ -1259,24 +1533,60 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             if not new_case_ids:
                 return 0
 
-            # 4) 处理排序：按 plan_module 分组后分别计算 start_order，
-            #    不同 plan_module 的 order 各自连续追加
-            # 默认行为：mode1 单 plan_module；mode2 按 plan_module 分桶
-            # 这里为了简洁，统一追加到 plan 末尾（不指定 order 时）
+            # 4) 处理排序：
+            #    - 显式传 order：在指定位置插入（后移已有 order >= order 的记录）
+            #    - 不传 order：追加到 plan 末尾（max + 1）
+            if order is not None:
+                # 指定位置插入：后移已有记录，避免 order 冲突
+                await sess.execute(
+                    update(PlanCaseAssociation)
+                    .where(
+                        and_(
+                            PlanCaseAssociation.plan_id == plan_id,
+                            PlanCaseAssociation.order >= order,
+                        )
+                    )
+                    .values(order=PlanCaseAssociation.order + len(new_case_ids))
+                )
+                cursor = order
+            else:
+                # 追加到末尾
+                max_order_stmt = select(
+                    func.coalesce(func.max(PlanCaseAssociation.order), 0)
+                ).where(PlanCaseAssociation.plan_id == plan_id)
+                max_result = await sess.execute(max_order_stmt)
+                cursor = (max_result.scalar() or 0) + 1
 
-            # 计算整张表当前最大 order
-            max_order_stmt = select(
-                func.coalesce(func.max(PlanCaseAssociation.order), 0)
-            ).where(PlanCaseAssociation.plan_id == plan_id)
-            max_result = await sess.execute(max_order_stmt)
-            cursor = (max_result.scalar() or 0) + 1
+            # 防御性兜底：plan_module_id 为 None 时取 plan 根
+            # 避免 mode2 下 case 在 source 树外时插入 NULL 触发 NOT NULL
+            fallback_module_id = plan_module_id
+            if fallback_module_id is None:
+                root = (
+                    await sess.execute(
+                        select(PlanModule)
+                        .where(
+                            PlanModule.plan_id == plan_id,
+                            PlanModule.parent_id.is_(None),
+                        )
+                        .limit(1)
+                    )
+                ).scalars().first()
+                if root is not None:
+                    fallback_module_id = root.id
+                else:
+                    log.error(
+                        f"associate_cases: plan {plan_id} has no root module, "
+                        f"cannot fall back plan_module_id"
+                    )
+                    return 0
 
             values = []
             for case_id in new_case_ids:
+                pm_id = case_to_plan_module.get(case_id) or fallback_module_id
                 values.append(
                     {
                         "plan_id": plan_id,
-                        "plan_module_id": case_to_plan_module.get(case_id) or plan_module_id,
+                        "plan_module_id": pm_id,
                         "case_id": case_id,
                         "order": cursor,
                         **kwargs,
@@ -1325,10 +1635,10 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         cls,
         plan_case_id: int,
         user: User,
-        is_review: Optional[int] = None,
-        first_status: Optional[int] = None,
-        second_status: Optional[int] = None,
-        bug_url: Optional[str] = None
+        is_review: Optional[str] = None,
+        first_status: Optional[str] = None,
+        second_status: Optional[str] = None,
+        bug_url: Optional[str] = None,
     ) -> PlanCaseAssociation:
         """
         更新单条用例关联状态
@@ -1339,9 +1649,10 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         Args:
             plan_case_id: 计划用例关联ID（作为 update_by_id 的查询条件）
             user: 操作用户
-            is_review: 是否审核
-            first_status: 一轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
-            second_status: 二轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
+            is_review: 是否审核（``"0"`` 未审核 / ``"1"`` 已审核）
+            first_status: 一轮测试状态
+                （``"0"`` 未开始 / ``"1"`` 通过 / ``"2"`` 失败 / ``"3"`` 阻塞 / ``"4"`` 跳过）
+            second_status: 二轮测试状态（取值同上）
             bug_url: 缺陷链接
 
         Returns:
@@ -1403,102 +1714,165 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         plan_module_id: Optional[int] = None,
         case_level: Optional[str] = None,
         is_review: Optional[int] = None,
-    ) -> list:
-        """
-        获取计划用例列表（含步骤及步骤执行结果）
+    ) -> List[Dict[str, Any]]:
+        """获取计划用例列表（含步骤及步骤执行结果）。
 
-        支持按分组（含子分组）、用例等级、审核状态筛选。
-        采用两次查询策略：先查用例再查步骤，避免 JOIN 笛卡尔积导致数据膨胀。
+        性能策略
+        --------
+        1. 2 次查询（cases + steps）替代 1 次 JOIN，避免步骤笛卡尔积导致数据膨胀
+        2. 步骤用 ``defaultdict`` 按 case_id 聚合，O(N) 合并
+        3. 分组筛选用 1 条递归 CTE 一次性展开整棵 plan_module 子树，单 SQL 搞定
+        4. 早返回：主查询无结果时直接 ``[]``，避免再发步骤查询
 
-        性能优化：
-        - 使用 defaultdict 替代手动判空初始化，简化步骤映射构建
-        - 步骤结果中未执行的步骤默认填充 first_status=0, second_status=0
+        筛选语义
+        --------
+        - ``plan_module_id``：包含该分组及其**所有层级**子分组下的用例（递归 CTE）
+        - ``case_level``：精确匹配（如 ``"P0"``）
+        - ``is_review``：精确匹配（0/1）
 
         Args:
-            plan_id: 计划ID
-            plan_module_id: 计划分组ID（包含其子模块下的用例）
-            case_level: 用例等级筛选
-            is_review: 是否审核筛选
+            plan_id: 计划 ID。
+            plan_module_id: 计划分组 ID（含其整棵子树）。
+            case_level: 用例等级。
+            is_review: 是否审核（0/1）。
 
         Returns:
-            list: 用例字典列表，每项包含用例信息、关联属性及步骤结果
+            用例字典列表，每项包含用例信息 + 关联属性 + ``case_sub_steps``。
         """
+        log.debug(
+            "get_plan_cases start: plan_id=%s, plan_module_id=%s, "
+            "case_level=%s, is_review=%s",
+            plan_id, plan_module_id, case_level, is_review,
+        )
+
         async with cls.transaction() as session:
-            conditions = [PlanCaseAssociation.plan_id == plan_id]
-
-            # 分组筛选：包含指定分组及其直接子分组下的用例
-            if plan_module_id is not None:
-                module_ids = select(PlanModule.id).where(
-                    or_(
-                        PlanModule.parent_id == plan_module_id,
-                        PlanModule.id == plan_module_id
-                    )
-                )
-                conditions.append(PlanCaseAssociation.plan_module_id.in_(module_ids))
-
-            if case_level is not None:
-                conditions.append(TestCase.case_level == case_level)
-            if is_review is not None:
-                conditions.append(PlanCaseAssociation.is_review == is_review)
-
-            # 第一次查询：获取计划关联的用例基本信息
-            stmt = (
-                select(PlanCaseAssociation, TestCase)
-                .join(TestCase, TestCase.id == PlanCaseAssociation.case_id)
-                .where(and_(*conditions))
-                .order_by(PlanCaseAssociation.order)
+            # 1) 拼 WHERE 条件（包含递归 CTE 一次性展开分组子树）
+            conditions = cls._build_plan_case_conditions(
+                plan_id=plan_id,
+                plan_module_id=plan_module_id,
+                case_level=case_level,
+                is_review=is_review,
             )
-            result = await session.execute(stmt)
-            rows = result.unique().all()
 
+            # 2) 拉主表 (关联, 用例) 行
+            rows = await cls._fetch_plan_case_rows(session, conditions)
             if not rows:
+                # 早返回：主表为空就不发第二步查询，省一次 RTT
                 return []
 
+            # 3) 拉这些用例的步骤 + 当前计划下的执行结果，按 case_id 聚合
             case_ids = [case.id for _, case in rows]
-
-            # 第二次查询：获取用例步骤及对应计划下的执行结果
-            steps_stmt = (
-                select(TestCaseStep, TestCaseStepResult)
-                .outerjoin(
-                    TestCaseStepResult,
-                    and_(
-                        TestCaseStepResult.step_id == TestCaseStep.id,
-                        TestCaseStepResult.plan_id == plan_id
-                    )
-                )
-                .where(TestCaseStep.test_case_id.in_(case_ids))
-                .order_by(TestCaseStep.order)
+            step_map = await cls._fetch_step_map(
+                session, plan_id=plan_id, case_ids=case_ids,
             )
-            steps_result = await session.execute(steps_stmt)
-            steps_rows = steps_result.all()
 
-            # 构建步骤映射：case_id -> 步骤结果列表（defaultdict 自动初始化空列表）
-            step_map: Dict[int, list] = defaultdict(list)
-            for step, step_result in steps_rows:
-                step_map[step.test_case_id].append({
-                    **step.to_dict(),
-                    "actual_result": step_result.actual_result if step_result else None,
-                    "bug_url": step_result.bug_url if step_result else None,
-                    "first_status": step_result.first_status if step_result else 0,
-                    "second_status": step_result.second_status if step_result else 0,
-                })
+            # 4) 拼装返回 payload
+            return [cls._build_case_payload(assoc, case, step_map) for assoc, case in rows]
 
-            # 组装返回数据：用例信息 + 关联属性 + 步骤结果
-            data = [
-                {
-                    **case.to_dict(),
-                    "case_id": assoc.case_id,
-                    "plan_module_id": assoc.plan_module_id,
-                    "is_review": assoc.is_review,
-                    "first_status": assoc.first_status,
-                    "second_status": assoc.second_status,
-                    "bug_url": assoc.bug_url,
-                    "order": assoc.order,
-                    "case_sub_steps": step_map.get(case.id, [])
-                }
-                for assoc, case in rows
-            ]
-            return data
+    # ------------------------------------------------------------------
+    # 内部 helper：get_plan_cases 的拆解
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_plan_case_conditions(
+        plan_id: int,
+        plan_module_id: Optional[int],
+        case_level: Optional[str],
+        is_review: Optional[int],
+    ) -> List:
+        """组装 plan_case 主查询的 WHERE 条件列表。
+
+        关键点：``plan_module_id`` 命中时用**递归 CTE**把整棵子树展平，
+        而不是之前 ``parent_id == X OR id == X``（那样只匹配直接子节点，
+        会漏掉深层孙子辈的用例）。
+        """
+        conditions: List = [PlanCaseAssociation.plan_id == plan_id]
+
+        if plan_module_id is not None:
+            # 递归 CTE：根节点 ∪ 所有 parent_id 命中的后代
+            base = select(PlanModule.id).where(PlanModule.id == plan_module_id)
+            subtree = base.cte(name="plan_module_subtree", recursive=True)
+            subtree = subtree.union_all(
+                select(PlanModule.id).where(PlanModule.parent_id == subtree.c.id)
+            )
+            conditions.append(
+                PlanCaseAssociation.plan_module_id.in_(select(subtree.c.id))
+            )
+
+        if case_level is not None:
+            conditions.append(TestCase.case_level == case_level)
+        if is_review is not None:
+            conditions.append(PlanCaseAssociation.is_review == is_review)
+
+        return conditions
+
+    @staticmethod
+    async def _fetch_plan_case_rows(
+        session: AsyncSession,
+        conditions: List,
+    ) -> List[Tuple[PlanCaseAssociation, TestCase]]:
+        """主查询：拉取 (PlanCaseAssociation, TestCase) 关联行。
+
+        用 ``order_by(PlanCaseAssociation.order)`` 保持原有用例顺序，
+        ``result.unique()`` 避免 ORM 重复实例化。
+        """
+        stmt = (
+            select(PlanCaseAssociation, TestCase)
+            .join(TestCase, TestCase.id == PlanCaseAssociation.case_id)
+            .where(and_(*conditions))
+            .order_by(PlanCaseAssociation.order)
+        )
+        result = await session.execute(stmt)
+        return result.unique().all()
+
+    @staticmethod
+    async def _fetch_step_map(
+        session: AsyncSession,
+        plan_id: int,
+        case_ids: List[int],
+    ) -> Dict[int, List[Dict[str, Any]]]:
+        """拉取 (步骤, 步骤执行结果)，按 ``case_id`` 聚合成 ``defaultdict(list)``。
+
+        LEFT JOIN：步骤无执行结果时 ``step_result`` 为 None，由
+        ``_step_to_dict`` 兜底填充 ``first_status=0/second_status=0``。
+        """
+        stmt = (
+            select(TestCaseStep, TestCaseStepResult)
+            .outerjoin(
+                TestCaseStepResult,
+                and_(
+                    TestCaseStepResult.step_id == TestCaseStep.id,
+                    TestCaseStepResult.plan_id == plan_id,
+                ),
+            )
+            .where(TestCaseStep.test_case_id.in_(case_ids))
+            .order_by(TestCaseStep.order)
+        )
+        rows = (await session.execute(stmt)).all()
+
+        step_map: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+        for step, step_result in rows:
+            step_map[step.test_case_id].append(_step_to_dict(step, step_result))
+        return step_map
+
+    @staticmethod
+    def _build_case_payload(
+        assoc: PlanCaseAssociation,
+        case: TestCase,
+        step_map: Dict[int, List[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        """把 (关联, 用例) + 该用例的步骤列表，合并为最终返回的 dict。"""
+        return {
+            **case.to_dict(),
+            "case_id": assoc.case_id,
+            "plan_module_id": assoc.plan_module_id,
+            "is_review": assoc.is_review,
+            "first_status": assoc.first_status,
+            "second_status": assoc.second_status,
+            "bug_url": assoc.bug_url,
+            "order": assoc.order,
+            "case_sub_steps": step_map.get(case.id, []),
+        }
 
     @classmethod
     async def get_overview(cls, plan_id: int) -> dict:

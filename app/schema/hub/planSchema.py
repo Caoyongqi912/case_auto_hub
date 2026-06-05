@@ -6,7 +6,7 @@
 # @Software: PyCharm
 # @Desc: 测试计划相关的Schema定义
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 from pydantic import BaseModel, Field
 
@@ -154,13 +154,66 @@ class CopyOneCaseToCasePlan(BaseModel):
     plan_module_id: int = Field(..., description="计划分组ID")
 
 
-class UpdateCaseToCasePlan(BaseModel):
-    """更新计划用例模型"""
-    case_id_list: List[int] = Field(..., description="用例ID列表")
+class ReorderPlanCaseSchema(BaseModel):
+    """重排序计划用例（单 case 移动语义）
+
+    设计原则
+    --------
+    - 前端只传"被移动 case + 锚点"两个关键 ID，传输量与列表规模无关
+    - 服务端基于锚点重新计算目标 module 的整组顺序，
+      用单条 ``UPDATE ... CASE`` 表达式一次回写，避免 N 次 roundtrip
+    - 天然支持跨 module 移动（``target_module_id`` 指定新分组即可）
+
+    锚点语义
+    --------
+    - ``before_id`` 优先：被移动 case 放在此 case 之前
+    - ``after_id`` 次之：被移动 case 放在此 case 之后
+    - 都为空：被移动 case 移到目标 module 末尾
+    """
+
     plan_id: int = Field(..., description="计划ID")
-    is_review: Optional[str] = Field(None, description="审核状态")
-    first_status: Optional[str] = Field(None, description="一轮测试状态 ")
-    second_status: Optional[str] = Field(None, description="二轮测试状态 ")
+    case_id: int = Field(..., description="被移动的用例ID")
+    target_module_id: Optional[int] = Field(
+        None, description="目标分组ID；None 表示在原 module 内移动"
+    )
+    before_id: Optional[int] = Field(
+        None, description="锚点：被移动 case 放在此 case 之前"
+    )
+    after_id: Optional[int] = Field(
+        None, description="锚点：被移动 case 放在此 case 之后"
+    )
+
+
+class UpdateCaseToCasePlan(BaseModel):
+    """更新计划用例模型
+
+    字段约束
+    --------
+    - ``case_id_list``：单批最多 2000 条，传入时会按 Pydantic 校验拦截
+    - 状态字段使用 ``Literal`` 限定可选值，避免错别字静默写入
+    """
+
+    # 状态枚举（与 CaseConfig 表 CASE_STATUS / IS_REVIEW 保持一致）
+    _REVIEW_VALUES = ("0", "1")
+    _STATUS_VALUES = ("0", "1", "2", "3", "4")
+
+    case_id_list: List[int] = Field(
+        ...,
+        max_length=2000,
+        description="用例ID列表（去重后单批最多 2000 条；超出请分批调用）",
+    )
+    plan_id: int = Field(..., description="计划ID")
+    is_review: Optional[Literal["0", "1"]] = Field(
+        None, description="审核状态 0:未审核 1:已审核"
+    )
+    first_status: Optional[Literal["0", "1", "2", "3", "4"]] = Field(
+        None,
+        description="一轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过",
+    )
+    second_status: Optional[Literal["0", "1", "2", "3", "4"]] = Field(
+        None,
+        description="二轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过",
+    )
 
 class UploadCommitSchema(BaseModel):
     """确认并入库用例模型"""
