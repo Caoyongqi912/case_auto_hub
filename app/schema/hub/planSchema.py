@@ -102,6 +102,22 @@ class QueryPlanRequirementsSchema(BaseModel):
     process: Optional[int] = Field(None, description="需求进度")
 
 
+class PagePlanRequirementsSchema(PageSchema):
+    """
+    计划已关联需求分页查询模型
+
+    与 QueryPlanRequirementsSchema 的区别：
+    - 支持 current / pageSize 分页参数
+    - 与项目里其它列表接口保持一致的分页响应结构 { items, pageInfo }
+    - 字段筛选（名称 / 等级 / 进度）使用模糊匹配或精确匹配
+    """
+    plan_id: int = Field(..., description="计划ID")
+    requirement_name: Optional[str] = Field(None, description="需求名称（模糊匹配）")
+    requirement_level: Optional[str] = Field(None, description="需求等级")
+    process: Optional[int] = Field(None, description="需求进度")
+    uid: Optional[str] = Field(None, description="需求 UID（精确匹配）")
+
+
 class AddPlanModuleSchema(BaseModel):
     """添加计划分组模型"""
     plan_id: int = Field(..., description="计划ID")

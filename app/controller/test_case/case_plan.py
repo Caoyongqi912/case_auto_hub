@@ -16,7 +16,8 @@ from app.schema.hub.planSchema import (
     AddPlanSchema, UpdatePlanSchema, RemovePlanSchema,
     MoveCaseToCasePlan, PagePlanSchema,
     AssociateRequirementSchema, DisassociateRequirementSchema,
-    QueryPlanRequirementsSchema,CopyOneCaseToCasePlan,
+    QueryPlanRequirementsSchema, PagePlanRequirementsSchema,
+    CopyOneCaseToCasePlan,
     AddPlanModuleSchema, UpdatePlanModuleSchema,
     RemovePlanModuleSchema, MovePlanModuleSchema,
     UpdatePlanCaseStepResultSchema,AssociatePlanCaseSchema,
@@ -163,6 +164,35 @@ async def query_plan_requirements(data: QueryPlanRequirementsSchema, _: User = D
         process=data.process
     )
     return Response.success(data=requirements)
+
+
+@router.post("/requirements/page", description="分页查询计划已关联的需求")
+async def page_plan_requirements(data: PagePlanRequirementsSchema, _: User = Depends(Authentication())):
+    """
+    分页查询指定计划已关联的需求
+
+    与 /queryRequirements 的区别：
+    - 支持 current / pageSize 标准分页参数
+    - 响应结构使用 { items, pageInfo }，与项目里其它列表接口对齐
+    - 支持排序参数 sort（JSON 字典格式，例如 ``{"create_time": "descend"}``）
+    - 支持按 uid 精确匹配（用于搜索框直达）
+
+    :param data: 分页及筛选参数
+    :param _: 认证用户
+    :return: 分页结果
+    """
+    log.info(data)
+    page_data = await PlanMapper.page_associated_requirements(
+        plan_id=data.plan_id,
+        current=data.current or 1,
+        pageSize=data.pageSize or 10,
+        requirement_name=data.requirement_name,
+        requirement_level=data.requirement_level,
+        process=data.process,
+        uid=data.uid,
+        sort=data.sort,
+    )
+    return Response.success(data=page_data)
 
 
 @router.post("/module/insert", description="添加计划分组")
@@ -476,6 +506,34 @@ async def insert_plan_cases(data: AddPlanCaseSchema, user: User = Depends(Authen
         user=user,
         **data.model_dump(),
     )
+    return Response.success(values)
+
+
+@router.post("/cases/delete_permanent", description="彻底删除计划用例（物理删除）")
+async def delete_plan_cases_permanent(
+    data: RemovePlanCaseSchema,
+    user: User = Depends(Authentication()),
+):
+    """
+    彻底删除计划下的用例：
+    1) 解除用例与当前计划的关联
+    2) 物理删除用例本体及子步骤
+
+    警告：该操作不可恢复。如用例还被其他计划引用，FK 约束触发后事务回滚。
+    """
+    from sqlalchemy.exc import IntegrityError
+    log.info(data)
+    try:
+        values = await PlanCaseMapper.delete_plan_cases_permanent(
+            case_ids=data.case_ids,
+            plan_id=data.plan_id,
+        )
+    except IntegrityError:
+        log.error(
+            f"delete_permanent: case 还被其他计划引用,plan_id={data.plan_id}, "
+            f"case_ids={data.case_ids}"
+        )
+        return Response.error(msg="用例还被其他计划引用,无法彻底删除")
     return Response.success(values)
 
 @router.post("/upload/commit", description="确认并入库用例")

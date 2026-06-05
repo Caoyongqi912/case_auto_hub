@@ -1298,7 +1298,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             int: 复制数量 (1=成功, 0=失败)
         """
         async with cls.transaction() as session:
-            # 查询原用例的排序号
+            # 1) 查询原用例的排序号
             origin_order_stmt = select(PlanCaseAssociation.order).where(
                 and_(
                     PlanCaseAssociation.plan_id == plan_id,
@@ -1310,20 +1310,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             if origin_order is None:
                 return 0
 
-            # 将原用例之后的所有关联记录排序号 +1，腾出位置
-            await session.execute(
-                update(PlanCaseAssociation)
-                .where(
-                    and_(
-                        PlanCaseAssociation.plan_id == plan_id,
-                        PlanCaseAssociation.plan_module_id == plan_module_id,
-                        PlanCaseAssociation.order > origin_order
-                    )
-                )
-                .values(order=PlanCaseAssociation.order + 1)
-            )
-
-            # 复制用例（含步骤）
+            # 2) 复制用例及其子步骤（test_case 主表 + case_sub_step）
             new_cases = await TestCaseMapper.copy_cases(
                 case_ids=[case_id],
                 user=user,
@@ -1332,7 +1319,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             if not new_cases:
                 return 0
 
-            # 创建新关联，排在原用例之后
+            # 3) 创建新关联，排在原用例之后。
+            #    排序调整交给 associate_cases 内部处理（整 plan order >= origin+1 全部后移），
+            #    避免跨 module 时只 +1 目标 module 的旧实现造成 order 冲突。
             new_case = new_cases[0]
             await cls.associate_cases(
                 plan_id=plan_id,
@@ -1752,6 +1741,56 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     PlanCaseAssociation.plan_id == plan_id,
                     PlanCaseAssociation.case_id.in_(case_ids),
                 ))
+            )
+            return result.rowcount
+
+    @classmethod
+    async def delete_plan_cases_permanent(
+        cls,
+        case_ids: List[int],
+        plan_id: int,
+    ) -> int:
+        """
+        彻底删除计划下的用例：解除当前计划关联 + 数据库物理删除用例本体及其子步骤。
+
+        执行顺序（同一事务内）：
+        1) 校验所有 case_id 属于该 plan（防越权/无效入参）
+        2) 删 plan_case_association（仅当前 plan 的关联）
+        3) 删 case_sub_step（先删子表，避免外键悬空）
+        4) 删 test_case 本体
+
+        严格模式：如果用例还被其他 plan 引用，test_case 上的 FK CASCADE 触发
+        SQLAlchemy IntegrityError，整个事务回滚。提示用户先在其他计划中
+        移除/删除该用例，再回到本计划执行彻底删除。
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        if not case_ids:
+            return 0
+
+        async with cls.transaction() as session:
+            # 1) 越权前置校验：所有 case_id 必须属于该 plan
+            await cls._assert_cases_belong_to_plan(session, plan_id, case_ids)
+
+            # 2) 删当前 plan 的关联（只解除本计划的关联）
+            await session.execute(
+                delete(PlanCaseAssociation).where(and_(
+                    PlanCaseAssociation.plan_id == plan_id,
+                    PlanCaseAssociation.case_id.in_(case_ids),
+                ))
+            )
+
+            # 3) 显式删子步骤（防 SQLAlchemy session 缓存 / 跨库 FK 行为差异）
+            await session.execute(
+                delete(TestCaseStep).where(
+                    TestCaseStep.test_case_id.in_(case_ids)
+                )
+            )
+
+            # 4) 删用例本体；若仍被其他 plan 引用，触发 FK CASCADE 删除其他
+            #    关联；若 FK 报错（如严格模式），IntegrityError 上抛，事务回滚
+            result = await session.execute(
+                delete(TestCase).where(TestCase.id.in_(case_ids))
             )
             return result.rowcount
 

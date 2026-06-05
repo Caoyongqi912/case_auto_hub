@@ -19,7 +19,7 @@ from app.model.caseHub.requirement import Requirement
 from app.model.caseHub.test_case import TestCase
 from app.mapper.user import UserMapper
 from utils import log
-
+from enums import ModuleEnum
 
 class RequirementMapper(Mapper[Requirement]):
     __model__ = Requirement

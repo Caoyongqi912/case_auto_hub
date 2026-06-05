@@ -53,6 +53,12 @@ async def get_requirement(requirementId: int, _: User = Depends(Authentication()
 
 @router.post("/pageRequirement", description='分页需求信息')
 async def page_requirement(req: PageRequirementsSchema, _: User = Depends(Authentication())):
+    """
+    分页查询需求信息
+
+    不再支持 plan_id 过滤。选需求弹窗直接拉取所有需求，重复关联由
+    plan_requirement_association 中间表的主键约束自动拦截。
+    """
     log.info(req)
     data = await RequirementMapper.page_by_module(
         **req.model_dump(exclude_none=True, exclude_unset=True)

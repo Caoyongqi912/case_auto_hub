@@ -9,6 +9,7 @@ from typing import List, Optional
 
 from app.model.base.user import User
 from sqlalchemy import insert, delete, select, and_, func, case
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from app.mapper import Mapper
 from app.model.caseHub.case_plan import CasePlan
@@ -80,27 +81,35 @@ class PlanMapper(Mapper[CasePlan]):
     @classmethod
     async def associate_requirements(cls, plan_id: int, requirement_ids: List[int]) -> int:
         """
-        关联需求到计划
+        关联需求到计划（自动跳过已关联的项）
+
+        利用 plan_requirement_association 的复合主键 (plan_id, requirement_id) 做去重：
+        - 用 MySQL 的 INSERT IGNORE 语义，已存在的 (plan_id, requirement_id) 组合
+          会被静默忽略，不会抛 IntegrityError
+        - 返回值是「新增」的关联数（不含已存在的）
+
         :param plan_id: 计划ID
         :param requirement_ids: 需求ID列表
-        :return: 关联数量
+        :return: 实际新增的关联数量
         """
         if not requirement_ids:
             return 0
+        # 输入去重：避免 (1,2,2,3) 这种调用方传重复导致 INSERT IGNORE 计数虚高
+        unique_ids = list(dict.fromkeys(requirement_ids))
         try:
             async with cls.transaction() as session:
                 values = [
-                    {
-                        "plan_id": plan_id,
-                        "requirement_id": req_id,
-                    }
-                    for req_id in requirement_ids
+                    {"plan_id": plan_id, "requirement_id": req_id}
+                    for req_id in unique_ids
                 ]
-                await session.execute(
-                    insert(PlanRequirementAssociation).values(values)
-                )
-                return len(values)
+                # MySQL dialect 的 insert 支持 prefix_with("IGNORE") 跳过主键冲突
+                stmt = mysql_insert(PlanRequirementAssociation).values(values)
+                stmt = stmt.prefix_with("IGNORE")
+                result = await session.execute(stmt)
+                # result.rowcount 在 MySQL + INSERT IGNORE 下返回实际影响的行数
+                return result.rowcount or 0
         except Exception as e:
+            log.error(f"associate_requirements error: plan_id={plan_id}, error={e}")
             raise
 
     @classmethod
@@ -190,6 +199,100 @@ class PlanMapper(Mapper[CasePlan]):
             raise
 
     @classmethod
+    @classmethod
+    async def page_associated_requirements(
+        cls,
+        plan_id: int,
+        current: int = 1,
+        pageSize: int = 10,
+        requirement_name: Optional[str] = None,
+        requirement_level: Optional[str] = None,
+        process: Optional[int] = None,
+        uid: Optional[str] = None,
+        sort: Optional[dict] = None,
+    ) -> dict:
+        """
+        分页查询计划已关联的需求
+
+        与 query_requirements_by_field 的区别：支持分页参数与排序，响应格式与项目
+        其它列表接口保持一致：
+        ```json
+        { "items": [...], "pageInfo": { "total": N, "page": ..., "limit": ... } }
+        ```
+
+        :param plan_id: 计划ID（必填）
+        :param current: 当前页码（1-based）
+        :param pageSize: 每页大小
+        :param requirement_name: 需求名（模糊匹配）
+        :param requirement_level: 需求等级（精确匹配）
+        :param process: 需求进度（精确匹配）
+        :param uid: 需求 UID（精确匹配）
+        :param sort: 排序参数，格式 ``{"create_time": "descend"}``
+        :return: 分页结果字典
+        """
+        # 提前 short-circuit：避免无意义查询
+        if plan_id is None:
+            return await cls.map_page_data(
+                data=[], total_num=0, page_size=pageSize, current=current
+            )
+
+        # 1) 收集过滤条件
+        filter_conditions = [PlanRequirementAssociation.plan_id == plan_id]
+        if requirement_name:
+            filter_conditions.append(Requirement.requirement_name.like(f"%{requirement_name}%"))
+        if requirement_level:
+            filter_conditions.append(Requirement.requirement_level == requirement_level)
+        if process is not None:
+            filter_conditions.append(Requirement.process == process)
+        if uid:
+            filter_conditions.append(Requirement.uid == uid)
+
+        offset = (current - 1) * pageSize
+
+        try:
+            async with async_session() as session:
+                # 2) 基础查询
+                base_query = (
+                    select(Requirement)
+                    .join(
+                        PlanRequirementAssociation,
+                        PlanRequirementAssociation.requirement_id == Requirement.id,
+                    )
+                    .where(and_(*filter_conditions))
+                )
+
+                # 3) 排序：与 Mapper.sorted_search 语义对齐
+                if isinstance(sort, dict):
+                    base_query = await cls.sorted_search(base_query, sort)
+                else:
+                    base_query = base_query.order_by(Requirement.create_time.desc())
+
+                # 4) 总数：同样过滤条件
+                count_query = (
+                    select(func.count())
+                    .select_from(PlanRequirementAssociation)
+                    .join(
+                        Requirement,
+                        PlanRequirementAssociation.requirement_id == Requirement.id,
+                    )
+                    .where(and_(*filter_conditions))
+                )
+                total = (await session.execute(count_query)).scalar() or 0
+
+                # 5) 分页数据
+                paged = base_query.offset(offset).limit(pageSize)
+                rows = (await session.execute(paged)).scalars().all()
+                items = [req.map for req in rows]
+
+                return await cls.map_page_data(
+                    data=items, total_num=total, page_size=pageSize, current=current
+                )
+        except Exception as e:
+            log.error(f"page_associated_requirements error: plan_id={plan_id}, error={e}")
+            return await cls.map_page_data(
+                data=[], total_num=0, page_size=pageSize, current=current
+            )
+
     async def page_query_with_stats(cls, current: int, pageSize: int, **kwargs):
         """
         分页查询测试计划（含完成率统计）

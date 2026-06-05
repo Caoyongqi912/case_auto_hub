@@ -83,6 +83,10 @@ class PageRequirementsSchema(PageSchema):
     process: Optional[int] = Field(None, description="需求进度")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
+    # 注：不再支持 plan_id 过滤
+    # 选需求弹窗直接拉取所有需求；去重由 plan_requirement_association 中间表
+    # 在 associate_requirements 时通过 INSERT IGNORE / 唯一约束处理。
+    # 这样既简化了查询逻辑，也避免了双表 JOIN 时的索引失效。
 
 
 class SetCasesStatusSchema(BaseModel):
