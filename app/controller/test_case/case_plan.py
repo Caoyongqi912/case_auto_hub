@@ -22,7 +22,7 @@ from app.schema.hub.planSchema import (
     UpdatePlanCaseStepResultSchema,AssociatePlanCaseSchema,
     RemovePlanCaseSchema, CopyCaseToCasePlan,
     UpdatePlanPhaseSchema,UpdateCaseToCasePlan,UploadCommitSchema,
-    ReorderPlanCaseSchema
+    ReorderPlanCaseSchema,BulkReorderPlanCaseSchema
 )
 from app.schema.hub.testCaseSchema import AddPlanCaseSchema
 from app.mapper.test_case.planMapper import PlanMapper
@@ -396,6 +396,39 @@ async def reorder_plan_cases(
         log.exception("reorder_plan_cases 异常: %s", err)
         return Response.error(msg=f"重排序失败: {err}")
     return Response.success(affected)
+
+
+@router.post("/cases/reorder/bulk", description="批量重排序计划用例")
+async def reorder_plan_cases_bulk(
+    data: BulkReorderPlanCaseSchema,
+    user: User = Depends(Authentication()),
+):
+    """批量重排序计划用例（多选拖拽 / 跨 module 批量调整）。
+
+    所有 items 在同一事务内顺序应用，任一失败整体回滚。
+    返回值为每条 item 的 affected 行数列表。
+
+    :param data: 批量重排序参数（含 plan_id 与 items）
+    :param user: 认证用户
+    :return: 各 item 的 affected 行数列表
+    """
+    log.info(
+        "reorder_plan_cases_bulk plan=%s item_count=%d",
+        data.plan_id, len(data.items),
+    )
+    try:
+        # 把 Pydantic model 转成 dict 列表，传给 mapper
+        results = await PlanCaseMapper.reorder_plan_cases_bulk(
+            plan_id=data.plan_id,
+            items=[it.model_dump() for it in data.items],
+        )
+    except CommonError as err:
+        log.warning("reorder_plan_cases_bulk rejected: %s", err)
+        return Response.error(msg=str(err))
+    except Exception as err:
+        log.exception("reorder_plan_cases_bulk 异常: %s", err)
+        return Response.error(msg=f"批量重排序失败: {err}")
+    return Response.success(results)
 
 
 @router.post("/cases/update", description="更新计划用例")

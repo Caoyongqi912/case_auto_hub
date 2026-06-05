@@ -903,27 +903,17 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         after_id: Optional[int] = None,
         target_module_id: Optional[int] = None,
     ) -> int:
-        """单 case 移动 / 跨 module 移动。
+        """单 case 移动 / 跨 module 移动（推荐走 ``reorder_plan_cases_bulk``）。
 
-        实现思路
-        --------
-        1. 读出 ``target_module`` 当前所有 case 的 id 序列（按 order 升序）
-        2. 找到 ``case_id`` 当前所在下标；按 ``before_id`` / ``after_id`` 算出新下标
-        3. 内存里 pop + insert 重排
-        4. 用单条 ``UPDATE ... SET order = CASE id WHEN ... END`` 一次回写
-        5. 若跨 module，同一 UPDATE 顺便改 ``plan_module_id``
+        实现：开 1 个事务 → 越权前置校验 → 调一次
+        ``_apply_single_reorder`` 完成单 case 重排。
 
-        复杂度
+        复杂度（单条）
         --------
         - 1 次 SELECT (读 module 全量)
         - 1 次 UPDATE (整组回写 order，可顺带切 module)
-        - 传输与计算均为 O(M)，M = 目标 module 的 case 数；
-          但 IO 只 2 次，与 M 大小无关
-
-        越权防护
-        --------
-        入口校验：``case_id`` / ``before_id`` / ``after_id`` 必须都属于
-        ``plan_id``；缺失任意一个会抛 ``CommonError`` 拒绝写入。
+        - 1 次越权校验 SELECT
+        - IO 共 3 次，与目标 module 的 case 数无关
 
         Args:
             plan_id: 计划ID
@@ -933,106 +923,241 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             target_module_id: 目标分组；None 表示不切换 module
 
         Returns:
-            int: 实际更新行数（重排 N 个 case + 至多 1 个 module 切换 = N+1）
+            int: 实际更新行数；位置无变化且 module 未切换时返回 0（幂等）
 
         Raises:
             CommonError: 越权 / 用例不存在 / 锚点不在目标 module 等业务错误
         """
         async with cls.transaction() as session:
-            # ---- 1. 越权前置：所有 case_id 都必须属于 plan ----
-            involved_ids = {case_id}
-            if before_id is not None:
-                involved_ids.add(before_id)
-            if after_id is not None:
-                involved_ids.add(after_id)
-            existing = await cls._filter_case_ids_belong_to_plan(
+            # 越权前置：所有 case_id + 锚点都需属于 plan
+            await cls._assert_cases_belong_to_plan(
                 session=session,
                 plan_id=plan_id,
-                case_id_list=list(involved_ids),
+                case_ids=[case_id, before_id, after_id],
             )
-            missing = involved_ids - existing
-            if missing:
-                raise CommonError(
-                    f"以下 case 不属于计划 {plan_id}，已拒绝: {sorted(missing)[:5]}"
+            return await cls._apply_single_reorder(
+                session=session,
+                plan_id=plan_id,
+                case_id=case_id,
+                before_id=before_id,
+                after_id=after_id,
+                target_module_id=target_module_id,
+            )
+
+    @classmethod
+    async def reorder_plan_cases_bulk(
+        cls,
+        plan_id: int,
+        items: List[Dict[str, Any]],
+    ) -> List[int]:
+        """批量重排序（多选拖拽 / 跨 module 批量调整）。
+
+        行为
+        ----
+        - 所有 items 在 **同一事务** 内顺序应用；任一失败整体回滚
+        - 越权前置：聚合所有 case_id + 锚点去重后一次性校验，
+          避免每条都重复一次 SELECT
+
+        复杂度
+        --------
+        - 1 次越权校验 SELECT（聚合 N 条的所有 case_id + 锚点）
+        - N 次 _apply_single_reorder，每次含 1 次 SELECT + 1 次 UPDATE
+        - 总 IO = 1 + 2N
+        - 相比循环调单条接口：省去 N-1 次事务提交 + N-1 次越权校验
+          = 节省 2(N-1) 次 IO + N 次 BEGIN/COMMIT
+
+        Args:
+            plan_id: 计划ID
+            items: 重排序条目列表，每条形如
+                ``{"case_id": int, "before_id"?: int, "after_id"?: int, "target_module_id"?: int}``
+
+        Returns:
+            List[int]: 每条 item 的 affected 行数（与 items 等长），
+                0 表示该条幂等无变化
+
+        Raises:
+            CommonError: items 为空 / 越权 / 用例不存在 / 锚点非法
+        """
+        if not items:
+            raise CommonError("批量重排序 items 不能为空")
+
+        # 1) 聚合所有需要校验的 case_id（去重 + 过滤 None）
+        all_ids: set = set()
+        for it in items:
+            cid = it.get("case_id")
+            if cid is None:
+                raise CommonError("item.case_id 不能为空")
+            all_ids.add(cid)
+            for anchor_key in ("before_id", "after_id"):
+                v = it.get(anchor_key)
+                if v is not None:
+                    all_ids.add(v)
+
+        async with cls.transaction() as session:
+            # 2) 一次越权前置
+            await cls._assert_cases_belong_to_plan(
+                session=session,
+                plan_id=plan_id,
+                case_ids=list(all_ids),
+            )
+
+            # 3) 顺序应用每条（同一事务内复用 session）
+            results: List[int] = []
+            for it in items:
+                affected = await cls._apply_single_reorder(
+                    session=session,
+                    plan_id=plan_id,
+                    case_id=it["case_id"],
+                    before_id=it.get("before_id"),
+                    after_id=it.get("after_id"),
+                    target_module_id=it.get("target_module_id"),
                 )
+                results.append(affected)
 
-            # ---- 2. 读 case 当前所在 module（target_module_id 未指定时用此值） ----
-            origin_stmt = select(
-                PlanCaseAssociation.plan_module_id
-            ).where(
-                and_(
-                    PlanCaseAssociation.plan_id == plan_id,
-                    PlanCaseAssociation.case_id == case_id,
-                )
+            log.info(
+                "reorder_plan_cases_bulk plan=%s items=%d total_affected=%d",
+                plan_id, len(items), sum(results),
             )
-            origin_module_id = (await session.execute(origin_stmt)).scalar_one_or_none()
-            if origin_module_id is None:
-                raise CommonError(f"用例 {case_id} 不在计划 {plan_id} 中")
+            return results
 
-            target_module_id = (
-                target_module_id if target_module_id is not None else origin_module_id
+    @classmethod
+    async def _assert_cases_belong_to_plan(
+        cls,
+        session: AsyncSession,
+        plan_id: int,
+        case_ids: List[Optional[int]],
+    ) -> None:
+        """断言所有非 None 的 case_id 都属于 plan，否则抛 ``CommonError``。
+
+        与 ``_filter_case_ids_belong_to_plan`` 共享同一底层 SELECT，
+        但语义更严格：缺失即失败，而非返回子集。
+        """
+        valid_ids = [cid for cid in case_ids if cid is not None]
+        if not valid_ids:
+            return
+        existing = await cls._filter_case_ids_belong_to_plan(
+            session=session,
+            plan_id=plan_id,
+            case_id_list=valid_ids,
+        )
+        missing = set(valid_ids) - existing
+        if missing:
+            raise CommonError(
+                f"以下 case 不属于计划 {plan_id}，已拒绝: {sorted(missing)[:5]}"
             )
 
-            # ---- 3. 读目标 module 全量，按 order 升序 ----
-            list_stmt = select(
-                PlanCaseAssociation.case_id
-            ).where(
+    @classmethod
+    async def _apply_single_reorder(
+        cls,
+        session: AsyncSession,
+        plan_id: int,
+        case_id: int,
+        before_id: Optional[int],
+        after_id: Optional[int],
+        target_module_id: Optional[int],
+    ) -> int:
+        """应用单条重排序（核心执行逻辑）。
+
+        假设：调用方已在事务中持有 ``session``，且 case_id + 锚点已通过越权校验。
+        内部不做任何额外 session 开关或权限检查。
+
+        步骤
+        ----
+        1. 读 case 当前所在 module
+        2. 读目标 module 全量 case 序列（按 order）
+        3. 按锚点计算新下标
+        4. 内存 pop + insert 重排
+        5. 单条 ``UPDATE ... CASE`` 一次回写 order；跨 module 顺带改 plan_module_id
+
+        Returns:
+            int: affected 行数；幂等时返回 0
+        """
+        # 1) 当前 module
+        origin_stmt = select(PlanCaseAssociation.plan_module_id).where(
+            and_(
+                PlanCaseAssociation.plan_id == plan_id,
+                PlanCaseAssociation.case_id == case_id,
+            )
+        )
+        origin_module_id = (await session.execute(origin_stmt)).scalar_one_or_none()
+        if origin_module_id is None:
+            raise CommonError(f"用例 {case_id} 不在计划 {plan_id} 中")
+
+        target_module_id = (
+            target_module_id if target_module_id is not None else origin_module_id
+        )
+
+        # 2) 目标 module 全量
+        list_stmt = (
+            select(PlanCaseAssociation.case_id)
+            .where(
                 and_(
                     PlanCaseAssociation.plan_id == plan_id,
                     PlanCaseAssociation.plan_module_id == target_module_id,
                 )
-            ).order_by(PlanCaseAssociation.order.asc(), PlanCaseAssociation.case_id.asc())
-            case_ids_in_module: List[int] = [
-                row[0] for row in (await session.execute(list_stmt)).all()
-            ]
-
-            # ---- 4. 计算新下标 ----
-            new_index = cls._resolve_reorder_index(
-                case_ids=case_ids_in_module,
-                moved_id=case_id,
-                before_id=before_id,
-                after_id=after_id,
             )
+            .order_by(PlanCaseAssociation.order.asc(), PlanCaseAssociation.case_id.asc())
+        )
+        case_ids_in_module: List[int] = [
+            row[0] for row in (await session.execute(list_stmt)).all()
+        ]
+
+        # 3) 新下标
+        new_index = cls._resolve_reorder_index(
+            case_ids=case_ids_in_module,
+            moved_id=case_id,
+            before_id=before_id,
+            after_id=after_id,
+        )
+
+        # 4) 内存重排：区分同 module / 跨 module 两种场景
+        #    - 同 module：case_id 在 list 中 → pop + insert 调位
+        #    - 跨 module：case_id 不在 list 中（要搬过来）→ 直接按 new_index 插入
+        is_cross_module = target_module_id != origin_module_id
+        if case_id in case_ids_in_module:
             old_index = case_ids_in_module.index(case_id)
-            if new_index == old_index and target_module_id == origin_module_id:
-                # 位置没变、module 也没变，幂等返回
-                return 0
-
-            # ---- 5. 内存重排 ----
+            if new_index == old_index and not is_cross_module:
+                return 0  # 幂等（同 module 且位置未变）
             case_ids_in_module.pop(old_index)
-            # 弹出后，新下标可能需要回退 1（如果 old_index < new_index）
             insert_index = new_index if new_index <= old_index else new_index - 1
-            case_ids_in_module.insert(insert_index, case_id)
+        else:
+            # 跨 module：当作新成员，按 new_index 插入
+            # new_index 已被 _resolve_reorder_index 钳到 [0, len(list)]
+            insert_index = min(new_index, len(case_ids_in_module))
+        case_ids_in_module.insert(insert_index, case_id)
 
-            # ---- 6. 单条 UPDATE 一次回写 order；跨 module 时顺便改 plan_module_id ----
-            order_case = case(
-                *[
-                    (PlanCaseAssociation.case_id == cid, idx)
-                    for idx, cid in enumerate(case_ids_in_module, start=1)
-                ],
-                else_=PlanCaseAssociation.order,
-            )
-            update_values: Dict[str, Any] = {"order": order_case}
-            if target_module_id != origin_module_id:
-                update_values["plan_module_id"] = target_module_id
+        # 5) 单条 UPDATE 回写
+        order_case = case(
+            *[
+                (PlanCaseAssociation.case_id == cid, idx)
+                for idx, cid in enumerate(case_ids_in_module, start=1)
+            ],
+            else_=PlanCaseAssociation.order,
+        )
+        update_values: Dict[str, Any] = {"order": order_case}
+        if target_module_id != origin_module_id:
+            update_values["plan_module_id"] = target_module_id
 
-            update_stmt = (
-                update(PlanCaseAssociation)
-                .where(
-                    and_(
-                        PlanCaseAssociation.plan_id == plan_id,
-                        PlanCaseAssociation.case_id.in_(case_ids_in_module),
-                    )
+        update_stmt = (
+            update(PlanCaseAssociation)
+            .where(
+                and_(
+                    PlanCaseAssociation.plan_id == plan_id,
+                    PlanCaseAssociation.case_id.in_(case_ids_in_module),
                 )
-                .values(update_values)
             )
-            result = await session.execute(update_stmt)
-            log.info(
-                "reorder_plan_case plan=%s moved=%s [%s→%s] module=%s→%s affected=%s",
-                plan_id, case_id, old_index, new_index,
-                origin_module_id, target_module_id, result.rowcount,
-            )
-            return result.rowcount
+            .values(update_values)
+        )
+        result = await session.execute(update_stmt)
+        # 日志：跨 module 时 old_index 记为 None（语义上 case 不在原列表中）
+        log.debug(
+            "_apply_single_reorder plan=%s case=%s old=%s new=%s module=%s→%s affected=%s",
+            plan_id, case_id,
+            old_index if "old_index" in locals() else None,
+            new_index,
+            origin_module_id, target_module_id, result.rowcount,
+        )
+        return result.rowcount
 
     @staticmethod
     def _resolve_reorder_index(
