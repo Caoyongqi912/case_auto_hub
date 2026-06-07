@@ -555,7 +555,7 @@ async def upload_commit(
         return Response.error(msg="请选择要入库的用例")
 
     try:
-        await PlanCaseMapper.insert_upload_case(
+        imported_count, skipped_count = await PlanCaseMapper.insert_upload_case(
             cases=valid_cases,
             plan_id=data.plan_id,
             plan_module_id=data.plan_module_id,
@@ -563,9 +563,13 @@ async def upload_commit(
             is_review=data.is_review,
             first_status=data.first_status,
             second_status=data.second_status,
+            skip_duplicate=data.skip_duplicate,
         )
         await _cache_service.mark_committed(data.file_md5, user.id)
-        return Response.success({"imported_count": len(valid_cases)})
+        return Response.success({
+            "imported_count": imported_count,
+            "skipped_count": skipped_count,
+        })
     except Exception as e:
         log.exception(f"入库失败: {e}")
         return Response.error(msg=f"入库失败: {str(e)}")

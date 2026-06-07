@@ -80,8 +80,9 @@ class RequirementMapper(Mapper[Requirement]):
                         cr=user
                     )
                     await cls.add_flush_expunge(session=session, model=ass_instance)
-        except Exception as e:
-            log.error(e)
+        except Exception:
+            # log.exception 自动带 stacktrace + 函数上下文, 排查时不用手抓 traceback
+            log.exception("RequirementMapper 异常")
             raise
 
     @classmethod
@@ -104,8 +105,9 @@ class RequirementMapper(Mapper[Requirement]):
                     }
                 )
                 await session.execute(stmt)
-        except Exception as e:
-            log.error(e)
+        except Exception:
+            # log.exception 自动带 stacktrace + 函数上下文, 排查时不用手抓 traceback
+            log.exception("RequirementMapper 异常")
             raise
 
     @classmethod
@@ -128,8 +130,9 @@ class RequirementMapper(Mapper[Requirement]):
                     }
                 )
                 await session.execute(stmt)
-        except Exception as e:
-            log.error(e)
+        except Exception:
+            # log.exception 自动带 stacktrace + 函数上下文, 排查时不用手抓 traceback
+            log.exception("RequirementMapper 异常")
             raise
 
     @classmethod
@@ -163,8 +166,9 @@ class RequirementMapper(Mapper[Requirement]):
                     )
                     await cls.add_flush_expunge(session=session, model=requirement)
                 return requirement
-        except Exception as e:
-            log.error(e)
+        except Exception:
+            # log.exception 自动带 stacktrace + 函数上下文, 排查时不用手抓 traceback
+            log.exception("RequirementMapper 异常")
             raise
 
     @classmethod
@@ -232,6 +236,7 @@ class RequirementMapper(Mapper[Requirement]):
                 requirement = await cls.get_by_id(session=session, ident=requirement_id)
                 requirement.case_number = (requirement.case_number or 0) + len(new_cases)
                 await cls.add_flush_expunge(session=session, model=requirement)
-        except Exception as e:
-            log.error(e)
+        except Exception:
+            # log.exception 自动带 stacktrace + 函数上下文, 排查时不用手抓 traceback
+            log.exception("RequirementMapper 异常")
             raise

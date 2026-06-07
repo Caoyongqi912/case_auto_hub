@@ -199,7 +199,6 @@ class PlanMapper(Mapper[CasePlan]):
             raise
 
     @classmethod
-    @classmethod
     async def page_associated_requirements(
         cls,
         plan_id: int,
@@ -293,6 +292,7 @@ class PlanMapper(Mapper[CasePlan]):
                 data=[], total_num=0, page_size=pageSize, current=current
             )
 
+    @classmethod
     async def page_query_with_stats(cls, current: int, pageSize: int, **kwargs):
         """
         分页查询测试计划（含完成率统计）

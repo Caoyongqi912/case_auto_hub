@@ -24,6 +24,10 @@ from app.model.caseHub.test_case_step import TestCaseStep, TestCaseStepResult
 from app.model.caseHub.requirement import Requirement
 from app.model.caseHub.plan_module import PlanModule
 from utils import log
+from utils.caseEnumResolver import resolve_plan_group_path, _split_group_path
+
+# _parse_steps 提升到模块顶部, 避免函数体内反复 import
+from app.mapper.test_case.testcaseMapper import _parse_steps
 
 
 
@@ -75,7 +79,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
     }
 
     # 状态值 -> 统计桶名称的映射
-    # 用于将数字状态码转为语义化的桶键（如 1->passed, 2->failed）
+    # 把 step_result.first_status/second_status 的数字状态码
+    # 转为 passed/failed/pending 等语义化桶键, 用于聚合统计.
+    # 状态码定义与 TestCaseStepResult.first_status/second_status 列保持一致.
     _STATUS_BUCKET_MAP: Dict[int, str] = {
         0: "pending",
         1: "passed",
@@ -85,7 +91,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
     }
 
     # 状态字段名 -> 中文标签的映射
-    # 用于日志中标识操作的是一轮还是二轮测试状态
+    # 仅用于日志/异常信息中标识操作的是一轮还是二轮测试状态,
+    # 不参与业务逻辑判断 (避免文案变更触发行为变更).
     _STATUS_FIELD_LABEL_MAP: Dict[str, str] = {
         'first_status': '一轮测试状态',
         'second_status': '二轮测试状态',
@@ -115,6 +122,10 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         """
         case_data.pop("action", None)
         case_data.pop("expected_result", None)
+        # group_path 是解析阶段预留给 UploadPlanModuleResolver 的字段,
+        # 已经在 insert_upload_case 里解析成 plan_module_id, 这里必须弹出,
+        # 否则 TestCase(**case_data) 会抛 `group_path is an invalid keyword argument`.
+        case_data.pop("group_path", None)
         case_data.update({
             "project_id": project_id,
             "creator": user.id,
@@ -143,7 +154,6 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         :param user: 操作用户
         :return: 步骤数据字典列表，每个字典包含 step_action/step_expected_result 等字段
         """
-        from app.mapper.test_case.testcaseMapper import _parse_steps
         steps = _parse_steps(action, expected_result)
         result = []
         for step_index, step_data in enumerate(steps):
@@ -270,64 +280,177 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             user: User,
             plan_id: int,
             plan_module_id: Optional[int] = None,
-            is_review: bool = False,
-            first_status: int = 0,
-            second_status: int = 0
-    ):
+            is_review: Optional[str] = None,
+            first_status: Optional[str] = None,
+            second_status: Optional[str] = None,
+            skip_duplicate: bool = False,
+    ) -> Tuple[int, int]:
         """
         批量导入计划用例关联记录
 
         处理流程：
-        1. 查询计划信息，获取 project_id
-        2. 查询当前计划分组下的最大排序号，确定起始排序
-        3. 批量构造 TestCase 对象并 flush 获取真实 ID
-        4. 将临时索引替换为真实 ID 后，批量插入步骤和关联记录
+        1. 预解析每条 case 的 group_path -> plan_module_id (在事务外)
+           - dedupe path: N 条 case 经常只对应 K 个 unique path
+           - 每个 unique path 只 resolve 一次, 大幅减少 find_or_create_path 调用
+           - 解析失败的回退到入参 plan_module_id
+        2. 查询计划信息, 获取 project_id
+        3. 按 (plan_module_id) 分组, 各自查询最大排序号, 维护 per-module 的 order 游标
+        4. 批量构造 TestCase 对象并 flush 获取真实 ID
+        5. 将临时索引替换为真实 ID 后, 批量插入步骤和关联记录
 
         性能优化点：
-        - 使用 add_all + flush 批量写入，避免逐条 INSERT
+        - 使用 add_all + flush 批量写入, 避免逐条 INSERT
         - 步骤和关联记录均在内存中构建完成后一次性写入
+        - group_path 预解析在事务外进行, 不污染事务状态
 
         Args:
-            cases: 用例数据列表，每项包含 case_name、action、expected_result 等字段
+            cases: 用例数据列表, 每项包含 case_name、action、expected_result、group_path 等字段
             user: 操作用户
             plan_id: 计划ID
-            plan_module_id: 计划分组ID（可选，默认 None）
-            is_review: 是否审核（默认 False）
-            first_status: 一轮测试状态（默认 0=未开始）
-            second_status: 二轮测试状态（默认 0=未开始）
+            plan_module_id: 默认计划分组ID (group_path 解析失败时兜底)
+            is_review: 审核状态 (默认 None; 取值 "0"=未审核 / "1"=已审核)
+            first_status: 一轮测试状态 (默认 None=未开始; 取值 "0"-"4")
+            second_status: 二轮测试状态 (默认 None=未开始; 取值 "0"-"4")
 
         Returns:
-            int: 导入的用例数量；输入为空时返回 0
+            Tuple[int, int]: (imported_count, skipped_count).
+            - imported_count: 实际写入并关联的用例数
+            - skipped_count: 因 skip_duplicate=True 且 case_name 命中既有 case 而被跳过的用例数
+            当输入 cases 为空时返回 (0, 0)
         """
         if not cases:
-            return 0
+            return 0, 0
 
         from app.mapper.test_case.planMapper import PlanMapper
-        from app.mapper.test_case.testcaseMapper import TestCaseStepMapper
+
+        # 0) skip_duplicate 过滤必须放在 group_path 解析之前.
+        #    原因: case_module_map 用 case 在 cases 中的 index 当 key,
+        #    过滤后重新 enumerate, index 会漂移, 旧 key 全部失配 -> 所有
+        #    group_path 解析结果走兑底, 重复创建的目录在 "全部用例" 下而不是
+        #    用户上传的 "前端/登录" 路径下. 先过滤, 再在过滤后的列表上构建
+        #    case_module_map, index 天然对齐.
+        skip_indices: set = set()
+        if skip_duplicate and cases:
+            # 查询 plan 下已关联的 case_name 集合, 用于"已存在同名"判定.
+            # 范围已锁 plan_id, 不会拿全表.
+            #
+            # 注意 - TOCTOU 边界 (P1a):
+            # 1) 此次查询与后续 INSERT 不在同一事务, 且未对 plan 行加锁;
+            # 2) 并发场景下两个上传都通过检查后会同时写入, 出现同名双胞胎;
+            # 3) 在 PlanCaseAssociation 上加 UNIQUE(plan_id, case_name) 是
+            #    唯一硬性修复, 但这要求同 plan 内 TestCase.name 也要唯一,
+            #    会改用例库语义, 故暂不引入; 视为后台工具的"尽力而为"去重.
+            existing_names_stmt = (
+                select(TestCase.case_name)
+                .join(
+                    PlanCaseAssociation,
+                    PlanCaseAssociation.case_id == TestCase.id,
+                )
+                .where(PlanCaseAssociation.plan_id == plan_id)
+            )
+            async with cls.transaction() as session:
+                rows = (await session.execute(existing_names_stmt)).scalars().all()
+            existing_names: set = {name for name in rows if name}
+            for idx, c in enumerate(cases):
+                name = (c.get("case_name") or "").strip()
+                if name and name in existing_names:
+                    skip_indices.add(idx)
+
+            # 注意 - Excel 内部同名边界 (P1b):
+            # 仅与"已在本 plan 关联的"case_name 比对, 不对 Excel 内部做 dedupe.
+            # 业务侧约定: 用户上传的 Excel 中如果出现 N 行同名 case_name, 全部入库
+            # (N 条 TestCase + N 条 PlanCaseAssociation, case_id 不同), 视为"复制粘贴".
+            # 若未来需要"Excel 内部同名仅保留第一条", 在此处追加
+            # `seen = set(); if name in seen: skip_indices.add(idx); seen.add(name)` 即可.
+
+        if skip_indices:
+            cases = [c for i, c in enumerate(cases) if i not in skip_indices]
+        skipped_count = len(skip_indices)
+        if skipped_count:
+            log.info(
+                f"insert_upload_case: skip_duplicate=True 跳过 {skipped_count} 条, "
+                f"剩余 {len(cases)} 条待导入"
+            )
+
+        # 1) 预解析 group_path -> plan_module_id (在过滤后的 cases 上, index 0..N-1)
+        #    - dedupe paths: N 条 case 经常只对应 K 个 unique path
+        #    - 每个 unique path 只 resolve 一次, 大幅减少 find_or_create_path 调用
+        #    - 解析失败的回退到入参 plan_module_id
+        case_module_map: Dict[int, int] = {}
+        unique_path_resolved: Dict[str, Optional[int]] = {}
+        for case_index, case_data in enumerate(cases):
+            raw_path = case_data.get("group_path")
+            if not raw_path:
+                continue
+            titles = _split_group_path(raw_path)
+            cache_key = "\x1f".join(titles)
+            if cache_key not in unique_path_resolved:
+                unique_path_resolved[cache_key] = await resolve_plan_group_path(
+                    plan_id=plan_id,
+                    raw_group_path=raw_path,
+                    user=user,
+                )
+            resolved = unique_path_resolved[cache_key]
+            if resolved is not None:
+                case_module_map[case_index] = resolved
 
         try:
+            # 预收集所有目标 plan_module_id, 用于:
+            # 1) 一次性 GROUP BY 查所有 module 的 max(order), 替代按 module 懒查询 (省 K-1 次 round-trip)
+            # 2) 仅在 plan_module_id 缺失时一次性查 root, 替代循环内 N 次 root 查询
+            target_module_ids: set = set(case_module_map.values())
+            if plan_module_id is not None:
+                target_module_ids.add(plan_module_id)
+
             async with cls.transaction() as session:
                 plan = await PlanMapper.get_by_id(ident=plan_id, session=session)
 
-                # 查询当前分组下的最大排序号，新用例从 max+1 开始编号
-                max_order_stmt = select(
-                    func.coalesce(func.max(PlanCaseAssociation.order), 0)
-                ).where(
-                    and_(
-                        PlanCaseAssociation.plan_id == plan_id,
-                        PlanCaseAssociation.plan_module_id == plan_module_id,
-                    )
-                )
-                max_result = await session.execute(max_order_stmt)
-                start_order = max_result.scalar() + 1
+                # 1) root 兜底查询提到循环外
+                #    仅在 plan_module_id 未指定时才有可能走 root 兜底
+                root_id: Optional[int] = None
+                if plan_module_id is None:
+                    root_stmt = select(PlanModule).where(
+                        PlanModule.plan_id == plan_id,
+                        PlanModule.parent_id.is_(None),
+                    ).order_by(PlanModule.order, PlanModule.id)
+                    root_modules = (await session.execute(root_stmt)).scalars().all()
+                    root_id = root_modules[0].id if root_modules else None
+                    if root_id is not None:
+                        target_module_ids.add(root_id)
 
-                log.info(f"case_data: {cases}")
+                # 2) 一次性 GROUP BY 拿所有 target module 的 max(order)
+                #    替代旧的"按 module 懒初始化"模式, 1 次 round-trip 完成
+                max_order_per_module: Dict[int, int] = {}
+                if target_module_ids:
+                    max_order_stmt = select(
+                        PlanCaseAssociation.plan_module_id,
+                        func.max(PlanCaseAssociation.order),
+                    ).where(
+                        and_(
+                            PlanCaseAssociation.plan_id == plan_id,
+                            PlanCaseAssociation.plan_module_id.in_(target_module_ids),
+                        )
+                    ).group_by(PlanCaseAssociation.plan_module_id)
+                    rows = (await session.execute(max_order_stmt)).all()
+                    max_order_per_module = {row[0]: int(row[1] or 0) for row in rows}
+
+                # 游标字典: 存的是"最近一次写出的 order", 第一条新 case 直接 +1.
+                # 与 testcaseMapper._prepare_requirement_associations 的 last_order+1 风格一致,
+                # 避免出现 max+2 起始的 off-by-one 缺口.
+                module_order_cursor: Dict[int, int] = dict(max_order_per_module)
+
+                # 只打印数量, 避免把用例内容全部写日志 (PII + 性能)
+                log.info(
+                    f"insert_upload_case: plan_id={plan_id} 入参={len(cases)} 条, "
+                    f"resolved_paths={len(unique_path_resolved)}, "
+                    f"target_modules={len(target_module_ids)}"
+                )
 
                 case_objects = []
                 all_steps = []
                 case_plan_associations = []
 
-                # 第一阶段：在内存中构建所有对象（无数据库交互）
+                # 第一阶段: 在内存中构建所有对象 (无数据库交互)
                 for case_index, case_data in enumerate(cases):
                     case_obj = cls._prepare_plan_case_data(
                         case_data=case_data.copy(),
@@ -344,42 +467,69 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     )
                     all_steps.extend(steps)
 
-                    start_order += 1
+                    # 该 case 实际写入的 plan_module_id:
+                    # 1) group_path 解析成功 -> 用解析出的 id
+                    # 2) group_path 缺失/解析失败 -> 用入参 plan_module_id 兜底
+                    # 3) 兜底仍为 None -> 退化到 plan 的根 "全部用例" 分组 (root_id 已提前查到)
+                    effective_module_id = (
+                        case_module_map.get(case_index, plan_module_id)
+                        or root_id
+                    )
+
+                    if effective_module_id is None:
+                        raise ValueError(
+                            f"case_index={case_index} 无法定位 plan_module_id, "
+                            f"group_path={case_data.get('group_path')!r}, "
+                            f"plan_id={plan_id}"
+                        )
+
+                    module_order_cursor[effective_module_id] = (
+                        module_order_cursor.get(effective_module_id, 0) + 1
+                    )
+
                     assoc = cls._prepare_plan_associations(
                         case_index=case_index,
                         plan_id=plan_id,
-                        plan_module_id=plan_module_id,
-                        order=start_order,
+                        plan_module_id=effective_module_id,
+                        order=module_order_cursor[effective_module_id],
                         is_review=is_review,
                         first_status=first_status,
                         second_status=second_status
                     )
                     case_plan_associations.append(assoc)
 
-                # 第二阶段：批量写入用例，flush 获取自增 ID
+                # ────────── 阶段 2: 批量写入用例, flush 获取自增 ID ──────────
                 session.add_all(case_objects)
                 await session.flush()
 
-                # 建立临时索引 -> 真实 ID 的映射
+                # 建立临时索引 -> 真实 ID 的映射, 后续阶段用此替换步骤/关联的占位
                 case_id_map = {i: case_obj.id for i, case_obj in enumerate(case_objects)}
 
-                # 第三阶段：替换步骤中的临时索引为真实 ID，批量写入步骤
+                # ────────── 阶段 3: 替换步骤临时索引, 批量写入 ──────────
                 step_objects = [
                     TestCaseStep(**cls._map_step_id(step_data, case_id_map))
                     for step_data in all_steps
                 ]
                 session.add_all(step_objects)
 
-                # 第四阶段：替换关联记录中的临时索引为真实 ID，批量写入关联
+                # ────────── 阶段 4: 替换关联临时索引, 批量写入 ──────────
                 if case_plan_associations:
                     for assoc in case_plan_associations:
                         assoc.case_id = case_id_map[assoc.case_id]
                     session.add_all(case_plan_associations)
 
-                log.info(f"insert_upload_case success, case number: {len(case_objects)}")
-                return len(case_objects)
+                log.info(
+                    f"insert_upload_case success, "
+                    f"imported={len(case_objects)} skipped={skipped_count}"
+                )
+                return len(case_objects), skipped_count
         except Exception as e:
-            log.error(f"insert_upload_case error: cases={cases}, error={e}")
+            # 只记数量与前 3 条 case_name 避免日志爆 (全量 cases 可能很大且含 PII)
+            sample_names = [c.get('case_name') for c in cases[:3]]
+            log.error(
+                f"insert_upload_case error: plan_id={plan_id}, "
+                f"case_count={len(cases)}, first_names={sample_names}, error={e}"
+            )
             raise
 
     @classmethod
@@ -1719,8 +1869,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             else:
                 async with cls.transaction() as session:
                     return await _execute_association(session)
-        except Exception as e:
-            log.error(e)
+        except Exception:
+            # log.exception 自动带 stacktrace + 函数上下文
+            log.exception("associate_cases 异常")
             raise
 
     @classmethod

@@ -5,8 +5,7 @@
 # @File : testcaseMapper
 # @Software: PyCharm
 # @Desc: 测试用例数据访问层
-from re import L
-from typing import List, Dict, Any, Optional, Sequence
+from typing import List, Dict, Any, Optional
 
 from sqlalchemy import select, insert, update, and_, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -153,8 +152,8 @@ class TestCaseMapper(Mapper[TestCase]):
                         module_id=module_id,
                     )
                 )
-        except Exception as e:
-            log.error(e)
+        except Exception:
+            log.exception("update_cases_common 异常")
             raise
 
     @classmethod
@@ -277,10 +276,12 @@ class TestCaseMapper(Mapper[TestCase]):
         """
         准备需求关联数据
 
-        :param case_index: 用例索引
+        :param case_index: 用例临时索引 (flush 前无真实 id, flush 后用 case_id_map 替换)
         :param requirement_id: 需求ID
-        :param last_order: 当前最大排序号
-        :param case_data: 用例数据
+        :param last_order: 当前最大排序号, 由调用方维护累加器
+            (用累加器而非每次查 max(order) 是为了避免 N 次 round-trip;
+             累加器初值来自一次性的 get_last_index 查询)
+        :param case_data: 用例数据 (仅取 case_type / case_status)
         :return: 需求用例关联模型
         """
         return RequirementCaseAssociation(
@@ -333,9 +334,11 @@ class TestCaseMapper(Mapper[TestCase]):
             raw_path = case_data.get("group_path")
             if not raw_path:
                 continue
-            # 用拆分后的 tuple 当 cache key (同一原始字符串可能写法不同, e.g. 末尾空格)
+            # 用拆分后的 tuple 当 cache key.
+            # 同一原始字符串可能有多种写法 (e.g. "a/b/" vs "a/b"), tuple 形态能 dedupe
             titles = _split_group_path(raw_path)
-            cache_key = "\x1f".join(titles)  # 用控制符避开业务字符串
+            # 0x1f = Unit Separator, ASCII 控制符, 业务字符串中不可能出现, 用作连接符安全无歧义
+            cache_key = "\x1f".join(titles)
             if cache_key not in unique_path_resolved:
                 unique_path_resolved[cache_key] = await resolve_group_path(
                     project_id=project_id,
@@ -527,8 +530,8 @@ class TestCaseMapper(Mapper[TestCase]):
                         TestCase.case_tag.isnot(None)
                     )
                 )
-                all_tags = tags.all()
-                log.info(all_tags)
+                # debug 级别: 标签通常很少, 仅调试时打开; 原 info 会把所有 tag 刷到日志
+                log.debug(f"query_tags: requirement_id={requirement_id}, tag_count={len(all_tags)}")
                 return set(all_tags) if all_tags else []
         except Exception as e:
             log.error(f"query_tags error: requirement_id={requirement_id}, error={e}")
@@ -842,6 +845,13 @@ class TestCaseMapper(Mapper[TestCase]):
         """
         在当前用例后快速创建下一条用例（复制）
 
+        ⚠ TODO(known issue): 当前实现存在短板:
+        - 新建的 case 没有关联到 requirement (RequirementCaseAssociation 未插)
+        - order 未设置 (不会出现在需求的用例列表)
+        - 步骤 case_sub_steps 未拷贝 (用例是空壳)
+        - 操作动态 CaseDynamicMapper 未记录
+        今后如果调用方依赖事件发生改变, 请及时修复.
+
         :param requirement_id: 需求ID
         :param case_id: 当前用例ID
         :param user: 操作用户
@@ -883,6 +893,13 @@ class TestCaseMapper(Mapper[TestCase]):
     async def add_default_case(cls, requirement_id: int, user: User):
         """
         在需求下添加一条默认模板用例
+
+        流程:
+        1. 需求 case_number +1 (新加一条占位)
+        2. 用 TestCase.set_default 初始化一个空壳用例
+        3. module_id / project_id 继承自需求
+        4. flush 取真实 id 后, 在 RequirementCaseAssociation 里建关联
+           (order = 当前 max + 1, 追加到末尾)
 
         :param requirement_id: 需求ID
         :param user: 操作用户

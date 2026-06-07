@@ -7,6 +7,7 @@
 # @Desc: 测试计划相关的Schema定义
 from datetime import datetime, date
 from typing import Optional, List, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -284,8 +285,22 @@ class UploadCommitSchema(BaseModel):
     plan_id: int = Field(..., description="计划ID")
     plan_module_id: Optional[int] = Field(None, description="计划分组ID")
     is_review: Optional[str] = Field(None, description="审核状态")
-    first_status: Optional[str] = Field(None, description="一轮测试状态 ")
-    second_status: Optional[str] = Field(None, description="二轮测试状态 ")
+    first_status: Optional[Literal["0", "1", "2", "3", "4"]] = Field(
+        None,
+        description="一轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过",
+    )
+    second_status: Optional[Literal["0", "1", "2", "3", "4"]] = Field(
+        None,
+        description="二轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过",
+    )
+    skip_duplicate: bool = Field(
+        False,
+        description=(
+            "是否跳过 plan 内已关联的同名用例. "
+            "True 时: 命中同名即不入库且不入关联, 计入 skipped_count. "
+            "False (默认): 命中同名也新建一条, 会产生同名异 id 的重复关联"
+        ),
+    )
 
 
 

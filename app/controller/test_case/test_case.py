@@ -326,7 +326,7 @@ async def upload_commit(
         await _cache_service.mark_committed(data.file_md5, user.id)
         return Response.success({"imported_count": len(valid_cases)})
     except Exception as e:
-        log.error(f"入库失败: {e}")
+        log.exception(f"入库失败: {e}")
         return Response.error(msg=f"入库失败: {str(e)}")
 
 
@@ -350,7 +350,7 @@ async def upload_cases(
     try:
         result = await AsyncFilesReader(enum_config=enum_config).async_read_excel_for_case(file)
     except Exception as e:
-        log.error(f"文件解析失败: {e}")
+        log.exception(f"文件解析失败: {e}")
         return Response.error(msg=f"文件解析失败: {str(e)}")
 
     await _cache_service.save_preview(

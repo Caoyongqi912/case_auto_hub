@@ -243,3 +243,84 @@ class PlanModuleMapper(Mapper[PlanModule]):
         except Exception as e:
             log.error(f"build_tree error: {e}")
             raise
+
+    @classmethod
+    async def find_or_create_path(
+        cls,
+        plan_id: int,
+        title_path: List[str],
+        user: User,
+    ) -> "PlanModule":
+        """
+        按 title_path 列表在指定 plan 的 ROOT 目录下逐级 find-or-create, 返回叶子 PlanModule.
+
+        重要约定: Excel 上传的目录必须挂在 plan 的根目录 (parent_id=NULL, 由 plan 创建时
+        init_module 自动生成, title="全部用例") 之下, 不能与 root 同级. 原因:
+        - 根目录用于收口"全量用例"语义, 是 UI 树默认展开的锚点
+        - 同级散落会破坏树的单一入口, 让 "全量统计" 失去意义
+
+        查找维度: (plan_id, parent_id, title)
+        - 第一级以 root.id 作为 parent_id
+        - 后续级别以递归创建的节点 id 作为 parent_id
+        静默复用现有匹配项; 若不存在则新建.
+        父级不存在时一并创建.
+
+        :param plan_id: 计划 ID
+        :param title_path: 标题路径列表, 例 ["登录","表单"]; 空列表抛 ValueError
+        :param user: 创建人 (新建节点时记录创建人)
+        :return: 叶子 PlanModule 实例
+        :raises ValueError: title_path 为空 / 包含空标题 / plan 缺少根目录
+        """
+        if not title_path:
+            raise ValueError("title_path 不能为空")
+        cleaned = [(t or "").strip() for t in title_path]
+        if any(not t for t in cleaned):
+            raise ValueError("title_path 中存在空标题段")
+
+        async with cls.transaction() as session:
+            # 1) 找到 plan 的根目录 (parent_id=NULL).
+            #    init_module 会在 plan 创建时建好; 若缺失说明数据异常, 抛错让上层感知.
+            #    用 order, id 排序兜底多根的极端情况, 取最靠前那一个.
+            root_stmt = (
+                select(PlanModule)
+                .where(
+                    PlanModule.plan_id == plan_id,
+                    PlanModule.parent_id.is_(None),
+                )
+                .order_by(PlanModule.order, PlanModule.id)
+            )
+            root_module = (await session.execute(root_stmt)).scalars().first()
+            if root_module is None:
+                raise ValueError(
+                    f"plan_id={plan_id} 缺少根目录, 请先初始化"
+                )
+
+            # 2) 计算同一 plan 内最大 order, 新建节点接在末尾 (避免插入到中间)
+            async def _next_order(s: AsyncSession) -> int:
+                stmt = select(func.coalesce(func.max(PlanModule.order), 0)).where(
+                    PlanModule.plan_id == plan_id
+                )
+                return (await s.execute(stmt)).scalar() + 1
+
+            # 3) 以 root 作为第一级 parent, 逐级 find-or-create
+            parent_id: Optional[int] = root_module.id
+            leaf: Optional[PlanModule] = None
+            for title in cleaned:
+                stmt = select(PlanModule).where(
+                    PlanModule.plan_id == plan_id,
+                    PlanModule.parent_id == parent_id,
+                    PlanModule.title == title,
+                )
+                existing = (await session.execute(stmt)).scalars().first()
+                if existing:
+                    leaf = existing
+                else:
+                    leaf = await cls.save(
+                        creator_user=user, session=session,
+                        plan_id=plan_id,
+                        parent_id=parent_id,
+                        title=title,
+                        order=await _next_order(session),
+                    )
+                parent_id = leaf.id
+            return leaf

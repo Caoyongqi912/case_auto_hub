@@ -120,3 +120,47 @@ async def resolve_group_path(project_id, raw_group_path, user, module_type=CASE_
             f"raw={raw_group_path!r}, titles={titles}"
         )
         return None
+
+
+# ----------------------------------------------------------------------------
+# UploadPlanModuleResolver: Excel "所属分组" 字符串 → plan_module_id
+# ----------------------------------------------------------------------------
+# 与 resolve_group_path 逻辑一致, 唯一区别:
+# - 落到 plan_module 表而非 Module 表
+# - 通过 (plan_id, parent_id, title) 定位, 不依赖 module_type
+# - 由调用方在事务外解析, 避免嵌套事务破坏原子性
+
+
+async def resolve_plan_group_path(plan_id: int, raw_group_path: str, user: "User"):
+    """
+    把 Excel "所属分组" 列解析为 plan_module.id.
+
+    - 空值返回 None (调用方走兜底 plan_module_id)
+    - 拆解路径, 调 PlanModuleMapper.find_or_create_path 逐级 find-or-create, 返回叶子 id
+    - 任意异常被吞掉返回 None, 不阻塞整批导入 (路径脏数据不影响其他行)
+
+    :param plan_id: 计划 ID
+    :param raw_group_path: 原始字符串
+    :param user: 创建人
+    :return: 叶子 plan_module.id, 解析失败返回 None
+    """
+    titles = _split_group_path(raw_group_path)
+    if not titles:
+        return None
+
+    try:
+        from app.mapper.test_case.planModuleMapper import PlanModuleMapper
+        leaf = await PlanModuleMapper.find_or_create_path(
+            plan_id=plan_id,
+            title_path=titles,
+            user=user,
+        )
+        return leaf.id
+    except Exception:
+        # exception=True 让 loguru 输出完整 stacktrace, 方便定位
+        from utils import log
+        log.opt(exception=True).error(
+            f"resolve_plan_group_path failed: plan_id={plan_id}, "
+            f"raw={raw_group_path!r}, titles={titles}"
+        )
+        return None
