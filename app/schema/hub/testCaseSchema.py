@@ -80,9 +80,15 @@ class DeleteTestCasesSchema(BaseModel):
 
 
 class InsertMindCaseSchema(BaseModel):
-    """插入思维导图用例模型"""
+    """插入思维导图用例模型
+
+    脑图归属两种模式：
+    - 按需求：传 requirement_id（保留兼容老入口，已弱化）
+    - 按计划：传 plan_id（推荐，新流程主入口）
+    """
     mind_node: dict = Field(..., description="思维导图节点")
-    requirement_id: int = Field(..., description="需求ID")
+    plan_id: Optional[int] = Field(None, description="计划ID（按计划维度时填写）")
+    requirement_id: Optional[int] = Field(None, description="需求ID（按需求维度时填写）")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
 
@@ -91,8 +97,18 @@ class UpdateMindCaseSchema(BaseModel):
     """更新思维导图用例模型"""
     mind_node: Optional[dict] = Field(None, description="思维导图节点")
     id: int = Field(..., description="用例ID")
+    plan_id: Optional[int] = Field(None, description="计划ID")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: Optional[int] = Field(None, description="项目ID")
+
+
+class QueryMindCaseSchema(BaseModel):
+    """查询脑图详情入参
+
+    plan_id 和 requirement_id 二选一，同时传时 plan_id 优先。
+    """
+    plan_id: Optional[int] = Field(None, description="计划ID")
+    requirement_id: Optional[int] = Field(None, description="需求ID")
 
 
 class UpdateTestCaseStatusSchema(BaseModel):
