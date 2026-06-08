@@ -315,16 +315,20 @@ async def upload_commit(
         return Response.error(msg="请选择要入库的用例")
 
     try:
-        await TestCaseMapper.insert_upload_case(
+        imported_count, skipped_count = await TestCaseMapper.insert_upload_case(
             cases=valid_cases,
             project_id=data.project_id,
             module_id=data.module_id,
             requirement_id=data.requirement_id,
             user=user,
-            is_common=data.is_common
+            is_common=data.is_common,
+            on_duplicate=data.on_duplicate,
         )
         await _cache_service.mark_committed(data.file_md5, user.id)
-        return Response.success({"imported_count": len(valid_cases)})
+        return Response.success({
+            "imported_count": imported_count,
+            "skipped_count": skipped_count,
+        })
     except Exception as e:
         log.exception(f"入库失败: {e}")
         return Response.error(msg=f"入库失败: {str(e)}")
@@ -342,16 +346,57 @@ async def upload_cancel(
 @router.post("/upload", description="批量导入用例")
 async def upload_cases(
         file: UploadFile = File(..., description="Excel文件"),
+        # 必填: 用于预览阶段"用例库分组"硬门禁校验. 前端必须从"所属项目"下拉框
+        # 拿到选中项目的 id, 通过 Form 字段 (multipart/form-data) 一并提交.
+        # 计划上传会复用这个预览接口, 计划上传时前端把 plan.project_id 传过来即可.
+        # 不传则 FastAPI 直接 422, 强制前端带项目上下文.
+        project_id: int = Form(..., description="项目ID; 用于预览阶段校验用例库分组"),
         user: User = Depends(Authentication())
 ):
     from utils.aioFileReader import AsyncFilesReader
     from utils.caseEnumResolver import load_case_enum_config
+    from app.mapper.test_case.testcaseMapper import TestCaseMapper
     enum_config = await load_case_enum_config()
     try:
         result = await AsyncFilesReader(enum_config=enum_config).async_read_excel_for_case(file)
     except Exception as e:
         log.exception(f"文件解析失败: {e}")
         return Response.error(msg=f"文件解析失败: {str(e)}")
+
+    # 用例库分组校验 (预览阶段的硬门禁). project_id 已在签名层强制必填,
+    # 命中校验失败的行从 valid_cases 移到 errors, 前端 preview 就能立刻看到
+    # "目录不存在"提示, 不需要走到 commit 才发现.
+    if result.valid_cases:
+        group_path_errors = await TestCaseMapper.validate_group_paths(
+            cases=result.valid_cases,
+            project_id=project_id,
+        )
+        if group_path_errors:
+            # row -> error 索引, 一次扫描建映射
+            row_to_err: Dict[int, Dict[str, str]] = {}
+            for err in group_path_errors:
+                for row in err["rows"]:
+                    row_to_err[row] = {
+                        "field": "所属分组",
+                        "message": f"用例库目录不存在: {err['path']} (请先在用例库中创建)",
+                    }
+            new_valid: List[Dict[str, Any]] = []
+            for case in result.valid_cases:
+                row = case.pop("_row", None)
+                if row in row_to_err:
+                    result.errors.append({
+                        "row": row,
+                        "errors": [row_to_err[row]],
+                    })
+                else:
+                    new_valid.append(case)
+            result.valid_cases = new_valid
+            log.info(
+                f"upload preview: project_id={project_id}, "
+                f"file_md5={result.file_md5}, "
+                f"group_path_invalid_count={len(row_to_err)}, "
+                f"invalid_paths={[e['path'] for e in group_path_errors]}"
+            )
 
     await _cache_service.save_preview(
         file_md5=result.file_md5,

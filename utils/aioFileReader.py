@@ -312,6 +312,9 @@ class AsyncFilesReader:
                     errors.append(type_err)
 
                 if is_valid:
+                    # _row: 仅做预览阶段"行号级"错误提示用, 提交入库前由 controller 剥掉,
+                    # 避免作为字段传到 TestCase 模型. 前端不需要这个字段.
+                    mapped_case["_row"] = current_row
                     result.valid_cases.append(mapped_case)
                 else:
                     result.errors.append({

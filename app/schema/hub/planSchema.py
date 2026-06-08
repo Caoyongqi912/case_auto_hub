@@ -161,7 +161,7 @@ class CopyCaseToCasePlan(BaseModel):
     case_id_list: List[int] = Field(..., description="用例ID列表")
     plan_id: int = Field(..., description="计划ID")
     plan_case_module_id: int = Field(..., description="计划分组ID")
-    is_review: int = Field(None, description="是否审核 0:未审核 1:已审核")
+    is_review: Optional[str] = Field(None, description="是否审核")
 
 
 class CopyOneCaseToCasePlan(BaseModel):

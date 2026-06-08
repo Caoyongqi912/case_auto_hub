@@ -24,7 +24,7 @@ from app.model.caseHub.test_case_step import TestCaseStep, TestCaseStepResult
 from app.model.caseHub.requirement import Requirement
 from app.model.caseHub.plan_module import PlanModule
 from utils import log
-from utils.caseEnumResolver import resolve_plan_group_path, _split_group_path
+from utils.caseEnumResolver import find_group_path, resolve_plan_group_path, _split_group_path
 
 # _parse_steps 提升到模块顶部, 避免函数体内反复 import
 from app.mapper.test_case.testcaseMapper import _parse_steps
@@ -107,7 +107,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             cls,
             case_data: Dict[str, Any],
             project_id: int,
-            user: User
+            user: User,
+            module_id: Optional[int] = None,
     ) -> TestCase:
         """
         准备单个计划用例数据
@@ -118,19 +119,30 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         :param case_data: 用例原始数据（会被原地修改，调用方应传入 copy）
         :param project_id: 项目ID
         :param user: 操作用户
+        :param module_id: 用例库模块ID（可选）
+            - 来自 group_path 在用例库树上解析后的 Module.id
+            - 缺失或解析失败时为 None, 表示落入用例库"未分组数据"虚拟分组
         :return: 用例模型实例（尚未持久化，无 id）
         """
         case_data.pop("action", None)
         case_data.pop("expected_result", None)
-        # group_path 是解析阶段预留给 UploadPlanModuleResolver 的字段,
-        # 已经在 insert_upload_case 里解析成 plan_module_id, 这里必须弹出,
-        # 否则 TestCase(**case_data) 会抛 `group_path is an invalid keyword argument`.
+        # group_path 是解析阶段预留给 UploadPlanModuleResolver / UploadModuleResolver
+        # 的字段, 已经在 insert_upload_case 里分别解析成 plan_module_id 和 module_id,
+        # 这里必须弹出, 否则 TestCase(**case_data) 会抛 `group_path is an invalid keyword argument`.
         case_data.pop("group_path", None)
+        # _row 是预览阶段 aioFileReader 注入的"Excel 行号"元数据, 仅供错误提示,
+        # 提交入库时已无意义, 必须弹出, 否则 TestCase(**case_data) 会抛
+        # `_row is an invalid keyword argument`.
+        case_data.pop("_row", None)
         case_data.update({
             "project_id": project_id,
             "creator": user.id,
             "creatorName": user.username,
             "is_common": True,
+            # 用例库 module_id: 与 plan_module_id 完全独立的两棵树.
+            # plan_module_id 走 plan_module 表, module_id 走 module 表 (module_type=CASE=10).
+            # 即便该用例后续从 plan 移除, 用例库侧的目录定位依然成立.
+            "module_id": module_id,
         })
         return TestCase(**case_data)
 
@@ -289,14 +301,20 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         批量导入计划用例关联记录
 
         处理流程：
-        1. 预解析每条 case 的 group_path -> plan_module_id (在事务外)
+        0. skip_duplicate 过滤 (过滤后再做路径解析, 避免 index 漂移)
+        1. 预查询 plan, 获取 project_id (提到事务外, 供用例库路径校验使用)
+        2. 预解析 group_path -> plan_module_id (计划树, plan_module 表, find-or-create)
            - dedupe path: N 条 case 经常只对应 K 个 unique path
            - 每个 unique path 只 resolve 一次, 大幅减少 find_or_create_path 调用
            - 解析失败的回退到入参 plan_module_id
-        2. 查询计划信息, 获取 project_id
-        3. 按 (plan_module_id) 分组, 各自查询最大排序号, 维护 per-module 的 order 游标
-        4. 批量构造 TestCase 对象并 flush 获取真实 ID
-        5. 将临时索引替换为真实 ID 后, 批量插入步骤和关联记录
+           - 业务语义: 计划分组是"从用例库复制"出来, 源头必须在用例库存在 (步骤 3 校验)
+        3. 预校验 group_path -> module_id (用例库树, module 表 module_type=CASE)
+           - **只查不建**: 任一路径缺失即整批 raise, 由 controller 转 400
+           - 通过校验的 id 绑定到 TestCase.module_id, 让 is_common=True 的用例能在
+             用例库正确定位; 即便该用例后续从 plan 移除, 用例库侧的定位依然成立
+        4. 按 (plan_module_id) 分组, 各自查询最大排序号, 维护 per-module 的 order 游标
+        5. 批量构造 TestCase 对象并 flush 获取真实 ID
+        6. 将临时索引替换为真实 ID 后, 批量插入步骤和关联记录
 
         性能优化点：
         - 使用 add_all + flush 批量写入, 避免逐条 INSERT
@@ -372,6 +390,27 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 f"剩余 {len(cases)} 条待导入"
             )
 
+        # 0) 预查询 plan, 同时拿到 project_id (供后续用例库路径解析使用).
+        #    提到事务外是 2 个目的:
+        #    a) 用例库路径预解析需要 project_id 调 resolve_group_path
+        #    b) 主事务里直接复用同一个 plan, 省一次 round-trip
+        #    只读操作, 即便和后续写不在同一事务也无副作用.
+        #
+        # 注意: project_id 必须在 session 内读取. Mapper.transaction() 退出后会
+        # 关闭 session, 实例变 detached, 之后再访问 plan.project_id 会触发
+        # DetachedInstanceError (SQLAlchemy 默认在 commit 时 expire 所有属性).
+        try:
+            async with cls.transaction() as session:
+                plan = await PlanMapper.get_by_id(ident=plan_id, session=session)
+                if plan is None:
+                    raise CommonError(f"plan_id={plan_id} 不存在")
+                project_id = plan.project_id
+        except CommonError:
+            raise
+        except Exception as e:
+            log.error(f"insert_upload_case: 预查询 plan 失败 plan_id={plan_id}, error={e}")
+            raise
+
         # 1) 预解析 group_path -> plan_module_id (在过滤后的 cases 上, index 0..N-1)
         #    - dedupe paths: N 条 case 经常只对应 K 个 unique path
         #    - 每个 unique path 只 resolve 一次, 大幅减少 find_or_create_path 调用
@@ -394,6 +433,48 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             if resolved is not None:
                 case_module_map[case_index] = resolved
 
+                # 1.5) 预校验 group_path -> module_id (用例库树, module_type=ModuleEnum.CASE=10).
+        #      业务约定: Excel 中的"所属分组"必须已存在于用例库 module 树.
+        #      本步**只查不建**: 用 find_group_path 拿叶子 id, 缺失即整批拒绝.
+        #      计划侧的 plan_module 树不受影响: 它在 1) 步里依旧可以 find-or-create,
+        #      视为"从用例库复制"出来, 但源头 (用例库) 必须先存在.
+        #      - 同一份 titles 同时复用 cache_key, 减少一次 _split_group_path
+        #      - 任一 unique path 缺失, 把对应的原始 raw 字符串收集到 invalid_module_paths
+        #        整批 raise, 由 controller 转 400
+        from app.exception import CommonError
+        case_module_id_map: Dict[int, int] = {}
+        unique_module_path_resolved: Dict[str, Optional[int]] = {}
+        invalid_module_paths: List[str] = []
+        for case_index, case_data in enumerate(cases):
+            raw_path = case_data.get("group_path")
+            if not raw_path:
+                continue
+            titles = _split_group_path(raw_path)
+            cache_key = "\x1f".join(titles)
+            if cache_key not in unique_module_path_resolved:
+                unique_module_path_resolved[cache_key] = await find_group_path(
+                    project_id=project_id,
+                    raw_group_path=raw_path,
+                )
+            resolved = unique_module_path_resolved[cache_key]
+            if resolved is None:
+                invalid_module_paths.append(raw_path)
+            else:
+                case_module_id_map[case_index] = resolved
+
+        if invalid_module_paths:
+            # dedupe + sort 让错误输出稳定, 方便用户批量改 Excel
+            unique_invalid = sorted(set(invalid_module_paths))
+            preview = unique_invalid[:5]
+            more = "" if len(unique_invalid) <= 5 else f" (还有 {len(unique_invalid) - 5} 个...)"
+            raise CommonError(
+                message=(
+                    f"用例库分组校验失败, 以下目录不存在: {preview}{more}. "
+                    f"请先在用例库中创建对应目录后再导入."
+                ),
+                data={"invalid_paths": unique_invalid},
+            )
+
         try:
             # 预收集所有目标 plan_module_id, 用于:
             # 1) 一次性 GROUP BY 查所有 module 的 max(order), 替代按 module 懒查询 (省 K-1 次 round-trip)
@@ -403,7 +484,6 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 target_module_ids.add(plan_module_id)
 
             async with cls.transaction() as session:
-                plan = await PlanMapper.get_by_id(ident=plan_id, session=session)
 
                 # 1) root 兜底查询提到循环外
                 #    仅在 plan_module_id 未指定时才有可能走 root 兜底
@@ -452,10 +532,18 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
 
                 # 第一阶段: 在内存中构建所有对象 (无数据库交互)
                 for case_index, case_data in enumerate(cases):
+                    # module_id 来自 1.5) 阶段预解析 (用例库 tree), 与
+                    # 后续 effective_module_id (plan tree) 完全独立.
+                    # group_path 缺失/解析失败时为 None, 落到用例库"未分组数据".
+                    case_library_module_id = case_module_id_map.get(case_index)
                     case_obj = cls._prepare_plan_case_data(
                         case_data=case_data.copy(),
-                        project_id=plan.project_id,
-                        user=user
+                        # 用上面 session 内缓存的 project_id, 不要走 plan.project_id:
+                        # plan 来自上一个已关闭的 session, 此时已 detached,
+                        # 再访问属性会触发 DetachedInstanceError.
+                        project_id=project_id,
+                        user=user,
+                        module_id=case_library_module_id,
                     )
                     case_objects.append(case_obj)
 
@@ -995,10 +1083,11 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             update_result = await session.execute(update_stmt)
 
             # ---- 5. 同步子步骤结果状态 ----
-            if first_status is not None:
-                await cls._sync_step_result_status(
-                    session, plan_id, case_id_list, first_status, "first_status"
-                )
+            # first_status 将不处理子步骤状态 。
+            # if first_status is not None:
+            #     await cls._sync_step_result_status(
+            #         session, plan_id, case_id_list, first_status, "first_status"
+            #     )
             if second_status is not None:
                 await cls._sync_step_result_status(
                     session, plan_id, case_id_list, second_status, "second_status"
@@ -1489,7 +1578,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         plan_id: int,
         plan_case_module_id: int,
         user: User,
-        is_review: bool = False
+        is_review: Optional[str] = None
     ) -> int:
         """
         批量复制计划用例到新的分组
@@ -1502,7 +1591,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             plan_id: 计划ID
             plan_case_module_id: 目标计划分组ID
             user: 操作用户
-            is_review: 是否审核
+            is_review: 是否审核（``"0"`` 未审核 / ``"1"`` 已审核）
 
         Returns:
             int: 复制的用例数量
@@ -2055,9 +2144,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             用例字典列表，每项包含用例信息 + 关联属性 + ``case_sub_steps``。
         """
         log.debug(
-            "get_plan_cases start: plan_id=%s, plan_module_id=%s, "
-            "case_level=%s, is_review=%s",
-            plan_id, plan_module_id, case_level, is_review,
+            f"get_plan_cases start: plan_id={plan_id}, plan_module_id={plan_module_id}, "
+            f"case_level={case_level}, is_review={is_review}",
         )
 
         async with cls.transaction() as session:

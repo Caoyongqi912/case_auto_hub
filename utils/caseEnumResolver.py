@@ -32,7 +32,7 @@ async def load_case_enum_config() -> CaseEnumConfig:
     except Exception as err:
         # 配置加载失败不阻塞整条上传路径; 解析器拿到空 map 会按行报错
         from utils import log
-        log.error("load_case_enum_config error: %s", err)
+        log.error(f"load_case_enum_config error: {err}")
         return CaseEnumConfig()
 
     level_map = {c.label: c.value for c in level_configs if c.label}
@@ -87,11 +87,14 @@ def _split_group_path(raw):
 
 async def resolve_group_path(project_id, raw_group_path, user, module_type=CASE_MODULE_TYPE):
     """
-    把 Excel "所属分组" 列解析为 Module.id.
+    把 Excel "所属分组" 列解析为 Module.id (find-or-create).
 
     - 空值返回 None (调用方走兜底 module_id)
     - 拆解路径, 调 ModuleMapper.find_or_create_path 逐级 find-or-create, 返回叶子 id
     - 任意异常被吞掉返回 None, 不阻塞整批导入 (路径脏数据不影响其他行)
+
+    业务约定: 仅用于"系统已建好目录"的场景; 对"必须先存在才允许导入"的硬门禁,
+    请改用 find_group_path, 后者只查不建, 缺失即返回 None.
 
     :param project_id: 项目 ID
     :param raw_group_path: 原始字符串
@@ -117,6 +120,40 @@ async def resolve_group_path(project_id, raw_group_path, user, module_type=CASE_
         from utils import log
         log.opt(exception=True).error(
             f"resolve_group_path failed: project_id={project_id}, "
+            f"raw={raw_group_path!r}, titles={titles}"
+        )
+        return None
+
+
+async def find_group_path(project_id, raw_group_path, module_type=CASE_MODULE_TYPE):
+    """
+    把 Excel "所属分组" 列校验为已存在的 Module.id (只查不建).
+
+    与 resolve_group_path 的关键区别:
+    - 本函数**不会**在 module 表上新建任何节点
+    - 路径任一级缺失即返回 None, 由调用方决定是整批拒绝还是跳过坏行
+    - 用于"系统必须先有这个目录才允许导入"的硬门禁校验
+
+    :param project_id: 项目 ID
+    :param raw_group_path: 原始字符串
+    :param module_type: 模块类型, 默认用例 (ModuleEnum.CASE = 10)
+    :return: 已存在的叶子 Module.id; 路径为空/缺失/异常均返回 None
+    """
+    titles = _split_group_path(raw_group_path)
+    if not titles:
+        return None
+
+    try:
+        from app.mapper.project.moduleMapper import ModuleMapper
+        return await ModuleMapper.find_path(
+            project_id=project_id,
+            title_path=titles,
+            module_type=module_type,
+        )
+    except Exception:
+        from utils import log
+        log.opt(exception=True).error(
+            f"find_group_path failed: project_id={project_id}, "
             f"raw={raw_group_path!r}, titles={titles}"
         )
         return None

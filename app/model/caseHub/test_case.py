@@ -30,10 +30,13 @@ class TestCase(BaseModel):
     from app.model.caseHub.test_case_step import TestCaseStep
     case_sub_steps = relationship(TestCaseStep, back_populates="case", lazy="select", order_by=TestCaseStep.order)
 
-    async def set_default(self, user: User):
-        self.case_name = "测试用例"
-        self.creator = user.id
-        self.creatorName = user.username
+    @classmethod
+    def new_default(cls, user: User) -> "TestCase":
+        obj = cls()
+        obj.case_name = "测试用例"
+        obj.creator = user.id
+        obj.creatorName = user.username
+        return obj
 
     def __repr__(self):
         return f"<TestCase(id={self.id},case_name={self.case_name}) >"

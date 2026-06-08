@@ -118,7 +118,7 @@ class CaseConfigMapper(Mapper[CaseConfig]):
                 result = await session.execute(stmt)
                 return list(result.scalars().all())
         except Exception as err:
-            log.error("query_by_key error: config_key=%s, error=%s", config_key, err)
+            log.error(f"query_by_key error: config_key={config_key}, error={err}")
             raise
 
     @classmethod
@@ -151,7 +151,7 @@ class CaseConfigMapper(Mapper[CaseConfig]):
         except (CommonError, ParamsError):
             raise
         except Exception as err:
-            log.error("add_config error: kwargs=%s, error=%s", kwargs, err)
+            log.error(f"add_config error: kwargs={kwargs}, error={err}")
             raise
 
     @classmethod
@@ -199,7 +199,7 @@ class CaseConfigMapper(Mapper[CaseConfig]):
         except (CommonError, ParamsError):
             raise
         except Exception as err:
-            log.error("update_config error: kwargs=%s, error=%s", kwargs, err)
+            log.error(f"update_config error: kwargs={kwargs}, error={err}")
             raise
 
     @classmethod

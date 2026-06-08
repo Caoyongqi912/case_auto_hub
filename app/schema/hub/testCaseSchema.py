@@ -5,7 +5,7 @@
 # @File : testCaseSchema
 # @Software: PyCharm
 # @Desc: 测试用例相关的Schema定义
-from typing import List, Optional,Dict,Any
+from typing import List, Literal, Optional,Dict,Any
 
 from pydantic import BaseModel, Field
 
@@ -123,7 +123,7 @@ class PageTestCaseSchema(PageSchema, TestCaseField):
     case_level: Optional[str] = Field(None, description="用例级别")
     case_type: Optional[str] = Field(None, description="用例类型")
     case_status: Optional[int] = Field(None, description="用例状态")
-    is_review: Optional[int] = Field(None, description="是否审核 0:未审核 1:已审核")
+    is_review: Optional[str] = Field(None, description="是否审核 0:未审核 1:已审核")
     # 多模块查询：与 module_id 互斥；同时传入时 module_ids 优先
     # 用于支持前端多选目录时按多个模块（含各自子节点）联合过滤
     module_ids: Optional[List[int]] = Field(None, description="模块ID列表（多选）")
@@ -227,6 +227,15 @@ class UploadCommitSchema(BaseModel):
     module_id: Optional[int] = Field(None, description="模块ID")
     requirement_id: Optional[int] = Field(None, description="需求ID")
     is_common: bool = Field(True, description="是否公共")
+    on_duplicate: Literal["skip", "create"] = Field(
+        "create",
+        description=(
+            "相同用例处理. 当 Excel 中的用例与导入位置已有的用例"
+            "(project_id, module_id, case_name) 三元组完全一致时:"
+            "- skip:    跳过该用例, 不写入 (计入 skipped_count)"
+            "- create:  仍然写入, 允许同名同分组的多条用例并存 (默认)"
+        ),
+    )
 
 
 class UploadCancelSchema(BaseModel):

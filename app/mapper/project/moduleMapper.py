@@ -1,4 +1,4 @@
-from typing import List
+from typing import List,Optional
 
 from sqlalchemy import delete, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -116,6 +116,52 @@ class ModuleMapper(Mapper[Module]):
 
 
 
+
+    @classmethod
+    async def find_path(
+        cls,
+        project_id: int,
+        title_path: List[str],
+        module_type: int,
+    ) -> Optional[int]:
+        """
+        按 title_path 列表逐级查找, 返回叶子 Module.id; 任一级不存在返回 None.
+
+        与 find_or_create_path 的区别:
+        - 本方法**只查不建**, 缺失即返回 None (无副作用)
+        - 用于"系统必须先有这个目录才允许导入"这类硬门禁校验:
+          校验失败由调用方决定是整批拒绝还是跳过坏行
+        - 走读事务 (expire 无关, 只读不写)
+
+        :param project_id: 项目 ID
+        :param title_path: 标题路径列表, 例 ["二手","交易"]; 空列表返回 None
+        :param module_type: 模块类型 (ModuleEnum.CASE / API ...)
+        :return: 叶子 Module.id; 任一级缺失返回 None
+        """
+        if not title_path:
+            return None
+        cleaned = [(t or "").strip() for t in title_path]
+        if any(not t for t in cleaned):
+            return None
+
+        async with async_session() as session:
+            parent_id: Optional[int] = None
+            for title in cleaned:
+                if parent_id is None:
+                    cond = Module.parent_id.is_(None)
+                else:
+                    cond = Module.parent_id == parent_id
+                stmt = select(Module).where(
+                    Module.project_id == project_id,
+                    Module.module_type == module_type,
+                    cond,
+                    Module.title == title,
+                )
+                node = (await session.execute(stmt)).scalars().first()
+                if node is None:
+                    return None
+                parent_id = node.id
+            return parent_id
 
     @classmethod
     async def find_or_create_path(

@@ -5,7 +5,7 @@
 # @File : testcaseMapper
 # @Software: PyCharm
 # @Desc: 测试用例数据访问层
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional,Tuple
 
 from sqlalchemy import select, insert, update, and_, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -204,6 +204,61 @@ class TestCaseMapper(Mapper[TestCase]):
 
 
     @classmethod
+    async def validate_group_paths(
+            cls,
+            cases: List[Dict[str, Any]],
+            project_id: int,
+    ) -> List[Dict[str, Any]]:
+        """
+        校验 cases 中的 group_path 是否已存在于用例库 module 树.
+
+        用于**预览阶段**的硬门禁: 用户在 commit 之前就能看到 Excel 里的目录
+        是否都已在用例库建好. 配合 commit 阶段 insert_upload_case 里的二次校验,
+        形成"早提示 + 终拦截"的双层防护 (防预览和 commit 之间目录被人删掉).
+
+        与 insert_upload_case 内的校验逻辑保持一致:
+        - 用 find_group_path 只查不建
+        - 按 cache_key dedupe, K 个 unique path 只 K 次查询
+        - 空 group_path 视为"未分类", 跳过 (跟入库行为对齐)
+
+        :param cases: 解析后的 valid_cases, 每项应含 "group_path" (raw 字符串)
+                      和 "_row" (Excel 行号, 由 aioFileReader 注入)
+        :param project_id: 目标项目 ID
+        :return: invalid 列表, 每项形如 {"path": str, "rows": List[int]}
+                 - path: 原始 raw 字符串 (与用户 Excel 输入一致)
+                 - rows: 命中该 path 的所有 case 在 cases 中的 Excel 行号 (排序后)
+                 若全部有效, 返回 []
+        """
+        if not cases:
+            return []
+        from utils.caseEnumResolver import find_group_path, _split_group_path
+
+        # path -> [row, ...]
+        invalid: Dict[str, List[int]] = {}
+        cache: Dict[str, Optional[int]] = {}
+        for case in cases:
+            raw_path = case.get("group_path")
+            row = case.get("_row")
+            if not raw_path or row is None:
+                continue
+            titles = _split_group_path(raw_path)
+            # 0x1f 用作 dedupe key, 与 insert_upload_case 保持一致
+            cache_key = "\x1f".join(titles)
+            if cache_key not in cache:
+                cache[cache_key] = await find_group_path(
+                    project_id=project_id,
+                    raw_group_path=raw_path,
+                )
+            if cache[cache_key] is None:
+                invalid.setdefault(raw_path, []).append(int(row))
+
+        # 排序让输出稳定, 方便前端展示和 grep
+        return sorted(
+            ({"path": p, "rows": sorted(set(rs))} for p, rs in invalid.items()),
+            key=lambda x: x["path"],
+        )
+
+    @classmethod
     def _prepare_case_data(
             cls,
             case_data: Dict[str, Any],
@@ -227,6 +282,10 @@ class TestCaseMapper(Mapper[TestCase]):
         # group_path 是解析阶段预留给 UploadModuleResolver 的字段,
         # 已经在 insert_upload_case 里解析成 module_id, 这里必须弹出
         case_data.pop("group_path", None)
+        # _row 是预览阶段 aioFileReader 注入的"Excel 行号"元数据, 仅供错误提示,
+        # 提交入库时已无意义, 必须弹出, 否则 TestCase(**case_data) 会抛
+        # `_row is an invalid keyword argument`.
+        case_data.pop("_row", None)
         case_data.update({
             "project_id": project_id,
             "module_id": module_id,
@@ -302,7 +361,8 @@ class TestCaseMapper(Mapper[TestCase]):
             module_id: Optional[int] = None,
             requirement_id: Optional[int] = None,
             is_common: bool = True,
-    ) -> int:
+            on_duplicate: str = "create",
+    ) -> Tuple[int, int]:
         """
         从Excel批量导入用例
 
@@ -318,18 +378,29 @@ class TestCaseMapper(Mapper[TestCase]):
         :param requirement_id: 需求ID（可选）
         :param user: 操作用户
         :param is_common: 是否公共用例
-        :return: 导入的用例数量
+        :param on_duplicate: 相同用例处理.
+            - "skip":   Excel 中 (module_id, case_name) 与已有 case 完全一致的行,
+                        整行跳过 (计入 skipped_count)
+            - "create": 不检查, 全部写入 (默认)
+        :return: Tuple[int, int]: (imported_count, skipped_count).
+                 - imported_count: 实际写入的用例数
+                 - skipped_count: 因 on_duplicate="skip" 跳过的用例数
         """
         if not cases:
             return 0
 
-        # 预解析 group_path -> module_id (在事务外, 避免嵌套事务破坏原子性)
+        # 预校验 group_path -> module_id (在事务外, 避免嵌套事务破坏原子性)
+        # 业务约定: Excel 中的"所属分组"必须已存在于用例库 module 树
+        # (module_type=ModuleEnum.CASE=10), 不再自动建目录. 任一行缺失即整批拒绝.
         # - 先 dedupe paths: N 条 case 经常只有 K 个 unique path (K << N)
-        # - 每个 unique path 只 resolve 一次, 大幅减少 find_or_create_path 调用
-        # - 失败的回退到入参 module_id
-        from utils.caseEnumResolver import resolve_group_path, _split_group_path
+        # - 每个 unique path 只 find 一次, 大幅减少数据库调用
+        # - 任一 unique path 缺失, 把对应的原始 raw 字符串收集到 invalid_paths
+        #   整批 raise, 由 controller 转 400
+        from utils.caseEnumResolver import find_group_path, _split_group_path
+        from app.exception import CommonError
         case_module_map: Dict[int, int] = {}
         unique_path_resolved: Dict[str, Optional[int]] = {}
+        invalid_paths: List[str] = []
         for case_index, case_data in enumerate(cases):
             raw_path = case_data.get("group_path")
             if not raw_path:
@@ -340,14 +411,76 @@ class TestCaseMapper(Mapper[TestCase]):
             # 0x1f = Unit Separator, ASCII 控制符, 业务字符串中不可能出现, 用作连接符安全无歧义
             cache_key = "\x1f".join(titles)
             if cache_key not in unique_path_resolved:
-                unique_path_resolved[cache_key] = await resolve_group_path(
+                unique_path_resolved[cache_key] = await find_group_path(
                     project_id=project_id,
                     raw_group_path=raw_path,
-                    user=user,
                 )
             resolved = unique_path_resolved[cache_key]
-            if resolved is not None:
+            if resolved is None:
+                invalid_paths.append(raw_path)
+            else:
                 case_module_map[case_index] = resolved
+
+        if invalid_paths:
+            # dedupe + sort 让错误输出稳定, 方便用户批量改 Excel
+            unique_invalid = sorted(set(invalid_paths))
+            preview = unique_invalid[:5]
+            more = "" if len(unique_invalid) <= 5 else f" (还有 {len(unique_invalid) - 5} 个...)"
+            raise CommonError(
+                message=(
+                    f"用例库分组校验失败, 以下目录不存在: {preview}{more}. "
+                    f"请先在用例库中创建对应目录后再导入."
+                ),
+                data={"invalid_paths": unique_invalid},
+            )
+
+        # 0.5) 相同用例过滤 (on_duplicate="skip").
+        #      业务约定: 已有 case (TestCase) 中, 当 (module_id, case_name)
+        #      与当前导入行完全一致时, 该行整条跳过, 不入库.
+        #      注意: 这里的"已有"指同一 project_id + is_common=True 范围 (即用例库).
+        #      与 plan upload 的 skip_duplicate (按 plan_id 范围 + case_name) 是两套独立语义.
+        skipped_dup_indices: set = set()
+        if on_duplicate == "skip" and cases:
+            # 先按 (module_id, case_name) 聚合要查的 key, dedupe
+            dup_lookup_keys: set = set()
+            for case_data in cases:
+                mid = case_module_map.get(cases.index(case_data), module_id)
+                name = (case_data.get("case_name") or "").strip()
+                if mid is not None and name:
+                    dup_lookup_keys.add((mid, name))
+
+            existing_dup_keys: set = set()
+            if dup_lookup_keys:
+                # 按 (module_id, case_name) 拆批 IN 查询, 避免超长 SQL;
+                # 通常 K << 拆批阈值, 一次查即可
+                from sqlalchemy import tuple_
+                dup_stmt = select(TestCase.module_id, TestCase.case_name).where(
+                    TestCase.project_id == project_id,
+                    TestCase.is_common.is_(True),
+                    tuple_(TestCase.module_id, TestCase.case_name).in_(
+                        list(dup_lookup_keys)
+                    ),
+                )
+                async with cls.transaction() as session:
+                    rows = (await session.execute(dup_stmt)).all()
+                for r in rows:
+                    if r[0] is not None:
+                        existing_dup_keys.add((int(r[0]), r[1]))
+
+            for idx, case_data in enumerate(cases):
+                mid = case_module_map.get(idx, module_id)
+                name = (case_data.get("case_name") or "").strip()
+                if mid is not None and name and (mid, name) in existing_dup_keys:
+                    skipped_dup_indices.add(idx)
+
+        if skipped_dup_indices:
+            cases = [c for i, c in enumerate(cases) if i not in skipped_dup_indices]
+            log.info(
+                f"insert_upload_case: on_duplicate=skip 跳过 {len(skipped_dup_indices)} 条"
+            )
+
+        if not cases:
+            return 0, len(skipped_dup_indices)
 
         log.info(f"开始导入用例，共 {len(cases)} 条")
         async with cls.transaction() as session:
@@ -405,7 +538,7 @@ class TestCaseMapper(Mapper[TestCase]):
                 req.case_number += len(case_objects)
 
             log.info(f"成功导入用例 {len(case_objects)} 条")
-            return len(case_objects)
+            return len(case_objects), len(skipped_dup_indices)
 
     @staticmethod
     def _map_step_id(step_data: Dict[str, Any], case_id_map: Dict[int, int]) -> Dict[str, Any]:
@@ -910,7 +1043,8 @@ class TestCaseMapper(Mapper[TestCase]):
                 req.case_number += 1
 
                 new_case = TestCase()
-                await new_case.set_default(user)
+                new_case = TestCase.new_default(user)
+
                 new_case.module_id = req.module_id
                 new_case.project_id = req.project_id
 
