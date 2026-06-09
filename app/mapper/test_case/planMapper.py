@@ -13,6 +13,7 @@ from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from app.mapper import Mapper
 from app.model.caseHub.case_plan import CasePlan
+from app.model.caseHub.case_config import CaseConfig
 from app.model.caseHub.association import PlanRequirementAssociation, PlanCaseAssociation
 from app.model.caseHub.requirement import Requirement
 from utils import log
@@ -43,23 +44,63 @@ class PlanMapper(Mapper[CasePlan]):
             raise
     
     @classmethod
-    async def add_plan(cls,user:User,**kwargs) -> CasePlan:
+    async def _get_default_config_value(
+        cls, session, config_key: str
+    ) -> Optional[str]:
         """
-        添加测试计划
+        查询配置中心指定分组的 sort=0 默认值
+        :param session: 数据库会话
+        :param config_key: 配置键（如 PLAN_STATUS / PLAN_PHASE）
+        :return: 默认 value，未配置则返回 None
+        """
+        stmt = (
+            select(CaseConfig.value)
+            .where(
+                CaseConfig.config_key == config_key,
+                CaseConfig.enabled.is_(True),
+            )
+            .order_by(CaseConfig.sort.asc())
+            .limit(1)
+        )
+        result = await session.execute(stmt)
+        return result.scalar()
+
+    @classmethod
+    async def add_plan(cls, user: User, **kwargs) -> CasePlan:
+        """
+        添加测试计划 、默认添加 root module 模块、
+        默认选择默认计划状态和执行阶段 order = 0
         :param user: 操作用户
         :param kwargs: 计划信息
         :return: 添加的计划
         """
         try:
             async with cls.transaction() as session:
+                # 未传 plan_status / plan_phase 时，查询 CaseConfig 补默认值
+                if not kwargs.get("plan_status"):
+                    default_status = await cls._get_default_config_value(
+                        session, "PLAN_STATUS"
+                    )
+                    if default_status:
+                        kwargs["plan_status"] = default_status
+
+                if not kwargs.get("plan_phase"):
+                    default_phase = await cls._get_default_config_value(
+                        session, "PLAN_PHASE"
+                    )
+                    if default_phase:
+                        kwargs["plan_phase"] = default_phase
+
                 plan = CasePlan(**kwargs)
                 plan.creator = user.id
                 plan.creatorName = user.username
                 plan = await cls.add_flush_expunge(model=plan, session=session)
                 # 默认添加 root module
                 from app.mapper.test_case.planModuleMapper import PlanModuleMapper
-                
-                root_module = await PlanModuleMapper.init_module(session=session,plan_id=plan.id,user=user)
+
+                root_module = await PlanModuleMapper.init_module(
+                    session=session, plan_id=plan.id, user=user
+                )
                 log.info(f"init_module: {root_module}")
                 return plan
         except Exception as e:
@@ -303,13 +344,38 @@ class PlanMapper(Mapper[CasePlan]):
             current: 当前页码
             pageSize: 每页大小
             **kwargs: 查询条件和排序
+                - project_id: 项目ID（精确匹配）
+                - plan_name: 计划名称（模糊匹配）
+                - plan_status: 计划状态（配置中心 PLAN_STATUS 枚举 string value）
+                - plan_phase: 执行阶段（配置中心 PLAN_PHASE 枚举 string value）
+                - charge_id: 负责人ID（精确匹配）
+                - plan_start_time / plan_end_time: 时间范围筛选（YYYY-MM-DD，有交集逻辑）
+                - sort: 排序参数
 
         Returns:
-            dict: 分页结果，items 中包含 case_total、case_executed、completion_rate
+            dict: 分页结果，items 中包含 total_cases、executed_cases、completion_rate、charge_avatar
         """
+        # 时间范围参数（单独处理，使用有交集逻辑）
+        plan_start_time = kwargs.pop("plan_start_time", None)
+        plan_end_time = kwargs.pop("plan_end_time", None)
+
         async with async_session() as session:
             sort = kwargs.pop("sort", None)
             conditions = await cls.search_conditions(**kwargs)
+
+            # 时间范围筛选：查询与传入范围有交集的计划
+            # 逻辑：plan_start_time <= end AND plan_end_time >= start
+            if plan_start_time and plan_end_time:
+                conditions.append(
+                    and_(
+                        CasePlan.plan_start_time <= plan_end_time,
+                        CasePlan.plan_end_time >= plan_start_time,
+                    )
+                )
+            elif plan_start_time:
+                conditions.append(CasePlan.plan_start_time >= plan_start_time)
+            elif plan_end_time:
+                conditions.append(CasePlan.plan_end_time <= plan_end_time)
 
             # 子查询：每个计划的用例统计
             stats_subq = (
@@ -324,7 +390,7 @@ class PlanMapper(Mapper[CasePlan]):
                 .subquery()
             )
 
-            # 主查询：计划 + 统计
+            # 主查询：计划 + 统计 + 负责人头像
             base_query = (
                 select(
                     CasePlan,
@@ -334,9 +400,11 @@ class PlanMapper(Mapper[CasePlan]):
                         (stats_subq.c.case_total > 0,
                          func.round(stats_subq.c.case_executed * 100.0 / stats_subq.c.case_total, 2)),
                         else_=0
-                    ).label("completion_rate")
+                    ).label("completion_rate"),
+                    User.avatar.label("charge_avatar")
                 )
                 .outerjoin(stats_subq, stats_subq.c.plan_id == CasePlan.id)
+                .outerjoin(User, User.id == CasePlan.charge_id)
                 .filter(and_(*conditions))
             )
 
@@ -354,12 +422,13 @@ class PlanMapper(Mapper[CasePlan]):
 
             # 组装数据
             items = []
-            for plan, case_total, case_executed, completion_rate in rows:
+            for plan, case_total, case_executed, completion_rate, charge_avatar in rows:
                 plan_dict = plan.map if hasattr(plan, 'map') else plan.to_dict()
                 plan_dict.update({
-                    "case_total": int(case_total),
-                    "case_executed": int(case_executed),
-                    "completion_rate": float(completion_rate)
+                    "total_cases": int(case_total),
+                    "executed_cases": int(case_executed),
+                    "completion_rate": float(completion_rate),
+                    "charge_avatar": charge_avatar,
                 })
                 items.append(plan_dict)
 

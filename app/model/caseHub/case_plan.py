@@ -9,11 +9,11 @@ class CasePlan(BaseModel):
     project_id = Column(INTEGER,
                         ForeignKey('project.id', ondelete='CASCADE'),
                         nullable=False, index=True, comment="项目所属")
-    plan_name = Column(String(50), nullable=False, comment="计划名称")
+    plan_name = Column(String(255), nullable=False, comment="计划名称")
     plan_description = Column(String(200), nullable=True, comment="计划描述")
 
-    plan_status = Column(INTEGER, default=0, comment="计划状态 0:进行中 1:已完成")
-    plan_phase = Column(String(20), nullable=True, comment="执行阶段 准备/一轮/二轮/回归/验收")
+    plan_status = Column(String(20), default="0", comment="计划状态")
+    plan_phase = Column(String(20), nullable=True, comment="执行阶段")
     plan_mark = Column(String(200), nullable=True, comment="计划备注")
 
     charge_id = Column(INTEGER, nullable=False, comment="负责人ID")

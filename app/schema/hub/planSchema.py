@@ -20,7 +20,8 @@ class PlanField(BaseModel):
     project_id: Optional[int] = Field(None, description="项目ID")
     plan_name: Optional[str] = Field(None, description="计划名称")
     plan_description: Optional[str] = Field(None, description="计划描述")
-    plan_status: Optional[int] = Field(None, description="计划状态 0:进行中 1:已完成")
+    plan_status: Optional[str] = Field(None, description="计划状态（配置中心 PLAN_STATUS 枚举 value）")
+    plan_phase: Optional[str] = Field(None, description="执行阶段（配置中心 PLAN_PHASE 枚举 value）")
     plan_mark: Optional[str] = Field(None, description="备注")
     charge_id: Optional[int] = Field(None, description="负责人ID")
     charge_name: Optional[str] = Field(None, description="负责人姓名")
@@ -33,10 +34,11 @@ class AddPlanSchema(BaseModel):
     project_id: int = Field(..., description="项目ID")
     plan_name: str = Field(..., description="计划名称")
     plan_description: Optional[str] = Field(None, description="计划描述")
-    plan_status: Optional[int] = Field(0, description="计划状态 0:进行中 1:已完成")
+    plan_status: Optional[str] = Field("active", description="计划状态（配置中心 PLAN_STATUS 枚举 value，默认 active）")
+    plan_phase: Optional[str] = Field(None, description="执行阶段（配置中心 PLAN_PHASE 枚举 value）")
     plan_mark: Optional[str] = Field(None, description="备注")
-    charge_id: int = Field(..., description="负责人ID")
-    charge_name: str = Field(..., description="负责人姓名")
+    charge_id: Optional[int] = Field(None, description="负责人ID")
+    charge_name: Optional[str] = Field(None, description="负责人姓名")
     plan_start_time: Optional[date] = Field(None, description="开始时间")
     plan_end_time: Optional[date] = Field(None, description="结束时间")
 
@@ -46,7 +48,8 @@ class UpdatePlanSchema(BaseModel):
     id: int = Field(..., description="计划ID")
     plan_name: Optional[str] = Field(None, description="计划名称")
     plan_description: Optional[str] = Field(None, description="计划描述")
-    plan_status: Optional[int] = Field(None, description="计划状态 0:进行中 1:已完成")
+    plan_status: Optional[str] = Field(None, description="计划状态（配置中心 PLAN_STATUS 枚举 value）")
+    plan_phase: Optional[str] = Field(None, description="执行阶段（配置中心 PLAN_PHASE 枚举 value）")
     plan_mark: Optional[str] = Field(None, description="备注")
     charge_id: Optional[int] = Field(None, description="负责人ID")
     charge_name: Optional[str] = Field(None, description="负责人姓名")
@@ -66,10 +69,13 @@ class GetPlanSchema(BaseModel):
 
 class PagePlanSchema(PageSchema):
     """测试计划分页查询模型"""
-    project_id: Optional[int] = Field(None, description="项目ID")
-    plan_name: Optional[str] = Field(None, description="计划名称")
-    plan_status: Optional[int] = Field(None, description="计划状态 0:进行中 1:已完成")
-    charge_id: Optional[int] = Field(None, description="负责人ID")
+    project_id: int = Field(..., description="项目ID")
+    plan_name: Optional[str] = Field(None, description="计划名称（模糊匹配）")
+    plan_status: Optional[str] = Field(None, description="计划状态（配置中心 PLAN_STATUS 枚举 value，精确匹配）")
+    plan_phase: Optional[str] = Field(None, description="执行阶段（配置中心 PLAN_PHASE 枚举 value，精确匹配）")
+    charge_id: Optional[int] = Field(None, description="负责人ID（精确匹配）")
+    plan_start_time: Optional[str] = Field(None, description="计划开始时间（YYYY-MM-DD，范围筛选）")
+    plan_end_time: Optional[str] = Field(None, description="计划结束时间（YYYY-MM-DD，范围筛选）")
 
 
 class AssociateRequirementSchema(BaseModel):
