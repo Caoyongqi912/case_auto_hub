@@ -951,24 +951,25 @@ class TestCaseMapper(Mapper[TestCase]):
         """
         try:
             async with cls.session_scope(session) as session:
-                source_cases, source_steps_map = await cls._fetch_source_cases_and_steps(case_ids, session)
+                async with session.begin():
+                    source_cases, source_steps_map = await cls._fetch_source_cases_and_steps(case_ids, session)
 
-                new_case_list = cls._build_new_cases(source_cases, source_steps_map, user)
+                    new_case_list = cls._build_new_cases(source_cases, source_steps_map, user)
 
-                session.add_all(new_case_list)
-                await session.flush()
+                    session.add_all(new_case_list)
+                    await session.flush()
 
-                if requirement_id and source_cases:
-                    await cls._create_requirement_associations(new_case_list, requirement_id, session)
+                    if requirement_id and source_cases:
+                        await cls._create_requirement_associations(new_case_list, requirement_id, session)
 
-                for new_case_obj in new_case_list:
-                    await CaseDynamicMapper.new_dynamic(
-                        cr=user,
-                        test_case=new_case_obj,
-                        session=session
-                    )
-
-                return new_case_list
+                    for new_case_obj in new_case_list:
+                        await CaseDynamicMapper.new_dynamic(
+                            cr=user,
+                            test_case=new_case_obj,
+                            session=session
+                        )
+                    log.info(f"copy_cases success: case_ids={case_ids}, requirement_id={requirement_id}")
+                    return new_case_list
         except Exception as e:
             log.error(f"copy_cases error: case_ids={case_ids}, requirement_id={requirement_id}, error={e}")
             raise

@@ -23,6 +23,7 @@ from utils import log
 from common import rc, RedisClient
 from config import Config
 from script.init_method import init_interface_global_func, init_interface_script_doc
+from script.init_case_config import init_case_config
 
 logging.getLogger('apscheduler').setLevel(logging.WARNING)
 logging.getLogger('apscheduler.scheduler').setLevel(logging.WARNING)
@@ -54,13 +55,14 @@ async def init_services(redis_client: RedisClient):
 
 async def init_optional():
     """
-    初始化可选服务（代理、浏览器、UI 方法）
+    初始化可选服务（代理、浏览器、UI 方法、用例配置）
 
     这些组件失败不应该阻止应用启动。
     """
 
     await init_proxy()
     await init_ui_methods()
+    await init_case_config()
     await init_interface_global_func()
     await init_interface_script_doc()
 

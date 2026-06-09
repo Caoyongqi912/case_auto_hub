@@ -174,7 +174,7 @@ async def copy_case(data: CopyCase, user: User = Depends(Authentication())):
     :param user: 认证用户
     :return: 操作结果
     """
-    await TestCaseMapper.copy_cases(case_ids=[data.caseId], user=user, requirement_id=data.requirementId)
+    await TestCaseMapper.copy_cases(case_ids=[data.caseId], user=user, requirement_id=data.requirement_id)
     return Response.success()
 
 

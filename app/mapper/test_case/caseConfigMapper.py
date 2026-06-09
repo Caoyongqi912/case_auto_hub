@@ -7,7 +7,7 @@
 # @Desc: 用例枚举配置数据访问层
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exception import CommonError, ParamsError
@@ -213,6 +213,23 @@ class CaseConfigMapper(Mapper[CaseConfig]):
             await cls.delete_by_uid(uid=uid)
         except Exception as err:
             log.error("remove_config error: uid=%s, error=%s", uid, err)
+            raise
+
+    @classmethod
+    async def init_case_configs(cls, configs: List[Dict[str, Any]]) -> None:
+        """
+        批量初始化用例枚举配置数据
+
+        :param configs: 配置字典列表，每项包含 config_key/label/value/color/description/sort/enabled
+        """
+        try:
+            async with async_session() as session:
+                await session.execute(
+                    insert(cls.__model__).values(configs)
+                )
+                await session.commit()
+        except Exception as e:
+            log.error(f"init_case_configs error: {e}")
             raise
 
     @classmethod
