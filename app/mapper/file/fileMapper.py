@@ -27,14 +27,15 @@ class FileMapper(Mapper[FileModel]):
         """
         try:
             async with cls.session_scope(session=session) as session:
-                file = await cls.get_by_uid(uid.strip(), session=session, raise_error=False)
+                async with session.begin():
+                    file = await cls.get_by_uid(uid.strip(), session=session, raise_error=False)
 
-                if file:
-                    path = file.file_path
-                    await session.delete(file)
-                    from utils.fileManager import FileManager
-                    FileManager.delFile(path)
-                    log.debug(f"删除 {path}")
+                    if file:
+                        path = file.file_path
+                        await session.delete(file)
+                        from utils.fileManager import FileManager
+                        FileManager.delFile(path)
+                        log.debug(f"删除 {path}")
         except Exception as e:
             raise e
 

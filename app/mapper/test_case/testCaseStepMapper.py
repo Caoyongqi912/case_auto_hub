@@ -126,17 +126,17 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
         """
         try:
             async with cls.session_scope() as session:
-                last_order = await cls.get_last_order(case_id=caseId, session=session)
+                async with session.begin():
+                    last_order = await cls.get_last_order(case_id=caseId, session=session)
 
-                session.add(
-                    cls.__model__(
-                        test_case_id=caseId,
-                        order=last_order + 1,
-                        creator=user.id,
-                        creatorName=user.username
+                    session.add(
+                        cls.__model__(
+                            test_case_id=caseId,
+                            order=last_order + 1,
+                            creator=user.id,
+                            creatorName=user.username
+                        )
                     )
-                )
-                await session.commit()
         except Exception as e:
             log.error(f"add_default_step error: caseId={caseId}, error={e}")
             raise

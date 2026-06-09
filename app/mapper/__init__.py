@@ -282,10 +282,10 @@ class Mapper(Generic[M]):
         """
         try:
             async with cls.session_scope(session) as session:
-                model = cls.__model__
-                log.debug(model)
-                await session.execute(delete(model).filter_by(**kwargs))
-                await session.commit()
+                async with session.begin():
+                    model = cls.__model__
+                    log.debug(model)
+                    await session.execute(delete(model).filter_by(**kwargs))
         except Exception as e:
             log.error(f"delete_by error: {e}")
             raise
