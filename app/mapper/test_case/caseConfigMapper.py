@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exception import CommonError, ParamsError
 from app.mapper import Mapper, set_updater
 from app.model.base import User
-from app.model import async_session
 from app.model.caseHub.case_config import CaseConfig
 from utils import log
 
@@ -223,11 +222,10 @@ class CaseConfigMapper(Mapper[CaseConfig]):
         :param configs: 配置字典列表，每项包含 config_key/label/value/color/description/sort/enabled
         """
         try:
-            async with async_session() as session:
+            async with cls.transaction() as session:
                 await session.execute(
                     insert(cls.__model__).values(configs)
                 )
-                await session.commit()
         except Exception as e:
             log.error(f"init_case_configs error: {e}")
             raise

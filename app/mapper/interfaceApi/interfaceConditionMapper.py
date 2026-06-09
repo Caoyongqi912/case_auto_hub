@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
-from app.model import async_session
 from app.model.base import User
 from app.model.interfaceAPIModel.interfaceConditionModel import InterfaceCondition
 from app.model.interfaceAPIModel.interfaceModel import Interface

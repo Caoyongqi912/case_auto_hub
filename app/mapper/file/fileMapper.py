@@ -13,7 +13,6 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper import Mapper
 from app.model.base import FileModel, User
-from app.model import async_session
 from utils import log
 
 

@@ -4,7 +4,6 @@ from sqlalchemy import select, insert, delete, and_, update, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base import User
 from app.model.playUI.playAssociation import PlayGroupStepAssociation
 from app.model.playUI.playStepContent import PlayStepGroup
@@ -130,55 +129,56 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
     async def association_steps(cls, group_id: int, quote: bool, play_step_id_list: List[int], user: User) -> None:
         """
         关联公共步骤到用例组
-        
+
         Args:
             group_id: 用例组ID
             quote: 是否直接引用步骤（True为引用，False为复制）
             play_step_id_list: 公共步骤ID列表
             user: 当前操作用户
-            
+
         Notes:
             - 当quote为False时，会复制步骤并创建新的非公共步骤
             - 自动更新用例组的步骤数量
-            - 使用事务确保操作的原子性
+            - 使用 transaction() 确保操作的原子性
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    # 获取用例组并更新步骤数量
-                    group = await cls.get_by_id(ident=group_id, session=session)
-                    group.step_num += len(play_step_id_list)
+            # 统一使用 transaction() 替代 async_session() + session.begin()
+            # 自动创建 session + begin，异常时自动 rollback
+            async with cls.transaction() as session:
+                # 获取用例组并更新步骤数量
+                group = await cls.get_by_id(ident=group_id, session=session)
+                group.step_num += len(play_step_id_list)
 
-                    # 获取当前最后步骤索引
-                    last_index = await AssociationHelper.get_last_step_index(session, group_id)
+                # 获取当前最后步骤索引
+                last_index = await AssociationHelper.get_last_step_index(session, group_id)
 
-                    step_list = []
-                    # 复制步骤（非引用模式）
-                    if not quote:
-                        for step_id in play_step_id_list:
-                            step = await PlayStepV2Mapper.copy_step(
-                                step_id=step_id,
-                                session=session,
-                                user=user,
-                                copy_step_name=True,
-                                is_common=False,
-                            )
-                            step_list.append(step.id)
-
-                    # 如果是引用模式，直接使用原步骤ID列表
-                    step_list = step_list or play_step_id_list
-
-                    # 批量创建关联关系
-                    values = [{
-                        "group_id": group_id,
-                        "play_step_id": step_id,
-                        "step_order": index
-                    } for index, step_id in enumerate(step_list, start=last_index + 1)]
-
-                    if values:
-                        await session.execute(
-                            insert(PlayGroupStepAssociation).prefix_with('IGNORE').values(values)
+                step_list = []
+                # 复制步骤（非引用模式）
+                if not quote:
+                    for step_id in play_step_id_list:
+                        step = await PlayStepV2Mapper.copy_step(
+                            step_id=step_id,
+                            session=session,
+                            user=user,
+                            copy_step_name=True,
+                            is_common=False,
                         )
+                        step_list.append(step.id)
+
+                # 如果是引用模式，直接使用原步骤ID列表
+                step_list = step_list or play_step_id_list
+
+                # 批量创建关联关系
+                values = [{
+                    "group_id": group_id,
+                    "play_step_id": step_id,
+                    "step_order": index
+                } for index, step_id in enumerate(step_list, start=last_index + 1)]
+
+                if values:
+                    await session.execute(
+                        insert(PlayGroupStepAssociation).prefix_with('IGNORE').values(values)
+                    )
         except Exception as e:
             # 保留原始异常信息并重新抛出
             raise
@@ -187,19 +187,22 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
     async def query_steps_by_group_id(cls, group_id: int) -> list[PlayStepModel]:
         """
         查询指定用例组下的所有步骤
-        
+
+        使用 session_scope() 自动管理 session 生命周期（只读查询）。
+
         Args:
             group_id: 用例组ID
-            
+
         Returns:
             list[PlayStepModel]: 步骤列表，按步骤顺序排序
-            
+
         Notes:
             - 通过关联表查询用例组下的所有步骤
             - 结果按步骤顺序排序
         """
         try:
-            async with async_session() as session:
+            # 统一使用 session_scope() 替代直接 async_session()
+            async with cls.session_scope() as session:
                 stmt = select(PlayStepModel).join(
                     PlayGroupStepAssociation,
                     PlayGroupStepAssociation.play_step_id == PlayStepModel.id
@@ -231,30 +234,30 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
             - 使用事务确保操作的原子性
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    # 获取用例组并更新步骤数量
-                    group = await cls.get_by_id(ident=group_id, session=session)
-                    group.step_num += 1
+            # 统一使用 transaction() 替代 async_session() + session.begin()
+            async with cls.transaction() as session:
+                # 获取用例组并更新步骤数量
+                group = await cls.get_by_id(ident=group_id, session=session)
+                group.step_num += 1
 
-                    # 创建新步骤
-                    play_step = await PlayStepV2Mapper.save(
-                        creator_user=user,
-                        session=session,
-                        **kwargs
-                    )
+                # 创建新步骤
+                play_step = await PlayStepV2Mapper.save(
+                    creator_user=user,
+                    session=session,
+                    **kwargs
+                )
 
-                    # 获取当前最后步骤索引并计算新步骤的顺序
-                    last_index = await AssociationHelper.get_last_step_index(session, group_id)
+                # 获取当前最后步骤索引并计算新步骤的顺序
+                last_index = await AssociationHelper.get_last_step_index(session, group_id)
 
-                    # 创建关联关系
-                    await session.execute(
-                        insert(PlayGroupStepAssociation).prefix_with('IGNORE').values({
-                            "group_id": group_id,
-                            "play_step_id": play_step.id,
-                            "step_order": last_index + 1
-                        })
-                    )
+                # 创建关联关系
+                await session.execute(
+                    insert(PlayGroupStepAssociation).prefix_with('IGNORE').values({
+                        "group_id": group_id,
+                        "play_step_id": play_step.id,
+                        "step_order": last_index + 1
+                    })
+                )
 
         except Exception:
             raise
@@ -263,44 +266,44 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
     async def copy_step(cls, group_id: int, step_id: int, user: User) -> None:
         """
         复制步骤到用例组
-        
+
         Args:
             group_id: 用例组ID
             step_id: 要复制的步骤ID
             user: 当前操作用户
-            
+
         Notes:
             - 自动更新用例组的步骤数量
             - 复制后的步骤为非公共步骤
             - 为新步骤分配正确的顺序索引
-            - 使用事务确保操作的原子性
+            - 使用 transaction() 确保操作的原子性
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    # 获取用例组并更新步骤数量
-                    group = await cls.get_by_id(ident=group_id, session=session)
-                    group.step_num += 1
+            # 统一使用 transaction() 替代 async_session() + session.begin()
+            async with cls.transaction() as session:
+                # 获取用例组并更新步骤数量
+                group = await cls.get_by_id(ident=group_id, session=session)
+                group.step_num += 1
 
-                    # 复制步骤
-                    step = await PlayStepV2Mapper.copy_step(
-                        step_id=step_id,
-                        session=session,
-                        user=user,
-                        is_common=False,
-                    )
+                # 复制步骤
+                step = await PlayStepV2Mapper.copy_step(
+                    step_id=step_id,
+                    session=session,
+                    user=user,
+                    is_common=False,
+                )
 
-                    # 获取当前最后步骤索引并计算新步骤的顺序
-                    last_index = await AssociationHelper.get_last_step_index(session, group_id)
+                # 获取当前最后步骤索引并计算新步骤的顺序
+                last_index = await AssociationHelper.get_last_step_index(session, group_id)
 
-                    # 创建关联关系
-                    await session.execute(
-                        insert(PlayGroupStepAssociation).prefix_with('IGNORE').values({
-                            "group_id": group_id,
-                            "play_step_id": step.id,
-                            "step_order": last_index + 1
-                        })
-                    )
+                # 创建关联关系
+                await session.execute(
+                    insert(PlayGroupStepAssociation).prefix_with('IGNORE').values({
+                        "group_id": group_id,
+                        "play_step_id": step.id,
+                        "step_order": last_index + 1
+                    })
+                )
 
         except Exception as e:
             raise e
@@ -309,19 +312,22 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
     async def reorder_step(cls, step_list: List[int], group_id: int) -> None:
         """
         重新排序用例组中的步骤
-        
+
         Args:
             step_list: 步骤ID列表，按期望的顺序排列
             group_id: 用例组ID
-            
+
         Notes:
             - 使用SQL的CASE语句批量更新步骤顺序
             - 只更新指定列表中的步骤顺序
             - 一次数据库操作完成所有排序更新，提高性能
+            - 使用 transaction() 确保操作的原子性
         """
 
         try:
-            async with async_session() as session:
+            # 统一使用 transaction() 替代 async_session()（原代码缺少 begin/commit）
+            # 自动创建 session + begin，退出时自动 commit/rollback
+            async with cls.transaction() as session:
                 # 构建步骤ID到新顺序的映射
                 whens = {step_id: index for index, step_id in enumerate(step_list, start=1)}
 
@@ -344,42 +350,42 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
     async def remove_step(cls, group_id: int, step_id: int) -> None:
         """
         从用例组中移除步骤
-        
+
         Args:
             group_id: 用例组ID
             step_id: 要移除的步骤ID
-            
+
         Notes:
             - 自动更新用例组的步骤数量
             - 移除用例组与步骤的关联关系
             - 对于非公共步骤，会同时删除步骤本身
-            - 使用事务确保操作的原子性
+            - 使用 transaction() 确保操作的原子性
         """
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    # 获取用例组并更新步骤数量
-                    group = await cls.get_by_id(ident=group_id, session=session)
-                    if group.step_num > 0:
-                        group.step_num -= 1
+            # 统一使用 transaction() 替代 async_session() + session.begin()
+            async with cls.transaction() as session:
+                # 获取用例组并更新步骤数量
+                group = await cls.get_by_id(ident=group_id, session=session)
+                if group.step_num > 0:
+                    group.step_num -= 1
 
-                    # 获取步骤信息
-                    step = await PlayStepV2Mapper.get_by_id(ident=step_id, session=session)
+                # 获取步骤信息
+                step = await PlayStepV2Mapper.get_by_id(ident=step_id, session=session)
 
-                    # 移除关联关系
-                    await session.execute(
-                        delete(PlayGroupStepAssociation).where(
-                            and_(
-                                PlayGroupStepAssociation.play_step_id == step_id,
-                                PlayGroupStepAssociation.group_id == group_id,
-                            )
+                # 移除关联关系
+                await session.execute(
+                    delete(PlayGroupStepAssociation).where(
+                        and_(
+                            PlayGroupStepAssociation.play_step_id == step_id,
+                            PlayGroupStepAssociation.group_id == group_id,
                         )
                     )
+                )
 
-                    # 非公共步骤直接删除
-                    if not step.is_common:
-                        await session.delete(step)
+                # 非公共步骤直接删除
+                if not step.is_common:
+                    await session.delete(step)
 
         except Exception as e:
             raise e
@@ -412,31 +418,40 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
     @classmethod
     async def copy_group(cls, group_id: int, user: User):
         """
-        复制组
-        :param group_id:
-        :param user:
-        :param session:
-        :return:
+        复制用例组。
+
+        使用 transaction() 自动管理 session 和事务边界。
+
+        Args:
+            group_id: 原用例组 ID
+            user: 当前操作用户
+
+        Returns:
+            PlayStepGroup: 新创建的用例组实例
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    return await cls.copy_group2(group_id, user, session)
+            # 统一使用 transaction() 替代 async_session() + session.begin()
+            async with cls.transaction() as session:
+                return await cls.copy_group2(group_id, user, session)
         except Exception as e:
             raise e
 
     @classmethod
     async def copy_group2(cls, group_id: int, user: User, session: AsyncSession) -> PlayStepGroup:
         """
-        复制组
-        :param group_id:
-        :param user:
-        :param session:
-        :return:
+        复制用例组的核心逻辑（在已有 session 中执行）。
+
+        注意：本方法不自行创建 session，依赖调用方通过 transaction() 传入。
+
+        Args:
+            group_id: 原用例组 ID
+            user: 当前操作用户
+            session: 数据库会话（由调用方的 transaction() 提供）
+
+        Returns:
+            PlayStepGroup: 新创建的用例组实例
         """
-
         try:
-
             origin_group = await cls.get_by_id(ident=group_id, session=session)
             origin_group_map = origin_group.copy_map()
             group = await cls.add_flush_expunge(
@@ -479,40 +494,42 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
 
             return group
         except Exception as e:
-
             raise e
 
     @classmethod
     async def remove_group(cls, group_id: int):
         """
-        删除
-        :param group_id:
-        :return:
+        删除用例组及其关联的步骤。
+
+        使用 transaction() 自动管理 session 和事务边界。
+
+        Args:
+            group_id: 用例组 ID
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    group = await cls.get_by_id(ident=group_id, session=session)
+            # 统一使用 transaction() 替代 async_session() + session.begin()
+            async with cls.transaction() as session:
+                group = await cls.get_by_id(ident=group_id, session=session)
 
-                    stmt = delete(PlayGroupStepAssociation
-                                  ).where(
-                        PlayGroupStepAssociation.group_id == group_id
-                    )
-                    await session.execute(stmt)
+                stmt = delete(PlayGroupStepAssociation
+                              ).where(
+                    PlayGroupStepAssociation.group_id == group_id
+                )
+                await session.execute(stmt)
 
-                    stmt = select(PlayStepModel).join(
-                        PlayGroupStepAssociation,
-                        PlayGroupStepAssociation.play_step_id == PlayStepModel.id
-                    ).where(
-                        PlayGroupStepAssociation.group_id == group_id
-                    ).order_by(
-                        PlayGroupStepAssociation.step_order
-                    )
+                stmt = select(PlayStepModel).join(
+                    PlayGroupStepAssociation,
+                    PlayGroupStepAssociation.play_step_id == PlayStepModel.id
+                ).where(
+                    PlayGroupStepAssociation.group_id == group_id
+                ).order_by(
+                    PlayGroupStepAssociation.step_order
+                )
 
-                    steps = await session.scalars(stmt)
-                    for step in steps:
-                        if not step.is_common:
-                            await session.delete(step)
-                    await session.delete(group)
+                steps = await session.scalars(stmt)
+                for step in steps:
+                    if not step.is_common:
+                        await session.delete(step)
+                await session.delete(group)
         except Exception as e:
             raise e

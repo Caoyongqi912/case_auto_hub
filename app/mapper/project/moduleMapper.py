@@ -4,7 +4,6 @@ from sqlalchemy import delete, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base.module import Module
 from utils import log
 
@@ -102,15 +101,14 @@ class ModuleMapper(Mapper[Module]):
     @classmethod
     async def remove_module(cls, moduleId: int):
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    module:Module = await cls.get_by_id(moduleId, session)
-                    if module.parent_id is None:
-                        subId = await get_subtree_ids(session, moduleId,module.module_type)
-                        if subId:
-                            for i in subId:
-                                await session.execute(delete(Module).where(Module.id == i))
-                    await session.delete(module)
+            async with cls.transaction() as session:
+                module:Module = await cls.get_by_id(moduleId, session)
+                if module.parent_id is None:
+                    subId = await get_subtree_ids(session, moduleId,module.module_type)
+                    if subId:
+                        for i in subId:
+                            await session.execute(delete(Module).where(Module.id == i))
+                await session.delete(module)
         except Exception as e:
             raise e
 
@@ -144,7 +142,7 @@ class ModuleMapper(Mapper[Module]):
         if any(not t for t in cleaned):
             return None
 
-        async with async_session() as session:
+        async with cls.session_scope() as session:
             parent_id: Optional[int] = None
             for title in cleaned:
                 if parent_id is None:
@@ -231,7 +229,7 @@ class ModuleMapper(Mapper[Module]):
     @classmethod
     async def drop(cls, id: int, targetId: int | None):
         try:
-            async with async_session() as session:
+            async with cls.transaction() as session:
                 module: Module = await cls.get_by_id(id, session)
                 if targetId:
                     target_module: Module = await cls.get_by_id(targetId, session)
@@ -239,6 +237,5 @@ class ModuleMapper(Mapper[Module]):
                 else:
                     module.parent_id = None
                 session.add(module)
-                await session.commit()
         except Exception as e:
             raise e

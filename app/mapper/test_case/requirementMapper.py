@@ -12,7 +12,6 @@ from sqlalchemy import insert, update, and_, select
 
 from app.exception import NotFind
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base import User
 from app.model.caseHub.association import RequirementCaseAssociation
 from app.model.caseHub.requirement import Requirement
@@ -178,7 +177,7 @@ class RequirementMapper(Mapper[Requirement]):
         :param kwargs: 查询条件（如 id）
         :return: 包含需求信息和关联用户信息的字典
         """
-        async with async_session() as session:
+        async with cls.session_scope() as session:
             req = await cls.get_by_id(session=session, **kwargs)
 
             reqInfo = req.map

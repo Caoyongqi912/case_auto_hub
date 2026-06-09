@@ -42,12 +42,11 @@ class StatisticsMapper:
             "ui_tasks": []
         }
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    api_task = await session.execute(
-                        select(
-                            InterfaceTaskResult.run_day.label("date"),
-                            func.count().label("total_num"),  # 总数量
+            async with cls.transaction() as session:
+                api_task = await session.execute(
+                    select(
+                        InterfaceTaskResult.run_day.label("date"),
+                        func.count().label("total_num"),  # 总数量
                             func.sum(case((InterfaceTaskResult.result.is_(True) , 1), else_=0)).label(
                                 "success_num"),  # 成功数量
                             func.sum(case((InterfaceTaskResult.result.is_(False), 1), else_=0)).label("fail_num")
@@ -61,28 +60,28 @@ class StatisticsMapper:
                             InterfaceTaskResult.run_day
                         )
                     )
-                    ui_task = await session.execute(
-                        select(
-                            PlayTaskResult.run_day.label("date"),
-                            func.count().label("total_num"),  # 总数量
-                            func.sum(case((PlayTaskResult.result == "SUCCESS", 1), else_=0)).label(
-                                "success_num"),  # 成功数量
-                            func.sum(case((PlayTaskResult.result == "FAIL", 1), else_=0)).label("fail_num")
-                            # 失败数量
-                        ).where(
-                            PlayTaskResult.run_day >= GenerateTools.get_date_days_ago(n)
-                        ).order_by(
-                            PlayTaskResult.run_day.asc()
-                        )
-                        .group_by(
-                            PlayTaskResult.run_day
-                        )
-
+                ui_task = await session.execute(
+                    select(
+                        PlayTaskResult.run_day.label("date"),
+                        func.count().label("total_num"),  # 总数量
+                        func.sum(case((PlayTaskResult.result == "SUCCESS", 1), else_=0)).label(
+                            "success_num"),  # 成功数量
+                        func.sum(case((PlayTaskResult.result == "FAIL", 1), else_=0)).label("fail_num")
+                        # 失败数量
+                    ).where(
+                        PlayTaskResult.run_day >= GenerateTools.get_date_days_ago(n)
+                    ).order_by(
+                        PlayTaskResult.run_day.asc()
                     )
-                    result['api_tasks'] = _format_task_data(api_task.all(), "API")
-                    result['ui_tasks'] = _format_task_data(ui_task.all(), "UI")
-                    log.debug(result)
-                    return result
+                    .group_by(
+                        PlayTaskResult.run_day
+                    )
+
+                )
+                result['api_tasks'] = _format_task_data(api_task.all(), "API")
+                result['ui_tasks'] = _format_task_data(ui_task.all(), "UI")
+                log.debug(result)
+                return result
 
         except Exception as e:
             log.error(e)
@@ -94,7 +93,7 @@ class StatisticsMapper:
         try:
             result = {}
             date = GenerateTools.getTime(5)
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 api_task = await session.execute(
                     select(
                         InterfaceTaskResult.run_day.label("date"),
@@ -151,42 +150,41 @@ class StatisticsMapper:
             }
             date = GenerateTools.get_date_days_ago(n)
             two_weeks_ago_date = GenerateTools.get_date_days_ago(n + 14)
+    # Helper function to perform count queries
+            
 
-            async with async_session() as session:
-                async with session.begin():
-                    # Helper function to perform count queries
-                    async def get_count(model, start_date, end_date=None):
-                        query = select(func.count()).select_from(model).filter(
-                            model.create_time >= start_date,
-                            model.create_time < end_date if end_date else True
-                        )
-                        result = await session.execute(query)
-                        return result.scalar()
+            async with cls.transaction() as session:
+                async def get_count(model, start_date, end_date=None):
+                    query = select(func.count()).select_from(model).filter(
+                        model.create_time >= start_date,
+                        model.create_time < end_date if end_date else True
+                    )
+                    result = await session.execute(query)
+                    return result.scalar()
+                # Query for the current week data
+                api_data_current = await get_count(InterfaceCase, date)
+                api_task_current = await get_count(InterfaceTask, date)
+                ui_data_current = await get_count(PlayCase, date)
+                ui_task_current = await get_count(PlayTask, date)
 
-                    # Query for the current week data
-                    api_data_current = await get_count(InterfaceCase, date)
-                    api_task_current = await get_count(InterfaceTask, date)
-                    ui_data_current = await get_count(PlayCase, date)
-                    ui_task_current = await get_count(PlayTask, date)
+                # Query for the previous week data
+                api_data_previous = await get_count(InterfaceCase, two_weeks_ago_date, date)
+                api_task_previous = await get_count(InterfaceTask, two_weeks_ago_date, date)
+                ui_data_previous = await get_count(PlayCase, two_weeks_ago_date, date)
+                ui_task_previous = await get_count(PlayTask, two_weeks_ago_date, date)
 
-                    # Query for the previous week data
-                    api_data_previous = await get_count(InterfaceCase, two_weeks_ago_date, date)
-                    api_task_previous = await get_count(InterfaceTask, two_weeks_ago_date, date)
-                    ui_data_previous = await get_count(PlayCase, two_weeks_ago_date, date)
-                    ui_task_previous = await get_count(PlayTask, two_weeks_ago_date, date)
+                # Calculate growth percentage
+                statistics["apis"] = api_data_current
+                statistics["api_task"] = api_task_current
+                statistics["uis"] = ui_data_current
+                statistics["ui_task"] = ui_task_current
 
-                    # Calculate growth percentage
-                    statistics["apis"] = api_data_current
-                    statistics["api_task"] = api_task_current
-                    statistics["uis"] = ui_data_current
-                    statistics["ui_task"] = ui_task_current
-
-                    statistics["apis_growth"] = calculate_growth(api_data_current, api_data_previous)
-                    statistics["api_task_growth"] = calculate_growth(api_task_current, api_task_previous)
-                    statistics["uis_growth"] = calculate_growth(ui_data_current, ui_data_previous)
-                    statistics["ui_task_growth"] = calculate_growth(ui_task_current, ui_task_previous)
-            log.debug(statistics)
-            return statistics
+                statistics["apis_growth"] = calculate_growth(api_data_current, api_data_previous)
+                statistics["api_task_growth"] = calculate_growth(api_task_current, api_task_previous)
+                statistics["uis_growth"] = calculate_growth(ui_data_current, ui_data_previous)
+                statistics["ui_task_growth"] = calculate_growth(ui_task_current, ui_task_previous)
+                log.debug(statistics)
+                return statistics
 
         except Exception as e:
             log.error(f"An unexpected error occurred in week_data: {e}", exc_info=True)

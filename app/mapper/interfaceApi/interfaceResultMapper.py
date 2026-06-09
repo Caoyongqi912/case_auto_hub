@@ -12,7 +12,6 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base.user import User
 from app.model.interfaceAPIModel.interfaceResultModel import (
     InterfaceResult,
@@ -534,7 +533,7 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         ).order_by(
             InterfaceCaseContentResult.content_step
         )
-        async with async_session() as s:
+        async with cls.session_scope() as s:
             result = await s.scalars(stmt)
             steps = result.unique().all()
         return steps

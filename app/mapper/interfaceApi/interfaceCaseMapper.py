@@ -16,7 +16,6 @@ from app.mapper.interfaceApi.dynamicMapper import InterfaceCaseDynamicMapper
 from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
 from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
 from app.mapper.project.dbConfigMapper import DBExecuteMapper
-from app.model import async_session
 from app.mapper import Mapper
 from app.model.base import User
 from app.model.interfaceAPIModel.associationModel import InterfaceCaseStepContentAssociation

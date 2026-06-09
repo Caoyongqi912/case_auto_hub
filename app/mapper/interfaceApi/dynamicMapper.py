@@ -12,7 +12,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base import User
 from app.model.interfaceAPIModel.dynamicModel import (
     InterfaceDynamic,
@@ -298,7 +297,7 @@ class InterfaceDynamicMapper(Mapper[InterfaceDynamic]):
     @classmethod
     async def query_dynamic(cls, entity_id: int) -> List:
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 dynamics = await session.scalars(
                     select(cls.__model__)
                     .where(getattr(cls.__model__, cls.FK_FIELD) == entity_id)
@@ -406,7 +405,7 @@ class InterfaceCaseDynamicMapper(Mapper[InterfaceCaseDynamic]):
     @classmethod
     async def query_dynamic(cls, entity_id: int) -> List:
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 dynamics = await session.scalars(
                     select(cls.__model__)
                     .where(getattr(cls.__model__, cls.FK_FIELD) == entity_id)

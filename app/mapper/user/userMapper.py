@@ -17,7 +17,6 @@ from app.schema.base.user import AddOrUpdateUserVars
 from config import Config
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base import User, UserVars
 from enums import GenderEnum
 from utils import MyLoguru
@@ -31,15 +30,18 @@ class UserMapper(Mapper[User]):
     @classmethod
     async def set_pwd(cls, old_password: str, new_password: str, user: User):
         """
-        更新
+        更新用户密码。
+
+        使用 transaction() 自动管理 session 和事务边界。
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    if await cls.check_password(user.password, old_password):
-                        user.password = await cls.set_password(new_password)
-                    else:
-                        raise AuthError("密码错误")
+            # 统一使用 transaction() 替代 async_session() + session.begin()
+            # 自动创建 session + begin，退出时自动 commit/rollback
+            async with cls.transaction() as session:
+                if await cls.check_password(user.password, old_password):
+                    user.password = await cls.set_password(new_password)
+                else:
+                    raise AuthError("密码错误")
         except Exception as e:
             raise e
 
@@ -47,8 +49,14 @@ class UserMapper(Mapper[User]):
 
     @classmethod
     async def get_avatar(cls, uid: str):
+        """
+        根据 uid 获取用户头像。
+
+        使用 session_scope() 自动管理 session 生命周期（只读查询）。
+        """
         try:
-            async with async_session() as session:
+            # 统一使用 session_scope() 替代直接 async_session()
+            async with cls.session_scope() as session:
                 user = await cls.get_by_uid(uid, session)
                 return user.avatar
         except Exception as e:
@@ -57,12 +65,19 @@ class UserMapper(Mapper[User]):
     @classmethod
     async def filter_user_by_username(cls, username: str | None) -> List[User]:
         """
-        根据用户名查询用户
-        :param username:
-        :return:
+        根据用户名模糊查询用户列表。
+
+        使用 session_scope() 自动管理 session 生命周期（只读查询）。
+
+        Args:
+            username: 用户名关键字（支持模糊匹配），为 None 时查询全部
+
+        Returns:
+            List[User]: 用户列表
         """
         try:
-            async with async_session() as session:
+            # 统一使用 session_scope() 替代直接 async_session()
+            async with cls.session_scope() as session:
                 if not username:
                     sql = select(User)
                 else:
@@ -82,34 +97,37 @@ class UserMapper(Mapper[User]):
                        phone: str,
                        isAdmin: bool = False,
                        tagName: str = None):
-
         """
-        管理注册用户
-        :param username:
-        :param gender:
-        :param phone:
-        :param isAdmin:
-        :param tagName:
-        :return:
+        注册用户。
+
+        使用 transaction() 自动管理 session 和事务边界。
+
+        Args:
+            username: 用户名
+            gender: 性别
+            phone: 手机号
+            isAdmin: 是否为管理员
+            tagName: 标签名
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    email = username + "@hub.com"
-                    user = await cls.get_by(session=session, email=email, phone=phone)
-                    if user:
-                        raise AuthError(f"用户 {username} 已存在")
-                    pwd_hash = await cls.set_password(username)
-                    session.add(User(username=username,
-                                     password=pwd_hash,
-                                     email=email,
-                                     phone=phone,
-                                     gender=gender,
-                                     isAdmin=isAdmin,
-                                     tagName=tagName,
-                                     # departmentName=depart.name,
-                                     # departmentID=depart.id
-                                     ))
+            # 统一使用 transaction() 替代 async_session() + session.begin()
+            # 自动创建 session + begin，异常时自动 rollback
+            async with cls.transaction() as session:
+                email = username + "@hub.com"
+                user = await cls.get_by(session=session, email=email, phone=phone)
+                if user:
+                    raise AuthError(f"用户 {username} 已存在")
+                pwd_hash = await cls.set_password(username)
+                session.add(User(username=username,
+                                 password=pwd_hash,
+                                 email=email,
+                                 phone=phone,
+                                 gender=gender,
+                                 isAdmin=isAdmin,
+                                 tagName=tagName,
+                                 # departmentName=depart.name,
+                                 # departmentID=depart.id
+                                 ))
 
         except Exception as e:
             raise e
@@ -118,13 +136,21 @@ class UserMapper(Mapper[User]):
     async def register_admin(cls,
                              username: str, phone="99999999999"):
         """
-        注册ADMIN
-        :param username:
-        :param phone:
-        :return:
+        注册管理员账号。
+
+        使用 transaction() 自动管理 session 和事务边界。
+
+        Args:
+            username: 用户名
+            phone: 手机号
+
+        Returns:
+            int: 新创建的管理员 ID
         """
         try:
-            async with async_session() as session:
+            # 统一使用 transaction() 替代 async_session() + manual commit
+            # 自动创建 session + begin，退出时自动 commit
+            async with cls.transaction() as session:
                 _pwd_hash = await cls.set_password(username)
                 admin = User(username=username,
                              email=username + "@hub.com",
@@ -136,7 +162,7 @@ class UserMapper(Mapper[User]):
                              )
 
                 session.add(admin)
-                await session.commit()
+                await session.flush()
                 return admin.id
 
         except Exception as e:
@@ -145,13 +171,23 @@ class UserMapper(Mapper[User]):
     @classmethod
     async def login(cls, username: str, password: str):
         """
-        用户登陆
-        :param username:
-        :param password:
-        :return:
+        用户登录验证。
+
+        使用 session_scope() 自动管理 session 生命周期（只读查询）。
+
+        Args:
+            username: 用户名
+            password: 明文密码
+
+        Returns:
+            str: JWT token
+
+        Raises:
+            AuthError: 用户不存在或密码错误时抛出
         """
         try:
-            async with async_session() as session:
+            # 统一使用 session_scope() 替代直接 async_session()
+            async with cls.session_scope() as session:
                 user = await cls.get_by(session=session, username=username)
                 if user:
                     if await cls.check_password(user.password, password):

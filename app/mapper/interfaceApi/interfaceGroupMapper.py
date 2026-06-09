@@ -2,7 +2,6 @@ from typing import List
 
 from app.mapper import Mapper
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
-from app.model import async_session
 from app.model.base.user import User
 from app.model.interfaceAPIModel.interfaceGroupModel import InterfaceGroup
 from app.model.interfaceAPIModel.associationModel import InterfaceGroupAPIAssociation
@@ -168,7 +167,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
         查询分组关联的接口
         """
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 result = await session.execute(
                     select(Interface).join(
                         InterfaceGroupAPIAssociation,

@@ -11,7 +11,6 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base import User
 from app.model.caseHub.test_case import TestCase
 from app.model.caseHub.case_step_dynamic import CaseStepDynamic
@@ -209,7 +208,7 @@ class CaseDynamicMapper(Mapper[CaseStepDynamic]):
         :return: 动态记录列表
         """
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 conditions = [CaseStepDynamic.test_case_id == case_id]
                 if plan_id is not None:
                     conditions.append(

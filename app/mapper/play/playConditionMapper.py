@@ -13,7 +13,6 @@ from sqlalchemy import select, insert, delete, update, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base import User
 from app.model.playUI.playCondition import PlayCondition
 from app.model.playUI.playAssociation import ConditionStepAssociation
@@ -29,31 +28,30 @@ class PlayConditionMapper(Mapper[PlayCondition]):
     @classmethod
     async def reorder_content(cls, condition_id: int, content_child_list_id: List[int]):
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    condition = await cls.get_by_id(ident=condition_id, session=session)
+            async with cls.transaction() as session:
+                condition = await cls.get_by_id(ident=condition_id, session=session)
 
-                    existing_associations = await session.execute(
-                        select(ConditionStepAssociation.step_content_id).where(
-                            and_(
-                                ConditionStepAssociation.condition_id == condition_id,
-                                ConditionStepAssociation.step_content_id.in_(content_child_list_id)
-                            )
+                existing_associations = await session.execute(
+                    select(ConditionStepAssociation.step_content_id).where(
+                        and_(
+                            ConditionStepAssociation.condition_id == condition_id,
+                            ConditionStepAssociation.step_content_id.in_(content_child_list_id)
                         )
                     )
-                    existing_ids = {ident[0] for ident in existing_associations.all()}
+                )
+                existing_ids = {ident[0] for ident in existing_associations.all()}
 
-                    if len(existing_ids) != len(content_child_list_id):
-                        invalid_ids = set(content_child_list_id) - existing_ids
-                        log.warning(f"以下步骤内容ID不属于 条件 {condition_id}: {invalid_ids}")
-                    # 创建CASE语句的条件映射
-                    whens = {step_id: index for index, step_id in enumerate(content_child_list_id, start=1)}
-                    result = await session.execute(
-                        update(ConditionStepAssociation)
-                        .where(
-                            and_(
-                                ConditionStepAssociation.step_content_id.in_(content_child_list_id),
-                                ConditionStepAssociation.condition_id == condition_id
+                if len(existing_ids) != len(content_child_list_id):
+                    invalid_ids = set(content_child_list_id) - existing_ids
+                    log.warning(f"以下步骤内容ID不属于 条件 {condition_id}: {invalid_ids}")
+                # 创建CASE语句的条件映射
+                whens = {step_id: index for index, step_id in enumerate(content_child_list_id, start=1)}
+                result = await session.execute(
+                    update(ConditionStepAssociation)
+                    .where(
+                        and_(
+                            ConditionStepAssociation.step_content_id.in_(content_child_list_id),
+                            ConditionStepAssociation.condition_id == condition_id
                             )
                         )
                         .values(
@@ -78,28 +76,27 @@ class PlayConditionMapper(Mapper[PlayCondition]):
             - 使用事务确保操作的原子性
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    condition = await cls.get_by_id(ident=condition_id, session=session)
-                    step_content = await session.get(PlayStepContent, content_id)
+            async with cls.transaction() as session:
+                condition = await cls.get_by_id(ident=condition_id, session=session)
+                step_content = await session.get(PlayStepContent, content_id)
 
-                    if not condition or not step_content:
-                        return
+                if not condition or not step_content:
+                    return
 
-                    await session.execute(
-                        delete(ConditionStepAssociation).where(
-                            and_(
-                                ConditionStepAssociation.condition_id == condition.id,
-                                ConditionStepAssociation.step_content_id == step_content.id
-                            )
+                await session.execute(
+                    delete(ConditionStepAssociation).where(
+                        and_(
+                            ConditionStepAssociation.condition_id == condition.id,
+                            ConditionStepAssociation.step_content_id == step_content.id
                         )
                     )
+                )
 
-                    if condition.condition_step_num > 0:
-                        condition.condition_step_num -= 1
+                if condition.condition_step_num > 0:
+                    condition.condition_step_num -= 1
 
-                    if not step_content.is_common:
-                        await session.delete(step_content)
+                if not step_content.is_common:
+                    await session.delete(step_content)
 
         except Exception as e:
             raise e
@@ -119,39 +116,38 @@ class PlayConditionMapper(Mapper[PlayCondition]):
         """
         插入私有content step 2 condition content
         """
-        async with async_session() as session:
-            async with session.begin():
-                from app.mapper.play import PlayStepContentMapper, PlayStepV2Mapper
+        async with cls.transaction() as session:
+            from app.mapper.play import PlayStepContentMapper, PlayStepV2Mapper
 
-                content = await PlayStepContentMapper.get_by_id(ident=content_id, session=session)
-                condition = await cls.get_by_id(ident=content.target_id, session=session)
+            content = await PlayStepContentMapper.get_by_id(ident=content_id, session=session)
+            condition = await cls.get_by_id(ident=content.target_id, session=session)
 
-                play_step = await PlayStepV2Mapper.save(
-                    creator_user=user,
-                    session=session,
-                    **kwargs
-                )
-                play_step_content = await PlayStepContentMapper.init_content(
-                    target_id=play_step.id,
-                    is_common=False,
-                    content_type=PlayStepContentType.STEP_PLAY,
-                    session=session,
-                    content_desc=play_step.method,
-                    content_name=play_step.name
-                )
+            play_step = await PlayStepV2Mapper.save(
+                creator_user=user,
+                session=session,
+                **kwargs
+            )
+            play_step_content = await PlayStepContentMapper.init_content(
+                target_id=play_step.id,
+                is_common=False,
+                content_type=PlayStepContentType.STEP_PLAY,
+                session=session,
+                content_desc=play_step.method,
+                content_name=play_step.name
+            )
 
-                last_order = await cls._get_last_step_order(condition_id=condition.id, session=session)
-                step_order = last_order + 1
-                condition.condition_step_num += 1
+            last_order = await cls._get_last_step_order(condition_id=condition.id, session=session)
+            step_order = last_order + 1
+            condition.condition_step_num += 1
 
-                stmt = insert(ConditionStepAssociation).values(
-                    {
-                        "condition_id": condition.id,
-                        "step_content_id": play_step_content.id,
-                        "step_order": step_order
-                    }
-                )
-                await session.execute(stmt)
+            stmt = insert(ConditionStepAssociation).values(
+                {
+                    "condition_id": condition.id,
+                    "step_content_id": play_step_content.id,
+                    "step_order": step_order
+                }
+            )
+            await session.execute(stmt)
 
 
     @classmethod
@@ -162,18 +158,17 @@ class PlayConditionMapper(Mapper[PlayCondition]):
         from app.mapper.play import PlayStepV2Mapper,PlayStepContentMapper
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    condition = await cls.get_by_id(ident=condition_id, session=session)
-                    condition.condition_step_num += len(play_step_id_list)
-                    case_step_content_play_step_list = []
-                    if quote:
-                        steps = await PlayStepV2Mapper.get_by_ids(play_step_id_list, session)
-                        if not steps:
-                            log.warning(f"未找到ID为{play_step_id_list}的步骤")
-                            return
-                        step_map = {step.id: step for step in steps}
-                        for play_step_id in play_step_id_list:
+            async with cls.transaction() as session:
+                condition = await cls.get_by_id(ident=condition_id, session=session)
+                condition.condition_step_num += len(play_step_id_list)
+                case_step_content_play_step_list = []
+                if quote:
+                    steps = await PlayStepV2Mapper.get_by_ids(play_step_id_list, session)
+                    if not steps:
+                        log.warning(f"未找到ID为{play_step_id_list}的步骤")
+                        return
+                    step_map = {step.id: step for step in steps}
+                    for play_step_id in play_step_id_list:
                             step = step_map.get(play_step_id)
                             if step:
                                 content = await PlayStepContentMapper.init_content(
@@ -246,7 +241,7 @@ class PlayConditionMapper(Mapper[PlayCondition]):
         :param condition_id: 条件ID
         :return: 步骤内容列表
         """
-        async with async_session() as session:
+        async with cls.session_scope() as session:
             stmt = select(PlayStepContent).join(
                 ConditionStepAssociation,
                 ConditionStepAssociation.step_content_id == PlayStepContent.id

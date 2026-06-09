@@ -14,7 +14,6 @@ from sqlalchemy import select
 
 from app.mapper import Mapper
 from app.mapper.interfaceApi.dynamicMapper import InterfaceTaskDynamicMapper
-from app.model import async_session
 from app.model.base import User
 from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
 from app.model.interfaceAPIModel.interfaceModel import Interface
@@ -91,7 +90,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
             task_id: 任务ID
         """
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 stmt = select(Interface).join(
                     InterfaceAPITaskAssociation,
                     InterfaceAPITaskAssociation.interface_api_id == Interface.id
@@ -117,7 +116,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
         """
 
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 stmt = select(InterfaceCase).join(
                     InterfaceCaseTaskAssociation,
                     InterfaceCaseTaskAssociation.interface_case_id == InterfaceCase.id

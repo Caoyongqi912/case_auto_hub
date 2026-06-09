@@ -10,7 +10,6 @@ from typing import List
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base import User
 from app.model.playUI import   PlayStepModel
 from enums.CaseEnum import PlayStepContentType
@@ -81,11 +80,10 @@ class PlayStepV2Mapper(Mapper[PlayStepModel]):
         from sqlalchemy import update
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    # 1. 更新 PlayStepModel
-                    step = await cls.get_by_id(ident=id, session=session)
-                    step = await cls.update_cls(
+            async with cls.transaction() as session:
+                # 1. 更新 PlayStepModel
+                step = await cls.get_by_id(ident=id, session=session)
+                step = await cls.update_cls(
                         target=step,
                         session=session,
                         **kwargs
@@ -93,17 +91,17 @@ class PlayStepV2Mapper(Mapper[PlayStepModel]):
 
                     # 2. 批量更新关联的 PlayStepContent
                     # 只有当 name 或 method 被修改时才同步
-                    if 'name' in kwargs or 'method' in kwargs:
-                        stmt = update(PlayStepContent).where(
-                            and_(
-                                PlayStepContent.target_id == id,
-                                PlayStepContent.content_type == PlayStepContentType.STEP_PLAY
-                            )
-                        ).values(
-                            content_name=kwargs.get('name', step.name),
-                            content_desc=kwargs.get('method', step.method)
+                if 'name' in kwargs or 'method' in kwargs:
+                    stmt = update(PlayStepContent).where(
+                        and_(
+                            PlayStepContent.target_id == id,
+                            PlayStepContent.content_type == PlayStepContentType.STEP_PLAY
                         )
-                        await session.execute(stmt)
+                    ).values(
+                        content_name=kwargs.get('name', step.name),
+                        content_desc=kwargs.get('method', step.method)
+                    )
+                    await session.execute(stmt)
 
         except Exception as e:
             log.exception(e)

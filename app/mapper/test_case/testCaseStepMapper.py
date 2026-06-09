@@ -11,7 +11,6 @@ from sqlalchemy import select, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base import User
 from app.model.caseHub.test_case_step import TestCaseStep
 from utils import log

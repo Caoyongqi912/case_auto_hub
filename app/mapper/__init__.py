@@ -74,15 +74,22 @@ class Mapper(Generic[M]):
     @classmethod
     async def _execute_query(cls, stmt, session: Optional[AsyncSession] = None):
         """
-        执行查询语句，自动处理会话管理
-        :param stmt: 查询语句
-        :param session: 可选的会话对象
-        :return: 查询结果
+        执行查询语句，统一通过 session_scope 管理会话生命周期。
+
+        - 传入外部 session：直接在其上执行，不管理生命周期
+        - 未传入 session：自动创建临时 session，执行后自动关闭
+
+        Args:
+            stmt: SQLAlchemy 查询语句
+            session: 可选的外部会话对象
+
+        Returns:
+            Result: 查询结果对象
         """
-        if session is None:
-            async with async_session() as session:
-                return await session.execute(stmt)
-        return await session.execute(stmt)
+        # 统一委托给 session_scope 处理 session 的传入/创建逻辑
+        # 消除原先 if session is None 分支的重复样板代码
+        async with cls.session_scope(session) as session:
+            return await session.execute(stmt)
 
     @classmethod
     async def _get_by_field(cls, field_name: str, value: Any, session: Optional[AsyncSession] = None,
@@ -191,11 +198,22 @@ class Mapper(Generic[M]):
     @classmethod
     async def update_by_id(cls, session: AsyncSession = None, update_user: User = None, **kwargs) -> M:
         """
-        通过id更新
-        :param session: 可选的会话对象
-        :param update_user: 更新人
-        :param kwargs: 更新字段（必须包含id）
-        :return: 更新后的模型实例
+        通过 id 更新模型实例。
+
+        事务边界说明：
+        - 传入外部 session：在其上执行更新并 flush，由调用方控制 commit
+        - 未传入 session：自动创建 session + 事务，更新后自动 commit
+
+        Args:
+            session: 可选的外部会话对象
+            update_user: 更新人信息（自动注入 updater/updaterName）
+            **kwargs: 更新字段（必须包含 id）
+
+        Returns:
+            M: 更新后的模型实例
+
+        Raises:
+            ValueError: kwargs 中缺少 id 时抛出
         """
         try:
             ident = kwargs.pop("id", None)
@@ -205,11 +223,10 @@ class Mapper(Generic[M]):
             if update_user:
                 kwargs = set_updater(update_user, **kwargs)
 
-            if session is None:
-                async with cls.transaction() as session:
-                    target = await cls.get_by_id(ident, session)
-                    return await cls.update_cls(target, session, **kwargs)
-            else:
+            # 统一使用 transaction(session) 处理 session 和事务：
+            # - session 不为 None：复用它，在其上执行操作并 flush（不擅自 commit）
+            # - session 为 None：transaction() 自动创建新 session + begin，退出时自动 commit
+            async with cls.transaction(session) as session:
                 target = await cls.get_by_id(ident, session)
                 await cls.update_cls(target, session, **kwargs)
                 return target
@@ -220,19 +237,26 @@ class Mapper(Generic[M]):
     @classmethod
     async def update_by_uid(cls, update_user: User = None, **kwargs):
         """
-        通过uid更新
-        :param update_user: 更新人
-        :param kwargs: 更新字段（必须包含uid）
-        :return: 更新后的模型实例
+        通过 uid 更新模型实例。
+
+        自动创建 session + 事务，更新后自动 commit。
+
+        Args:
+            update_user: 更新人信息（自动注入 updater/updaterName）
+            **kwargs: 更新字段（必须包含 uid）
+
+        Returns:
+            M: 更新后的模型实例
         """
         kwargs = set_updater(update_user, **kwargs)
 
         try:
-            async with async_session() as session:
-                uid = kwargs.pop("uid")
-                async with session.begin():
-                    target = await cls.get_by_uid(uid, session)
-                    return await cls.update_cls(target, session, **kwargs)
+            uid = kwargs.pop("uid")
+            # 统一使用 transaction() 管理 session 和事务
+            # 替代原先的手动 async_session() + session.begin() 模式
+            async with cls.transaction() as session:
+                target = await cls.get_by_uid(uid, session)
+                return await cls.update_cls(target, session, **kwargs)
         except Exception as e:
             log.error(f"update_by_uid error: {e}")
             raise
@@ -240,14 +264,22 @@ class Mapper(Generic[M]):
     @classmethod
     async def delete_by_uid(cls, uid: str):
         """
-        通过uid删除
-        :param uid: uid
+        通过 uid 删除记录。
+
+        使用 transaction() 统一管理事务：
+        - 自动创建 session + 事务
+        - 执行 delete 后自动 commit
+        - 异常时自动 rollback
+
+        Args:
+            uid: 待删除记录的唯一标识 uid
         """
         model = cls.__model__
         try:
-            async with async_session() as session:
+            # 统一使用 transaction() 管理 session 和事务
+            # 替代原先的手动 async_session() + commit 模式
+            async with cls.transaction() as session:
                 await session.execute(delete(model).where(model.uid == uid))
-                await session.commit()
         except Exception as e:
             log.exception(e)
             raise
@@ -256,19 +288,29 @@ class Mapper(Generic[M]):
     async def delete_by_id(cls, ident: int, session: AsyncSession = None):
         """
         通过id删除
-        :param ident: id
-        :param session: 可选的会话对象
+
+        事务边界说明：
+        - 传入外部 session：仅执行 delete 并 flush，由调用方控制 commit
+          （适用于调用方需要在同一事务中执行多个操作的场景）
+        - 未传入 session：自动创建 session + 事务，执行 delete 后自动 commit
+
+        Args:
+            ident: 待删除记录的主键 ID
+            session: 可选的外部会话对象。传入时由调用方管理事务；
+                     未传入时由本方法自动管理事务。
         """
         model = cls.__model__
         stmt = delete(model).where(model.id == ident)
         try:
-            if session:
+            if session is not None:
+                # 复用外部 session：仅执行操作并 flush，不擅自 commit
+                # 避免破坏调用方的事务边界（如调用方在 transaction() 中执行多个操作）
                 await session.execute(stmt)
-                await session.commit()
+                await session.flush()
             else:
-                async with async_session() as session:
+                # 自行管理 session + 事务：执行 delete 后自动 commit
+                async with cls.transaction() as session:
                     await session.execute(stmt)
-                    await session.commit()
         except Exception as e:
             log.exception(e)
             raise
@@ -293,79 +335,88 @@ class Mapper(Generic[M]):
     @classmethod
     async def get_by(cls, session: AsyncSession = None, **kwargs) -> Optional[M]:
         """
-        通过字段获取对象
-        :param session: 可选的会话对象
-        :param kwargs: 查询条件
-        :return: 模型实例或None
+        通过字段获取单个对象。
+
+        - 传入外部 session：在其上执行查询
+        - 未传入 session：自动创建临时 session，查询后自动关闭
+
+        Args:
+            session: 可选的外部会话对象
+            **kwargs: 查询条件（filter_by 语义）
+
+        Returns:
+            Optional[M]: 匹配的第一个模型实例，不存在则返回 None
         """
         model = cls.__model__
         sql = select(model).filter_by(**kwargs)
-        try:
-            if session is None:
-                async with async_session() as session:
-                    result = await session.scalars(sql)
-            else:
-                result = await session.scalars(sql)
+        # 统一使用 session_scope 消除 if session 分支
+        async with cls.session_scope(session) as session:
+            result = await session.scalars(sql)
             return result.first()
-        except Exception as e:
-            raise
 
     @classmethod
     async def query_all(cls) -> List[M]:
-        """查询所有数据"""
+        """
+        查询所有数据。
+
+        自动创建临时 session 执行全表查询，完成后自动关闭。
+
+        Returns:
+            List[M]: 所有模型实例列表
+        """
         model = cls.__model__
-        try:
-            async with async_session() as session:
-                query = await session.scalars(select(model))
-                return query.all()
-        except Exception as e:
-            raise
+        # 统一使用 session_scope() 替代直接 async_session()
+        async with cls.session_scope() as session:
+            query = await session.scalars(select(model))
+            return query.all()
 
     @classmethod
     async def query_by(cls, session: AsyncSession = None, **kwargs) -> List[M]:
         """
-        通过字段查询（AND条件）
-        :param kwargs: 查询条件
-        :param session:
-        :return: 查询结果列表
+        通过字段查询（AND 条件），按创建时间排序。
+
+        - 传入外部 session：在其上执行查询
+        - 未传入 session：自动创建临时 session
+
+        Args:
+            session: 可选的外部会话对象
+            **kwargs: 查询条件（filter_by 语义）
+
+        Returns:
+            List[M]: 匹配的模型实例列表
         """
         model = cls.__model__
-        try:
-            if session:
-                query = await session.scalars(
-                    select(model).filter_by(**kwargs).order_by(model.create_time))
-            else:
-                async with async_session() as session:
-                    query = await session.scalars(
-                        select(model).filter_by(**kwargs).order_by(model.create_time))
+        # 统一使用 session_scope 消除 if session 分支
+        async with cls.session_scope(session) as session:
+            query = await session.scalars(
+                select(model).filter_by(**kwargs).order_by(model.create_time))
             return query.all()
-        except Exception as e:
-            raise
 
     @classmethod
     async def query_by_in_clause(cls, target: str, list_: List[Any], session: AsyncSession = None) -> Sequence[M]:
         """
-        根据指定字段和值列表查询数据（IN子句）
-        :param target: 模型中的字段名
-        :param list_: 用于IN子句的值列表
-        :param session: 可选的会话对象
-        :return: 查询结果列表
+        根据指定字段和值列表查询数据（IN 子句）。
+
+        Args:
+            target: 模型中的字段名
+            list_: 用于 IN 子句的值列表
+            session: 可选的外部会话对象
+
+        Returns:
+            Sequence[M]: 查询结果列表
+
+        Raises:
+            CommonError: 字段名不存在时抛出
         """
         model = cls.__model__
         if not hasattr(model, target):
             raise CommonError("Invalid field name")
 
         stmt = select(model).where(getattr(model, target).in_(list_))
-        try:
-            if session:
-                query = await session.scalars(stmt)
-                return query.all()
-            else:
-                async with async_session() as session:
-                    query = await session.scalars(stmt)
-                    return query.all()
-        except Exception as e:
-            raise
+        # 统一使用 session_scope 消除 if session 分支
+        async with cls.session_scope(session) as session:
+            query = await session.scalars(stmt)
+            return query.all()
 
     @staticmethod
     async def flush_expunge(session: AsyncSession, model: M, add: bool = False, refresh: bool = True) -> M:
@@ -398,30 +449,34 @@ class Mapper(Generic[M]):
     @classmethod
     async def page_query(cls, current: int, pageSize: int, **kwargs):
         """
-        分页查询
-        :param current: 当前页码
-        :param pageSize: 每页大小
-        :param kwargs: 查询条件和排序
-        :return: 分页结果
+        分页查询。
+
+        自动创建临时 session 执行 count + data 查询，完成后自动关闭。
+
+        Args:
+            current: 当前页码（从 1 开始）
+            pageSize: 每页大小
+            **kwargs: 查询条件和排序（支持 sort 参数）
+
+        Returns:
+            dict: 分页结果 {"items": [...], "pageInfo": {...}}
         """
         model = cls.__model__
-        try:
-            async with async_session() as session:
-                sort = kwargs.pop("sort", None)
-                conditions = await cls.search_conditions(**kwargs)
-                base_query = select(model).filter(and_(*conditions))
-                base_query = await cls.sorted_search(base_query, sort )
+        # 统一使用 session_scope() 替代直接 async_session()
+        async with cls.session_scope() as session:
+            sort = kwargs.pop("sort", None)
+            conditions = await cls.search_conditions(**kwargs)
+            base_query = select(model).filter(and_(*conditions))
+            base_query = await cls.sorted_search(base_query, sort)
 
-                total_query = select(func.count()).select_from(model).filter(*conditions)
-                total = (await session.execute(total_query)).scalar()
+            total_query = select(func.count()).select_from(model).filter(*conditions)
+            total = (await session.execute(total_query)).scalar()
 
-                paginated_query = base_query.offset((current - 1) * pageSize).limit(pageSize)
-                exe = await session.execute(paginated_query)
-                data = exe.scalars().all()
+            paginated_query = base_query.offset((current - 1) * pageSize).limit(pageSize)
+            exe = await session.execute(paginated_query)
+            data = exe.scalars().all()
 
-                return await cls.map_page_data(data, total, pageSize, current)
-        except Exception as e:
-            raise
+            return await cls.map_page_data(data, total, pageSize, current)
 
     @classmethod
     async def get_creator(cls, creator_id: int, session: AsyncSession) -> User:
@@ -483,6 +538,12 @@ class Mapper(Generic[M]):
 
         if sort:
             for k, v in sort.items():
+                # 防御性校验：确保排序字段名存在于模型表中
+                # 防止客户端传入非法排序字段（如 sortInfo='{"hacked_field": "descend"}'）
+                # 导致 getattr(model, 'hacked_field') 抛出 AttributeError → 500
+                if k not in model.__table__.columns:
+                    raise CommonError(f"Invalid sort field: {k}")
+
                 field = getattr(model, k)
                 if v == "descend":
                     base_query = base_query.order_by(field.desc())
@@ -519,6 +580,13 @@ class Mapper(Generic[M]):
         for key, value in kwargs.items():
             if "__" in key:
                 field_name, operator = key.rsplit("__", 1)
+
+                # 防御性校验：确保字段名存在于模型表中
+                # 防止客户端传入非法字段名（如 {'hacked_field__gt': 5}）
+                # 导致 getattr(model, 'hacked_field') 抛出 AttributeError → 500
+                if field_name not in model.__table__.columns:
+                    raise CommonError(f"Invalid field name: {field_name}")
+
                 field = getattr(model, field_name)
 
                 if operator == "in":
@@ -546,6 +614,10 @@ class Mapper(Generic[M]):
                     if value:
                         conditions.append(field.is_(None))
             else:
+                # 防御性校验：确保字段名存在于模型表中
+                if key not in model.__table__.columns:
+                    raise CommonError(f"Invalid field name: {key}")
+
                 field = getattr(model, key)
                 if value is None:
                     conditions.append(field.is_(None))
@@ -582,10 +654,18 @@ class Mapper(Generic[M]):
 
     @classmethod
     async def count_(cls) -> int:
-        """统计记录数"""
+        """
+        统计记录数。
+
+        自动创建临时 session 执行 count 查询，完成后自动关闭。
+
+        Returns:
+            int: 记录总数，异常时返回 0
+        """
         model = cls.__model__
         try:
-            async with async_session() as session:
+            # 统一使用 session_scope() 替代直接 async_session()
+            async with cls.session_scope() as session:
                 sql = select(func.count()).select_from(model)
                 state = await session.execute(sql)
                 return state.scalar()
@@ -594,14 +674,22 @@ class Mapper(Generic[M]):
 
     @classmethod
     async def tables(cls) -> List[str]:
-        """获取数据库表名列表"""
+        """
+        获取数据库表名列表。
+
+        自动创建临时 session 执行查询，完成后自动关闭。
+
+        Returns:
+            List[str]: 表名列表，异常时返回空列表
+        """
         try:
             sql = """
                   SELECT TABLE_NAME AS table_name
                   FROM information_schema.TABLES
                   WHERE TABLE_SCHEMA = DATABASE() \
                   """
-            async with async_session() as session:
+            # 统一使用 session_scope() 替代直接 async_session()
+            async with cls.session_scope() as session:
                 result = await session.execute(text(sql))
                 return [row[0] for row in result.fetchall()]
         except Exception as e:
@@ -674,9 +762,10 @@ class Mapper(Generic[M]):
             return await cls.map_page_data(data, total, pageSize, current)
 
         try:
-            if session:
-                return await _execute_query(session)
-            async with async_session() as sess:
+            # 统一使用 session_scope(session) 消除 if session 分支：
+            # - session 不为 None：复用它，在其上执行查询（不管理生命周期）
+            # - session 为 None：session_scope() 自动创建临时 session，完成后自动关闭
+            async with cls.session_scope(session) as sess:
                 return await _execute_query(sess)
         except Exception as e:
             log.error(f"page_by_module error: module_id={module_id}, module_ids={module_ids}, error={e}")
@@ -685,24 +774,39 @@ class Mapper(Generic[M]):
     @classmethod
     async def _manage_session(cls, session: Optional[AsyncSession], model: M) -> M:
         """
-        管理会话，自动处理事务提交
-        :param session: 可选的会话对象
-        :param model: 模型实例
-        :return: 模型实例
+        管理会话，统一通过 transaction(session) 处理事务边界。
+
+        - 传入外部 session：直接在其上 add/flush/expunge，由调用方控制 commit
+        - 未传入 session：自动创建 session + 事务，add/flush/expunge 后自动 commit
+
+        Args:
+            session: 可选的外部会话对象
+            model: 待持久化的模型实例
+
+        Returns:
+            M: 已 flush + expunge 的模型实例（注意：已 detached，无法懒加载关联对象）
         """
-        if session is None:
-            async with async_session() as new_session:
-                async with new_session.begin():
-                    return await cls.add_flush_expunge(new_session, model)
-        return await cls.add_flush_expunge(session, model)
+        # 统一使用 transaction(session) 消除 if session is None 分支：
+        # - session 不为 None：复用它，在其上执行操作（不擅自 commit）
+        # - session 为 None：transaction() 自动创建新 session + begin，退出时自动 commit
+        async with cls.transaction(session) as session:
+            return await cls.add_flush_expunge(session, model)
 
     @classmethod
     async def bulk_insert(cls, items: List[Dict[str, Any]], session: AsyncSession = None) -> int:
         """
-        批量插入数据
-        :param items: 数据字典列表
-        :param session: 可选的会话对象
-        :return: 插入的记录数
+        批量插入数据（接受字典列表）。
+
+        事务边界说明：
+        - 传入外部 session：在其上 add_all 并 flush，由调用方控制 commit
+        - 未传入 session：自动创建 session + 事务，add_all 后自动 commit
+
+        Args:
+            items: 数据字典列表
+            session: 可选的外部会话对象
+
+        Returns:
+            int: 插入的记录数
         """
         if not items:
             return 0
@@ -710,44 +814,50 @@ class Mapper(Generic[M]):
         model = cls.__model__
         log.info(f"bulk_insert items: {items}")
         try:
-            if session:
-                session.add_all([model(**item) for item in items])
+            # 统一使用 transaction(session) 消除 if session 分支：
+            # - session 不为 None：复用它，在其上执行操作并 flush（不擅自 commit）
+            # - session 为 None：transaction() 自动创建新 session + begin，退出时自动 commit
+            async with cls.transaction(session) as session:
+                models = [model(**item) for item in items]
+                log.info(f"bulk_insert models: {models}")
+                session.add_all(models)
                 await session.flush()
                 return len(items)
-            else:
-                async with cls.transaction() as session:
-                    models =[model(**item) for item in items]
-                    log.info(f"bulk_insert models: {models}")
-                    session.add_all(models)
-                    return len(items)
         except Exception as e:
             log.exception(f"bulk_insert error: {e}")
             raise
 
+
+    @classmethod
     @classmethod
     async def bulk_insert_models(cls, models: List[M], session: AsyncSession = None) -> int:
         """
-        批量插入模型实例
+        批量插入模型实例（直接接受模型实例列表）。
 
-        与 bulk_insert 不同，此方法直接接受模型实例列表，
-        适用于已经创建好模型实例的场景
+        与 bulk_insert 不同，此方法适用于已经创建好模型实例的场景。
 
-        :param models: 模型实例列表
-        :param session: 可选的会话对象
-        :return: 插入的记录数
+        事务边界说明：
+        - 传入外部 session：在其上 add_all 并 flush，由调用方控制 commit
+        - 未传入 session：自动创建 session + 事务，add_all 后自动 commit
+
+        Args:
+            models: 模型实例列表
+            session: 可选的外部会话对象
+
+        Returns:
+            int: 插入的记录数
         """
         if not models:
             return 0
 
         try:
-            if session:
+            # 统一使用 transaction(session) 消除 if session 分支：
+            # - session 不为 None：复用它，在其上执行操作并 flush（不擅自 commit）
+            # - session 为 None：transaction() 自动创建新 session + begin，退出时自动 commit
+            async with cls.transaction(session) as session:
                 session.add_all(models)
                 await session.flush()
                 return len(models)
-            else:
-                async with cls.transaction() as session:
-                    session.add_all(models)
-                    return len(models)
         except Exception as e:
             log.exception(f"bulk_insert_models error: {e}")
             raise
@@ -755,11 +865,22 @@ class Mapper(Generic[M]):
     @classmethod
     async def bulk_update(cls, updates: List[Dict[str, Any]], id_field: str = "id", session: AsyncSession = None) -> int:
         """
-        批量更新数据
-        :param updates: 更新数据列表，每项需包含 id_field 指定的字段
-        :param id_field: 用于定位记录的字段名
-        :param session: 可选的会话对象
-        :return: 更新的记录数
+        批量更新数据。
+
+        事务边界说明：
+        - 传入外部 session：复用 session 执行所有 update 并 flush，由调用方控制 commit
+          （适用于调用方需要在同一事务中批量更新多个表的场景）
+        - 未传入 session：自动创建 session + 事务，执行所有 update 后自动 commit
+
+        注意：本方法会从每个 update dict 中 pop 掉 id_field 指定的键。
+
+        Args:
+            updates: 更新数据列表，每项需包含 id_field 指定的字段
+            id_field: 用于定位记录的字段名，默认为 "id"
+            session: 可选的外部会话对象
+
+        Returns:
+            int: 实际执行更新的记录数（id 缺失的项会被跳过）
         """
         if not updates:
             return 0
@@ -767,7 +888,10 @@ class Mapper(Generic[M]):
         model = cls.__model__
         count = 0
         try:
-            if session:
+            # 统一使用 transaction(session) 处理 session 和事务：
+            # - session 不为 None：复用它，在其上执行操作并 flush（不擅自 commit）
+            # - session 为 None：transaction() 自动创建新 session + begin，退出时自动 commit
+            async with cls.transaction(session) as session:
                 for item in updates:
                     ident = item.pop(id_field, None)
                     if ident is None:
@@ -775,19 +899,10 @@ class Mapper(Generic[M]):
                     stmt = update(model).where(getattr(model, id_field) == ident).values(**item)
                     await session.execute(stmt)
                     count += 1
+                # 外部 session 场景下：仅 flush，由调用方控制 commit
+                # 内部 session 场景下：flush 后 transaction() 退出时自动 commit
                 await session.flush()
                 return count
-            else:
-                async with async_session() as session:
-                    for item in updates:
-                        ident = item.pop(id_field, None)
-                        if ident is None:
-                            continue
-                        stmt = update(model).where(getattr(model, id_field) == ident).values(**item)
-                        await session.execute(stmt)
-                        count += 1
-                    await session.commit()
-                    return count
         except Exception as e:
             log.error(f"bulk_update error: {e}")
             raise
@@ -795,10 +910,18 @@ class Mapper(Generic[M]):
     @classmethod
     async def bulk_delete(cls, ids: List[int], session: AsyncSession = None) -> int:
         """
-        批量删除数据
-        :param ids: 要删除的ID列表
-        :param session: 可选的会话对象
-        :return: 删除的记录数
+        批量删除数据。
+
+        事务边界说明：
+        - 传入外部 session：复用 session 执行 delete 并 flush，由调用方控制 commit
+        - 未传入 session：自动创建 session + 事务，执行 delete 后自动 commit
+
+        Args:
+            ids: 要删除的 ID 列表
+            session: 可选的外部会话对象
+
+        Returns:
+            int: 实际删除的记录数
         """
         if not ids:
             return 0
@@ -806,26 +929,50 @@ class Mapper(Generic[M]):
         model = cls.__model__
         stmt = delete(model).where(model.id.in_(ids))
         try:
-            if session:
+            # 统一使用 transaction(session) 处理 session 和事务：
+            # - session 不为 None：复用它，在其上执行操作并 flush（不擅自 commit）
+            # - session 为 None：transaction() 自动创建新 session + begin，退出时自动 commit
+            async with cls.transaction(session) as session:
                 result = await session.execute(stmt)
                 await session.flush()
                 return result.rowcount
-            else:
-                async with async_session() as session:
-                    result = await session.execute(stmt)
-                    await session.commit()
-                    return result.rowcount
         except Exception as e:
             log.error(f"bulk_delete error: {e}")
             raise
 
     @classmethod
     @asynccontextmanager
-    async def transaction(cls) -> AsyncGenerator[AsyncSession, None]:
+    async def transaction(cls, session: AsyncSession = None) -> AsyncGenerator[AsyncSession, None]:
         """
-        事务上下文管理器
-        :yield: 数据库会话
+        事务上下文管理器。
+
+        提供 session + 事务的统一管理：
+        - 外部传入 session：复用它，不自动 begin/commit（由调用方控制事务边界）
+        - 无外部 session：创建新 session + 自动 begin/commit/rollback
+
+        典型用法（自管理事务，适用于简单写操作）：
+            async with cls.transaction() as session:
+                await session.execute(...)
+                # 退出时自动 commit
+
+        典型用法（在已有事务中复用，适用于复杂业务链）：
+            async with cls.transaction() as outer_session:
+                await cls.save(session=outer_session, ...)
+                await cls.update_by_id(session=outer_session, ...)
+                # 统一在 transaction() 退出时 commit
+
+        Args:
+            session: 可选的外部会话对象。传入时由调用方管理事务；
+                     未传入时由本方法自动创建并管理事务。
+
+        Yields:
+            AsyncSession: 数据库会话
         """
-        async with async_session() as session:
-            async with session.begin():
-                yield session
+        if session is not None:
+            # 复用外部 session，调用方已自行管理事务（begin/commit/rollback）
+            yield session
+        else:
+            # 自行创建 session，并通过 session.begin() 自动管理事务边界
+            async with async_session() as session:
+                async with session.begin():
+                    yield session

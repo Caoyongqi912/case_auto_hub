@@ -14,7 +14,6 @@ from app.mapper import Mapper, set_creator
 from app.mapper.test_case.requirementMapper import RequirementMapper
 from app.mapper.test_case.testCaseStepMapper import TestCaseStepMapper
 from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper, CaseDynamicRenderer
-from app.model import async_session
 from app.model.base import User
 from app.model.caseHub.test_case import TestCase
 from app.model.caseHub.test_case_step import TestCaseStep
@@ -121,7 +120,7 @@ class TestCaseMapper(Mapper[TestCase]):
         """
 
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 case = await cls.get_by_id(ident=case_id, session=session)
                 case_steps = await TestCaseStepMapper.query_sub_steps(case_id=case_id, session=session)
                 return {
@@ -596,7 +595,7 @@ class TestCaseMapper(Mapper[TestCase]):
         association_filters = {k: v for k, v in kwargs.items() if k in ASSOCIATION_FIELDS}
 
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 case_conditions = await cls.search_conditions(**case_filters)
 
                 query = (
@@ -654,7 +653,7 @@ class TestCaseMapper(Mapper[TestCase]):
         :return: 标签集合
         """
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 tags = await session.scalars(
                     select(TestCase.case_tag)
                     .join(RequirementCaseAssociation, RequirementCaseAssociation.case_id == TestCase.id)
@@ -824,20 +823,19 @@ class TestCaseMapper(Mapper[TestCase]):
         log.info(f"更新用例参数: {kwargs}")
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    case_obj = await cls.get_by_id(ident=kwargs.get("id"), session=session)
-                    old_data = case_obj.map
-                    kwargs.pop("id", None)
-                    new_case = await cls.update_cls(case_obj, session, **kwargs)
+            async with cls.transaction() as session:
+                case_obj = await cls.get_by_id(ident=kwargs.get("id"), session=session)
+                old_data = case_obj.map
+                kwargs.pop("id", None)
+                new_case = await cls.update_cls(case_obj, session, **kwargs)
 
-                    await CaseDynamicMapper.update_dynamic(
-                        cr=ur,
-                        case_id=case_obj.id,
-                        old_case=old_data,
-                        new_case=new_case.map,
-                        session=session
-                    )
+            await CaseDynamicMapper.update_dynamic(
+                    cr=ur,
+                    case_id=case_obj.id,
+                    old_case=old_data,
+                    new_case=new_case.map,
+                    session=session
+                )
         except Exception as e:
             log.error(f"update_case error: kwargs={kwargs}, error={e}")
             raise

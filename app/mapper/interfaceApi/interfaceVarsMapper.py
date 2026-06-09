@@ -13,7 +13,6 @@ from sqlalchemy import and_, select, delete
 from app.exception import NotFind
 from app.mapper import Mapper
 from app.mapper.interfaceApi.dynamicMapper import InterfaceCaseDynamicMapper
-from app.model import async_session
 from app.model.base import User
 from app.model.interfaceAPIModel.interfaceCaseVarsModel import InterfaceCaseVars
 from utils import log
@@ -78,19 +77,26 @@ class InterfaceVarsMapper(Mapper[InterfaceCaseVars]):
             raise
 
     @classmethod
-    async def query_by(
+    async def query_vars(
             cls,
             case_id: Optional[int] = None,
             key: Optional[str] = None,
             uid: Optional[str] = None
     ) -> List[InterfaceCaseVars]:
         """
-        根据条件查询变量
+        根据条件查询接口用例变量（专用方法）。
 
-        :param case_id: 用例ID（可选）
-        :param key: 变量键名（可选）
-        :param uid: 变量唯一标识（可选）
-        :return: 符合条件的变量列表
+        注意：本方法是 InterfaceVarsMapper 的专用查询方法，
+        覆盖基类的 query_by 是为了提供更精确的参数签名（case_id/key/uid）。
+        如需使用基类的通用 query_by(session, **kwargs)，请通过父类调用。
+
+        Args:
+            case_id: 用例ID（可选）
+            key: 变量键名（可选）
+            uid: 变量唯一标识（可选）
+
+        Returns:
+            List[InterfaceCaseVars]: 符合条件的变量列表
         """
         conditions = []
 
@@ -106,7 +112,9 @@ class InterfaceVarsMapper(Mapper[InterfaceCaseVars]):
         else:
             query = select(InterfaceCaseVars)
 
-        async with async_session() as session:
+        # 使用基类 session_scope 统一处理 session 生命周期
+        # 替代原先直接 async_session() 的方式，保持与基类一致
+        async with cls.session_scope() as session:
             result = await session.execute(query)
             return list(result.scalars().all())
 
@@ -142,10 +150,12 @@ class InterfaceVarsMapper(Mapper[InterfaceCaseVars]):
         """
         根据用例ID获取所有变量
 
+        使用 session_scope() 自动管理 session 生命周期（只读查询）。
+
         :param case_id: 用例ID
         :return: 该用例下的所有变量列表
         """
-        async with async_session() as session:
+        async with cls.session_scope() as session:
             result = await session.execute(
                 select(InterfaceCaseVars).where(
                     InterfaceCaseVars.case_id == case_id

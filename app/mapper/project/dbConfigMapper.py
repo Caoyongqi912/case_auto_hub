@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exception import CommonError
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base import User
 from app.model.base.db_config import DBConfig, DBExecuteModel
 from enums import DBTypeEnum
@@ -29,7 +28,7 @@ class DbConfigMapper(Mapper[DBConfig]):
         io = APIStarter(user)
         execScript = ExecDBScript(io=io, script_str=script, onlySearch=True)
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 dbConfig = await cls.get_by_id(db_id, session)
                 return await execScript.invoke(dbConfig.db_type, **dbConfig.config)
         except Exception as e:

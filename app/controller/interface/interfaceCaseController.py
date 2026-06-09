@@ -461,7 +461,9 @@ async def remove_vars(varInfo: DeleteVarsSchema, user: User = Depends(Authentica
 
 @router.post('/vars/query', description='查询变量')
 async def query_vars(varsInfo: QueryVarsSchema, _: User = Depends(Authentication())):
-    datas = await InterfaceVarsMapper.query_by(**varsInfo.model_dump())
+    # 使用 query_vars（原 query_by 已重命名）
+    # query_vars 是 InterfaceVarsMapper 的专用查询方法，参数为 case_id/key/uid
+    datas = await InterfaceVarsMapper.query_vars(**varsInfo.model_dump())
     return Response.success(datas)
 
 

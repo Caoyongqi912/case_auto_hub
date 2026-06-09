@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
-from app.model import async_session
 from app.model.base import User
 from app.model.interfaceAPIModel.interfaceLoopModel import InterfaceLoop
 from app.model.interfaceAPIModel.associationModel import InterfaceLoopAPIAssociation
@@ -111,7 +110,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
             List[Interface]: 接口列表，按执行顺序排序
         """
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 stmt = (
                     select(Interface)
                     .join(InterfaceLoopAPIAssociation)

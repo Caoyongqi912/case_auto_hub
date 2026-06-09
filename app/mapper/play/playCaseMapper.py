@@ -9,7 +9,6 @@ import asyncio
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Sequence
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base import User
 from app.model.playUI import PlayCase, PlayCaseVariables, PlayCaseResult
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -123,27 +122,23 @@ class PlayCaseMapper(Mapper[PlayCase]):
             interface_id: 接口
         """
 
-        try:
-            async with async_session() as session:
-                async with session.begin():
-                    play_case = await cls.get_by_id(ident=case_id, session=session)
-                    interface = await InterfaceMapper.get_by_id(ident=interface_id, session=session)
+        async with cls.transaction() as session:
+            play_case = await cls.get_by_id(ident=case_id, session=session)
+            interface = await InterfaceMapper.get_by_id(ident=interface_id, session=session)
 
-                    interface_content = await PlayStepContentMapper.init_content(
-                        session=session,
-                        target_id=interface.id,
-                        is_common=False,
-                        content_name=interface.interface_name,
-                        content_desc=interface.interface_desc,
-                        content_type=PlayStepContentType.STEP_PLAY_API,
-                    )
-                    last_index = await CommonHelper.get_case_step_last_index(case_id, session)
-                    await CommonHelper.create_single_case_content_association(
-                        session, case_id, interface_content.id, last_index + 1
-                    )
-                    play_case.step_num += 1
-        except Exception:
-            raise
+            interface_content = await PlayStepContentMapper.init_content(
+                session=session,
+                target_id=interface.id,
+                is_common=False,
+                content_name=interface.interface_name,
+                content_desc=interface.interface_desc,
+                content_type=PlayStepContentType.STEP_PLAY_API,
+            )
+            last_index = await CommonHelper.get_case_step_last_index(case_id, session)
+            await CommonHelper.create_single_case_content_association(
+                session, case_id, interface_content.id, last_index + 1
+            )
+            play_case.step_num += 1
 
     @classmethod
     async def association_groups(cls, case_id: int, group_id_list: List[int]):
@@ -160,34 +155,33 @@ class PlayCaseMapper(Mapper[PlayCase]):
             raise ValueError("步骤列表不能为空")
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    play_case = await cls.get_by_id(ident=case_id, session=session)
-                    if not play_case:
-                        raise ValueError(f"找不到ID为{case_id}的用例")
+            async with cls.transaction() as session:
+                play_case = await cls.get_by_id(ident=case_id, session=session)
+                if not play_case:
+                    raise ValueError(f"找不到ID为{case_id}的用例")
 
-                    group_content_list = []
-                    # 查询组
-                    from app.mapper.play.playStepGroupMapper import PlayStepGroupMapper
-                    groups = await PlayStepGroupMapper.query_by_id(group_id_list, session)
-                    for group in groups:
-                        content = await PlayStepContentMapper.init_content(
-                            target_id=group.id,
-                            content_type=PlayStepContentType.STEP_PLAY_GROUP,
-                            session=session,
-                            is_common=True,
-                            content_name=group.name,
-                            content_desc=group.description,
-                        )
-                        group_content_list.append(content.id)
-
-                    last_index = await CommonHelper.get_case_step_last_index(case_id, session)
-                    await CommonHelper.create_case_content_association(
-                        session, case_id, group_content_list, last_index + 1
+                group_content_list = []
+                # 查询组
+                from app.mapper.play.playStepGroupMapper import PlayStepGroupMapper
+                groups = await PlayStepGroupMapper.query_by_id(group_id_list, session)
+                for group in groups:
+                    content = await PlayStepContentMapper.init_content(
+                        target_id=group.id,
+                        content_type=PlayStepContentType.STEP_PLAY_GROUP,
+                        session=session,
+                        is_common=True,
+                        content_name=group.name,
+                        content_desc=group.description,
                     )
+                    group_content_list.append(content.id)
 
+                last_index = await CommonHelper.get_case_step_last_index(case_id, session)
+                await CommonHelper.create_case_content_association(
+                    session, case_id, group_content_list, last_index + 1
+                )
         except Exception as e:
-            log.error(e)
+            log.exception(f"关联公共步骤失败: {e}")
+            raise
 
     @classmethod
     async def association_steps(cls, case_id: int, quote: bool, play_step_id_list: List[int], user: User):
@@ -213,91 +207,84 @@ class PlayCaseMapper(Mapper[PlayCase]):
             raise ValueError("步骤列表不能为空")
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    try:
-                        play_case = await cls.get_by_id(ident=case_id, session=session)
-                        if not play_case:
-                            raise ValueError(f"找不到ID为{case_id}的用例")
+            async with cls.transaction() as session:
+                play_case = await cls.get_by_id(ident=case_id, session=session)
+                if not play_case:
+                    raise ValueError(f"找不到ID为{case_id}的用例")
 
-                        # 批量更新步骤数量，避免多次更新同一字段
-                        play_case.step_num += len(play_step_id_list)
-                        case_step_content_play_step_list = []
+                # 批量更新步骤数量，避免多次更新同一字段
+                play_case.step_num += len(play_step_id_list)
+                case_step_content_play_step_list = []
 
-                        # 引用
-                        if quote:
-                            # 批量获取步骤信息，减少数据库查询次数
-                            # get_by_ids 现在保证返回的步骤列表顺序与传入的 ID 列表一致
-                            steps = await PlayStepV2Mapper.get_by_ids(play_step_id_list, session)
-                            if not steps:
-                                log.warning(f"未找到ID为{play_step_id_list}的步骤")
-                                return
+                # 引用
+                if quote:
+                    # 批量获取步骤信息，减少数据库查询次数
+                    # get_by_ids 现在保证返回的步骤列表顺序与传入的 ID 列表一致
+                    steps = await PlayStepV2Mapper.get_by_ids(play_step_id_list, session)
+                    if not steps:
+                        log.warning(f"未找到ID为{play_step_id_list}的步骤")
+                        return
 
-                            # 直接使用返回的步骤列表，已经按照传入的ID顺序排序
-                            # 创建步骤ID到步骤对象的映射，用于快速查找
-                            step_map = {step.id: step for step in steps}
+                    # 直接使用返回的步骤列表，已经按照传入的ID顺序排序
+                    # 创建步骤ID到步骤对象的映射，用于快速查找
+                    step_map = {step.id: step for step in steps}
 
-                            # 遍历传入的ID列表，确保顺序一致
-                            for play_step_id in play_step_id_list:
-                                step = step_map.get(play_step_id)
-                                if step:
-                                    content = await PlayStepContentMapper.init_content(
-                                        target_id=play_step_id,
-                                        content_type=PlayStepContentType.STEP_PLAY,
-                                        session=session,
-                                        is_common=True,
-                                        content_desc=step.method,
-                                        content_name=step.name
-                                    )
-                                    case_step_content_play_step_list.append(content)
-                        # 复制
-                        else:
-                            # 使用异步并发处理，提高复制步骤的效率
-                            copy_jobs = []
-                            for play_step_id in play_step_id_list:
-                                copy_jobs.append(
-                                    PlayStepV2Mapper.copy_step(
-                                        step_id=play_step_id,
-                                        session=session,
-                                        copy_step_name=True,
-                                        is_common=False,
-                                        user=user
-                                    )
-                                )
-
-                            try:
-                                copied_steps = await asyncio.gather(*copy_jobs)
-                            except Exception as gather_err:
-                                log.exception(f"复制步骤时出现错误: {gather_err}")
-                                raise ValueError("复制步骤失败")
-
-                            for step in copied_steps:
-                                content = await PlayStepContentMapper.init_content(
-                                    target_id=step.id,
-                                    content_type=PlayStepContentType.STEP_PLAY,
-                                    session=session,
-                                    content_desc=step.method,
-                                    content_name=step.name,
-                                    is_common=False
-                                )
-                                case_step_content_play_step_list.append(content)
-
-                        last_index = await CommonHelper.get_case_step_last_index(case_id, session)
-                        content_ids = [content.id for content in case_step_content_play_step_list]
-
-                        if content_ids:
-                            await CommonHelper.create_case_content_association(
-                                session, case_id, content_ids, last_index + 1
+                    # 遍历传入的ID列表，确保顺序一致
+                    for play_step_id in play_step_id_list:
+                        step = step_map.get(play_step_id)
+                        if step:
+                            content = await PlayStepContentMapper.init_content(
+                                target_id=play_step_id,
+                                content_type=PlayStepContentType.STEP_PLAY,
+                                session=session,
+                                is_common=True,
+                                content_desc=step.method,
+                                content_name=step.name
                             )
-                        else:
-                            log.warning(f"没有创建任何步骤关联，用例ID: {case_id}")
-                            # 回滚步骤数量更新
-                            play_case.step_num -= len(play_step_id_list)
+                            case_step_content_play_step_list.append(content)
+                # 复制
+                else:
+                    # 使用异步并发处理，提高复制步骤的效率
+                    copy_jobs = []
+                    for play_step_id in play_step_id_list:
+                        copy_jobs.append(
+                            PlayStepV2Mapper.copy_step(
+                                step_id=play_step_id,
+                                session=session,
+                                copy_step_name=True,
+                                is_common=False,
+                                user=user
+                            )
+                        )
 
-                    except Exception as transaction_err:
-                        session.rollback()
-                        log.exception(f"事务执行失败: {transaction_err}")
-                        raise
+                    try:
+                        copied_steps = await asyncio.gather(*copy_jobs)
+                    except Exception as gather_err:
+                        log.exception(f"复制步骤时出现错误: {gather_err}")
+                        raise ValueError("复制步骤失败")
+
+                    for step in copied_steps:
+                        content = await PlayStepContentMapper.init_content(
+                            target_id=step.id,
+                            content_type=PlayStepContentType.STEP_PLAY,
+                            session=session,
+                            content_desc=step.method,
+                            content_name=step.name,
+                            is_common=False
+                        )
+                        case_step_content_play_step_list.append(content)
+
+                last_index = await CommonHelper.get_case_step_last_index(case_id, session)
+                content_ids = [content.id for content in case_step_content_play_step_list]
+
+                if content_ids:
+                    await CommonHelper.create_case_content_association(
+                        session, case_id, content_ids, last_index + 1
+                    )
+                else:
+                    log.warning(f"没有创建任何步骤关联，用例ID: {case_id}")
+                    # 回滚步骤数量更新
+                    play_case.step_num -= len(play_step_id_list)
         except Exception as e:
             log.exception(f"关联步骤出现错误: {e}")
             raise
@@ -325,51 +312,44 @@ class PlayCaseMapper(Mapper[PlayCase]):
             raise ValueError("步骤参数不能为空")
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    try:
-                        play_case = await cls.get_by_id(ident=case_id, session=session)
-                        if not play_case:
-                            raise ValueError(f"找不到ID为{case_id}的用例")
+            async with cls.transaction() as session:
+                play_case = await cls.get_by_id(ident=case_id, session=session)
+                if not play_case:
+                    raise ValueError(f"找不到ID为{case_id}的用例")
 
-                        # 保存步骤
-                        try:
-                            step = await PlayStepV2Mapper.save(
-                                creator_user=user,
-                                session=session,
-                                **kwargs
-                            )
-                        except Exception as save_err:
-                            log.exception(f"保存步骤失败: {save_err}")
-                            raise ValueError("创建步骤失败")
+                # 保存步骤
+                try:
+                    step = await PlayStepV2Mapper.save(
+                        creator_user=user,
+                        session=session,
+                        **kwargs
+                    )
+                except Exception as save_err:
+                    log.exception(f"保存步骤失败: {save_err}")
+                    raise ValueError("创建步骤失败")
 
-                        # 创建内容
-                        try:
-                            content = await PlayStepContentMapper.init_content(
-                                target_id=step.id,
-                                is_common=False,
-                                content_type=PlayStepContentType.STEP_PLAY,
-                                session=session,
-                                content_desc=step.method,
-                                content_name=step.name
-                            )
-                        except Exception as content_err:
-                            log.exception(f"创建步骤内容失败: {content_err}")
-                            raise ValueError("创建步骤内容失败")
+                # 创建内容
+                try:
+                    content = await PlayStepContentMapper.init_content(
+                        target_id=step.id,
+                        is_common=False,
+                        content_type=PlayStepContentType.STEP_PLAY,
+                        session=session,
+                        content_desc=step.method,
+                        content_name=step.name
+                    )
+                except Exception as content_err:
+                    log.exception(f"创建步骤内容失败: {content_err}")
+                    raise ValueError("创建步骤内容失败")
 
-                        # 获取最后索引并创建关联
-                        last_index = await CommonHelper.get_case_step_last_index(case_id, session)
-                        await CommonHelper.create_single_case_content_association(
-                            session, case_id, content.id, last_index + 1
-                        )
+                # 获取最后索引并创建关联
+                last_index = await CommonHelper.get_case_step_last_index(case_id, session)
+                await CommonHelper.create_single_case_content_association(
+                    session, case_id, content.id, last_index + 1
+                )
 
-                        # 更新步骤数量
-                        play_case.step_num += 1
-
-                    except Exception as transaction_err:
-                        session.rollback()
-                        log.exception(f"事务执行失败: {transaction_err}")
-                        raise
+                # 更新步骤数量
+                play_case.step_num += 1
         except Exception as e:
             log.exception(f"关联步骤出现错误: {e}")
             raise
@@ -394,52 +374,45 @@ class PlayCaseMapper(Mapper[PlayCase]):
             raise ValueError("步骤内容ID列表不能为空")
 
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    try:
-                        # 验证用例是否存在
-                        play_case = await cls.get_by_id(ident=case_id, session=session)
-                        if not play_case:
-                            raise ValueError(f"找不到ID为{case_id}的用例")
+            async with cls.transaction() as session:
+                # 验证用例是否存在
+                play_case = await cls.get_by_id(ident=case_id, session=session)
+                if not play_case:
+                    raise ValueError(f"找不到ID为{case_id}的用例")
 
-                        # 验证步骤内容是否属于该用例
-                        existing_associations = await session.execute(
-                            select(PlayCaseStepContentAssociation.play_step_content_id).where(
-                                and_(
-                                    PlayCaseStepContentAssociation.play_case_id == case_id,
-                                    PlayCaseStepContentAssociation.play_step_content_id.in_(content_id_list)
-                                )
-                            )
+                # 验证步骤内容是否属于该用例
+                existing_associations = await session.execute(
+                    select(PlayCaseStepContentAssociation.play_step_content_id).where(
+                        and_(
+                            PlayCaseStepContentAssociation.play_case_id == case_id,
+                            PlayCaseStepContentAssociation.play_step_content_id.in_(content_id_list)
                         )
-                        existing_ids = {ident[0] for ident in existing_associations.all()}
+                    )
+                )
+                existing_ids = {ident[0] for ident in existing_associations.all()}
 
-                        if len(existing_ids) != len(content_id_list):
-                            invalid_ids = set(content_id_list) - existing_ids
-                            log.warning(f"以下步骤内容ID不属于用例{case_id}: {invalid_ids}")
+                if len(existing_ids) != len(content_id_list):
+                    invalid_ids = set(content_id_list) - existing_ids
+                    log.warning(f"以下步骤内容ID不属于用例{case_id}: {invalid_ids}")
 
-                        # 创建CASE语句的条件映射
-                        whens = {step_id: index for index, step_id in enumerate(content_id_list, start=1)}
+                # 创建CASE语句的条件映射
+                whens = {step_id: index for index, step_id in enumerate(content_id_list, start=1)}
 
-                        # 执行批量更新
-                        result = await session.execute(
-                            update(PlayCaseStepContentAssociation)
-                            .where(
-                                and_(
-                                    PlayCaseStepContentAssociation.play_step_content_id.in_(content_id_list),
-                                    PlayCaseStepContentAssociation.play_case_id == case_id
-                                )
-                            )
-                            .values(
-                                step_order=case(whens, value=PlayCaseStepContentAssociation.play_step_content_id)
-                            )
+                # 执行批量更新
+                result = await session.execute(
+                    update(PlayCaseStepContentAssociation)
+                    .where(
+                        and_(
+                            PlayCaseStepContentAssociation.play_step_content_id.in_(content_id_list),
+                            PlayCaseStepContentAssociation.play_case_id == case_id
                         )
+                    )
+                    .values(
+                        step_order=case(whens, value=PlayCaseStepContentAssociation.play_step_content_id)
+                    )
+                )
 
-                        log.info(f"更新了{result.rowcount}个步骤的顺序，用例ID: {case_id}")
-
-                    except Exception as transaction_err:
-                        session.rollback()
-                        log.exception(f"事务执行失败: {transaction_err}")
-                        raise
+                log.info(f"更新了{result.rowcount}个步骤的顺序，用例ID: {case_id}")
         except Exception as e:
             log.exception(f"重新排序步骤出现错误: {e}")
             raise
@@ -459,24 +432,19 @@ class PlayCaseMapper(Mapper[PlayCase]):
             - 为新复制的步骤分配正确的顺序索引
             - 使用事务确保操作的原子性
         """
-        try:
-            async with async_session() as session:
-                async with session.begin():
-                    play_case = await cls.get_by_id(ident=case_id, session=session)
-                    content = await PlayStepContentMapper.copy_content(
-                        content_id=content_id,
-                        session=session,
-                        user=user
-                    )
+        async with cls.transaction() as session:
+            play_case = await cls.get_by_id(ident=case_id, session=session)
+            content = await PlayStepContentMapper.copy_content(
+                content_id=content_id,
+                session=session,
+                user=user
+            )
 
-                    play_case.step_num += 1
-                    last_index = await CommonHelper.get_case_step_last_index(case_id, session)
-                    await CommonHelper.create_single_case_content_association(
-                        session, case_id, content.id, last_index + 1
-                    )
-
-        except Exception as e:
-            raise e
+            play_case.step_num += 1
+            last_index = await CommonHelper.get_case_step_last_index(case_id, session)
+            await CommonHelper.create_single_case_content_association(
+                session, case_id, content.id, last_index + 1
+            )
 
     @classmethod
     async def remove_step(cls, content_id: int, case_id: int = None):
@@ -493,30 +461,24 @@ class PlayCaseMapper(Mapper[PlayCase]):
             - 对于非公共步骤，会同时删除步骤本身
             - 使用事务确保操作的原子性
         """
-        try:
-            async with async_session() as session:
-                async with session.begin():
-                    content = await PlayStepContentMapper.get_by_id(ident=content_id, session=session)
-                    # 查询步骤
-                    play_case = await cls.get_by_id(ident=case_id, session=session)
-                    if play_case.step_num > 0:  # 防止负数
-                        play_case.step_num -= 1
+        async with cls.transaction() as session:
+            content = await PlayStepContentMapper.get_by_id(ident=content_id, session=session)
+            # 查询步骤
+            play_case = await cls.get_by_id(ident=case_id, session=session)
+            if play_case.step_num > 0:  # 防止负数
+                play_case.step_num -= 1
 
-                    # 删除关联表
-                    await session.execute(
-                        delete(PlayCaseStepContentAssociation).where(
-                            and_(
-                                PlayCaseStepContentAssociation.play_step_content_id == content_id,
-                                PlayCaseStepContentAssociation.play_case_id == case_id
-                            )
-                        )
+            # 删除关联表
+            await session.execute(
+                delete(PlayCaseStepContentAssociation).where(
+                    and_(
+                        PlayCaseStepContentAssociation.play_step_content_id == content_id,
+                        PlayCaseStepContentAssociation.play_case_id == case_id
                     )
-                    if not content.is_common:
-                        await PlayStepContentMapper.delete_content(content=content, session=session)
-
-
-        except Exception as e:
-            raise e
+                )
+            )
+            if not content.is_common:
+                await PlayStepContentMapper.delete_content(content=content, session=session)
 
     @classmethod
     async def query_content_steps(cls, case_id: int, session: Optional[AsyncSession] = None) -> Sequence[
@@ -531,12 +493,7 @@ class PlayCaseMapper(Mapper[PlayCase]):
         Returns:
             Sequence[PlayStepContent]: 步骤内容列表，按步骤顺序排序
         """
-        should_close = False
-        try:
-            if session is None:
-                session = async_session()
-                should_close = True
-
+        async with cls.session_scope(session) as session:
             scalars_data = await session.scalars(
                 select(PlayStepContent).join(
                     PlayCaseStepContentAssociation,
@@ -548,9 +505,6 @@ class PlayCaseMapper(Mapper[PlayCase]):
                 )
             )
             return scalars_data.all()
-        finally:
-            if should_close and session:
-                await session.close()
 
     @classmethod
     async def reload_content(cls, case_id: int):
@@ -560,49 +514,39 @@ class PlayCaseMapper(Mapper[PlayCase]):
             case_id：用例id
         """
 
-        try:
-            async with async_session() as session:
-                async with session.begin():
-                    play_case = await cls.get_by_id(ident=case_id, session=session)
+        async with cls.transaction() as session:
+            play_case = await cls.get_by_id(ident=case_id, session=session)
 
-                    scalars_data = await session.scalars(
-                        select(PlayStepContent).join(
-                            PlayCaseStepContentAssociation,
-                            PlayStepContent.id == PlayCaseStepContentAssociation.play_step_content_id
-                        ).where(
-                            PlayCaseStepContentAssociation.play_case_id == case_id
-                        ).order_by(
-                            PlayCaseStepContentAssociation.step_order
-                        )
-                    )
-                    contents = scalars_data.all()
+            scalars_data = await session.scalars(
+                select(PlayStepContent).join(
+                    PlayCaseStepContentAssociation,
+                    PlayStepContent.id == PlayCaseStepContentAssociation.play_step_content_id
+                ).where(
+                    PlayCaseStepContentAssociation.play_case_id == case_id
+                ).order_by(
+                    PlayCaseStepContentAssociation.step_order
+                )
+            )
+            contents = scalars_data.all()
 
-                    # 重新计算步骤数量
-                    play_case.step_num = len(contents)
-                    for content in contents:
-                        match content.content:
-                            case PlayStepContentType.STEP_PLAY:
-                                play = await PlayStepV2Mapper.get_by_id(ident=content.target_id, session=session)
-                                content.content_name = play.name
-                                content.content_desc = play.description
-                            case PlayStepContentType.STEP_PLAY_API:
-                                api = await InterfaceMapper.get_by_id(ident=content.target_id, session=session)
-                                content.content_name = api.interface_name
-                                content.content_desc = api.interface_desc
-                            case PlayStepContentType.STEP_PLAY_GROUP:
-                                group = await PlayStepGroupMapper.get_by_id(ident=content.target_id, session=session)
-                                content.content_name = group.name
-                                content.content_desc = group.description
-                            case _:
-                                continue
-
-
-
-
-
-
-        except Exception as e:
-            raise e
+            # 重新计算步骤数量
+            play_case.step_num = len(contents)
+            for content in contents:
+                match content.content:
+                    case PlayStepContentType.STEP_PLAY:
+                        play = await PlayStepV2Mapper.get_by_id(ident=content.target_id, session=session)
+                        content.content_name = play.name
+                        content.content_desc = play.description
+                    case PlayStepContentType.STEP_PLAY_API:
+                        api = await InterfaceMapper.get_by_id(ident=content.target_id, session=session)
+                        content.content_name = api.interface_name
+                        content.content_desc = api.interface_desc
+                    case PlayStepContentType.STEP_PLAY_GROUP:
+                        group = await PlayStepGroupMapper.get_by_id(ident=content.target_id, session=session)
+                        content.content_name = group.name
+                        content.content_desc = group.description
+                    case _:
+                        continue
 
 
 class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
@@ -668,7 +612,9 @@ class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
         key = kwargs.get("key")
         caseId = kwargs.get("play_case_id")
         try:
-            async with async_session() as session:
+            # 统一使用 transaction() 替代 async_session() + manual commit
+            # 自动管理 session + 事务，异常时自动回滚
+            async with cls.transaction() as session:
                 await PlayCaseVariablesMapper._check_key(key, caseId, session)
                 await cls.save(session=session, creator_user=user, **kwargs)
         except Exception as e:
@@ -694,7 +640,8 @@ class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
         if not key:
             return await super().update_by_id(update_user=updateUser, **kwargs)
         try:
-            async with async_session() as session:
+            # 统一使用 transaction() 替代 async_session() + manual commit
+            async with cls.transaction() as session:
                 await PlayCaseVariablesMapper._check_key(key, caseId, session)
                 return await super().update_by_id(update_user=updateUser, session=session, **kwargs)
         except Exception:
@@ -755,7 +702,8 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
         """
 
         try:
-            async with async_session() as session:
+            # 统一使用 session_scope() 替代直接 async_session() (只读查询)
+            async with cls.session_scope() as session:
                 case_result = await cls.get_by_id(ident=case_result_id, session=session)
 
                 stmt = select(PlayStepContentResult).where(
@@ -824,13 +772,13 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
             - 使用事务确保操作的原子性
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    delete_sql = delete(cls.__model__).where(and_(
-                        cls.__model__.ui_case_Id == case_id,
-                        cls.__model__.task_result_id.is_(None)
-                    ))
-                    await session.execute(delete_sql)
+            # 统一使用 transaction() 替代 async_session() + session.begin()
+            async with cls.transaction() as session:
+                delete_sql = delete(cls.__model__).where(and_(
+                    cls.__model__.ui_case_Id == case_id,
+                    cls.__model__.task_result_id.is_(None)
+                ))
+                await session.execute(delete_sql)
         except Exception as e:
             log.error(e)
             raise e
@@ -859,23 +807,23 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
             - 复制用例的基本信息到结果中
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    result = PlayCaseResult(
-                        ui_case_Id=play_case.id,
-                        ui_case_name=play_case.title,
-                        ui_case_description=play_case.description,
-                        ui_case_step_num=play_case.step_num,
-                        starter_id=user.userId,
-                        starter_name=user.username,
-                        start_time=datetime.now(),
-                        task_result_id=task_result_id,
-                        status=Status.RUNNING,
-                        vars_info=vars_list if vars_list else [],
-                        asserts_info=[],
-                    )
+            # 统一使用 transaction() 替代 async_session() + session.begin()
+            async with cls.transaction() as session:
+                result = PlayCaseResult(
+                    ui_case_Id=play_case.id,
+                    ui_case_name=play_case.title,
+                    ui_case_description=play_case.description,
+                    ui_case_step_num=play_case.step_num,
+                    starter_id=user.userId,
+                    starter_name=user.username,
+                    start_time=datetime.now(),
+                    task_result_id=task_result_id,
+                    status=Status.RUNNING,
+                    vars_info=vars_list if vars_list else [],
+                    asserts_info=[],
+                )
 
-                    return await cls.add_flush_expunge(session, result)
+                return await cls.add_flush_expunge(session, result)
         except Exception as e:
             log.exception(e)
             raise e
@@ -892,10 +840,10 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
             PlayCaseResult: 保存后的用例结果对象
         """
         try:
-            async with async_session() as session:
-                async with session.begin():
-                    await cls.add_flush_expunge(session, result)
-                    return result
+            # 统一使用 transaction() 替代 async_session() + session.begin()
+            async with cls.transaction() as session:
+                await cls.add_flush_expunge(session, result)
+                return result
         except Exception as e:
             log.error(e)
             raise e
@@ -910,11 +858,11 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
             assertsInfo: 断言信息列表
         """
         try:
-            async with async_session() as session:
+            # 统一使用 transaction() 替代 async_session() + manual commit
+            async with cls.transaction() as session:
                 update_sql = update(PlayCaseResult).where(PlayCaseResult.id == crId).values(
                     asserts_info=assertsInfo)
                 await session.execute(update_sql)
-                await session.commit()
         except Exception as e:
             raise e
 
@@ -928,11 +876,11 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
             varsInfo: 变量信息列表
         """
         try:
-            async with async_session() as session:
+            # 统一使用 transaction() 替代 async_session() + manual commit
+            async with cls.transaction() as session:
                 update_sql = update(PlayCaseResult).where(PlayCaseResult.id == crId).values(
                     vars_info=varsInfo)
                 await session.execute(update_sql)
-                await session.commit()
         except Exception as e:
             raise e
 
@@ -957,39 +905,39 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
         :return: 添加后的步骤内容对象
         """
 
-        async with async_session() as session:
-            async with session.begin():
-                play_case = await PlayCaseMapper.get_by_id(ident=case_id, session=session)
-                play_case.step_num += 1
+        # 统一使用 transaction() 替代 async_session() + session.begin()
+        async with cls.transaction() as session:
+            play_case = await PlayCaseMapper.get_by_id(ident=case_id, session=session)
+            play_case.step_num += 1
 
-                content = PlayStepContent(
-                    content_type=content_type,
-                    is_common=is_common,
-                    creator=user.id,
-                    enable=enable,
-                    creatorName=user.username,
-                )
-                if target_id:
-                    content.target_id = target_id
-                match content_type:
-                    case PlayStepContentType.STEP_PLAY_SCRIPT:
-                        content.content_name = "脚本"
+            content = PlayStepContent(
+                content_type=content_type,
+                is_common=is_common,
+                creator=user.id,
+                enable=enable,
+                creatorName=user.username,
+            )
+            if target_id:
+                content.target_id = target_id
+            match content_type:
+                case PlayStepContentType.STEP_PLAY_SCRIPT:
+                    content.content_name = "脚本"
 
-                    case PlayStepContentType.STEP_PLAY_DB:
-                        _db = await DBExecuteMapper.init_empty(creator_user=user,
-                                                                          session=session)
-                        content.content_name = "DB操作"
-                        content.target_id = _db.id
-                    case PlayStepContentType.STEP_PLAY_CONDITION:
-                        content.content_name = "条件判断"
-                        condition = await PlayConditionMapper.init_empty(user=user, session=session)
-                        content.target_id = condition.id
+                case PlayStepContentType.STEP_PLAY_DB:
+                    _db = await DBExecuteMapper.init_empty(creator_user=user,
+                                                                      session=session)
+                    content.content_name = "DB操作"
+                    content.target_id = _db.id
+                case PlayStepContentType.STEP_PLAY_CONDITION:
+                    content.content_name = "条件判断"
+                    condition = await PlayConditionMapper.init_empty(user=user, session=session)
+                    content.target_id = condition.id
 
-                last_index = await CommonHelper.get_case_step_last_index(case_id, session)
-                await cls.add_flush_expunge(session, content)
-                await CommonHelper.create_single_case_content_association(
-                    session, case_id, content.id, last_index + 1
-                )
+            last_index = await CommonHelper.get_case_step_last_index(case_id, session)
+            await cls.add_flush_expunge(session, content)
+            await CommonHelper.create_single_case_content_association(
+                session, case_id, content.id, last_index + 1
+            )
 
     @classmethod
     async def init_content(cls,

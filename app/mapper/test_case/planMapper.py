@@ -17,9 +17,6 @@ from app.model.caseHub.case_config import CaseConfig
 from app.model.caseHub.association import PlanRequirementAssociation, PlanCaseAssociation
 from app.model.caseHub.requirement import Requirement
 from utils import log
-from app.model import async_session
-
-
 class PlanMapper(Mapper[CasePlan]):
     __model__ = CasePlan
     
@@ -31,7 +28,7 @@ class PlanMapper(Mapper[CasePlan]):
         :return: 计划列表
         """
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 if not plan_name:
                     stmt = select(cls.__model__)
                 else:
@@ -290,7 +287,7 @@ class PlanMapper(Mapper[CasePlan]):
         offset = (current - 1) * pageSize
 
         try:
-            async with async_session() as session:
+            async with cls.session_scope() as session:
                 # 2) 基础查询
                 base_query = (
                     select(Requirement)
@@ -359,7 +356,7 @@ class PlanMapper(Mapper[CasePlan]):
         plan_start_time = kwargs.pop("plan_start_time", None)
         plan_end_time = kwargs.pop("plan_end_time", None)
 
-        async with async_session() as session:
+        async with cls.session_scope() as session:
             sort = kwargs.pop("sort", None)
             conditions = await cls.search_conditions(**kwargs)
 

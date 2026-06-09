@@ -408,7 +408,8 @@ async def reorder_plan_cases(
     :return: 实际更新行数（0 表示幂等无变化）
     """
     log.info(
-        f"reorder_plan_cases plan={data.plan_id} case={data.case_id} before={data.before_id} after={data.after_id} module={data.target_module_id}",
+        "reorder_plan_cases plan=%s case=%s before=%s after=%s module=%s",
+        data.plan_id, data.case_id, data.before_id, data.after_id, data.target_module_id,
     )
     try:
         affected = await PlanCaseMapper.reorder_plan_case(
@@ -419,10 +420,10 @@ async def reorder_plan_cases(
             target_module_id=data.target_module_id,
         )
     except CommonError as err:
-        log.warning(f"reorder_plan_cases rejected: {err}")
+        log.warning("reorder_plan_cases rejected: %s", err)
         return Response.error(msg=str(err))
     except Exception as err:
-        log.exception(f"reorder_plan_cases 异常: {err}")
+        log.exception("reorder_plan_cases 异常: %s", err)
         return Response.error(msg=f"重排序失败: {err}")
     return Response.success(affected)
 
@@ -442,7 +443,8 @@ async def reorder_plan_cases_bulk(
     :return: 各 item 的 affected 行数列表
     """
     log.info(
-        f"reorder_plan_cases_bulk plan={data.plan_id} item_count={len(data.items)}",
+        "reorder_plan_cases_bulk plan=%s item_count=%d",
+        data.plan_id, len(data.items),
     )
     try:
         # 把 Pydantic model 转成 dict 列表，传给 mapper
@@ -451,10 +453,10 @@ async def reorder_plan_cases_bulk(
             items=[it.model_dump() for it in data.items],
         )
     except CommonError as err:
-        log.warning(f"reorder_plan_cases_bulk rejected: {err}")
+        log.warning("reorder_plan_cases_bulk rejected: %s", err)
         return Response.error(msg=str(err))
     except Exception as err:
-        log.exception(f"reorder_plan_cases_bulk 异常: {err}")
+        log.exception("reorder_plan_cases_bulk 异常: %s", err)
         return Response.error(msg=f"批量重排序失败: {err}")
     return Response.success(results)
 
@@ -478,10 +480,10 @@ async def update_plan_cases(data: UpdateCaseToCasePlan, user: User = Depends(Aut
         )
     except CommonError as err:
         # 业务校验失败（如越权 / 长度超限），4xx 透传给前端
-        log.warning(f"update_plan_cases rejected: {err}")
+        log.warning("update_plan_cases rejected: %s", err)
         return Response.error(msg=str(err))
     except Exception as err:
-        log.exception(f"update_plan_cases 异常: {err}")
+        log.exception("update_plan_cases 异常: %s", err)
         return Response.error(msg=f"更新失败: {err}")
     return Response.success(values)
 
