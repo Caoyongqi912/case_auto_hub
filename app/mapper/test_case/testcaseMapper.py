@@ -549,7 +549,7 @@ class TestCaseMapper(Mapper[TestCase]):
     @classmethod
     async def remove_case(cls, caseId: int, requirement_id: Optional[int]):
         """
-        删除测试用例
+        删除测试用例及其所有关联数据
 
         :param caseId: 用例ID
         :param requirement_id: 需求ID（可选，用于更新需求用例数量）
@@ -558,10 +558,18 @@ class TestCaseMapper(Mapper[TestCase]):
             async with cls.transaction() as session:
                 case_obj: TestCase = await cls.get_by_id(ident=caseId, session=session)
 
-                if case_obj.is_common and requirement_id:
-                    req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
-                    if req.case_number > 0:
-                        req.case_number -= 1
+                # 1. 清理步骤动态
+                await session.execute(
+                    delete(CaseStepDynamic).where(CaseStepDynamic.case_id == caseId)
+                )
+
+                # 2. 清理用例步骤
+                await session.execute(
+                    delete(TestCaseStep).where(TestCaseStep.test_case_id == caseId)
+                )
+
+                # 3. 清理需求关联并更新计数
+                if requirement_id:
                     await session.execute(
                         delete(RequirementCaseAssociation).where(
                             and_(
@@ -570,10 +578,18 @@ class TestCaseMapper(Mapper[TestCase]):
                             )
                         )
                     )
-                else:
-                    await session.execute(
-                        delete(cls.__model__).where(cls.__model__.id == caseId)
-                    )
+                    req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
+                    if req and req.case_number > 0:
+                        req.case_number -= 1
+
+                # 4. 清理计划关联
+                from app.model.caseHub.association import PlanCaseAssociation
+                await session.execute(
+                    delete(PlanCaseAssociation).where(PlanCaseAssociation.case_id == caseId)
+                )
+
+                # 5. 删除用例本体
+                await session.delete(case_obj)
         except Exception as e:
             log.error(f"remove_case error: caseId={caseId}, requirement_id={requirement_id}, error={e}")
             raise

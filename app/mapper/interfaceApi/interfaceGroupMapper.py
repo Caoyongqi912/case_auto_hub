@@ -187,6 +187,11 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
         """
         try:
             async with cls.transaction() as session:
+                # 先查组是否存在，避免组不存在时误删接口
+                group = await cls.get_by_id(ident=group_id, session=session)
+                if not group:
+                    return False
+
                 await session.execute(
                     delete(Interface).where(
                         Interface.id.in_(
@@ -197,9 +202,6 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                     )
                 )
 
-                group = await cls.get_by_id(ident=group_id, session=session)
-                if not group:
-                    return False
                 await session.delete(group)
                 return True
         except Exception as e:

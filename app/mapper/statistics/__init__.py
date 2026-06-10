@@ -119,17 +119,18 @@ class StatisticsMapper:
                 apis = api_task.fetchone()
                 uis = ui_task.fetchone()
 
+                # fetchone() 可能返回 None，先做兜底
                 result['api_task'] = {
-                    "date": apis.date if apis.date else date,
-                    "total_num": apis.total_num if apis.total_num else 0,
-                    "success_num": apis.success_num if apis.success_num else 0,
-                    "fail_num": apis.fail_num if apis.fail_num else 0
+                    "date": apis.date if apis and apis.date else date,
+                    "total_num": apis.total_num if apis and apis.total_num else 0,
+                    "success_num": apis.success_num if apis and apis.success_num else 0,
+                    "fail_num": apis.fail_num if apis and apis.fail_num else 0
                 }
                 result['ui_task'] = {
-                    "date": uis.date if uis.date else date,
-                    "total_num": uis.total_num if uis.total_num else 0,
-                    "success_num": uis.success_num if uis.success_num else 0,
-                    "fail_num": uis.fail_num if uis.fail_num else 0
+                    "date": uis.date if uis and uis.date else date,
+                    "total_num": uis.total_num if uis and uis.total_num else 0,
+                    "success_num": uis.success_num if uis and uis.success_num else 0,
+                    "fail_num": uis.fail_num if uis and uis.fail_num else 0
                 }
                 log.debug(result)
                 return result

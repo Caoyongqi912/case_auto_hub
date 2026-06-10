@@ -97,6 +97,12 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
             session: 数据库会话
         """
         try:
+            # 先查条件是否存在，避免条件不存在时误删接口
+            condition = await cls.get_by_id(
+                ident=condition_id, session=session
+            )
+            if not condition:
+                return False
 
             await session.execute(
                 delete(Interface).where(
@@ -107,11 +113,6 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
                     Interface.is_common == 0  # 非公共
                 )
             )
-            condition = await cls.get_by_id(
-                ident=condition_id, session=session
-            )
-            if not condition:
-                return False
             await session.delete(condition)
             return True
         except Exception as e:

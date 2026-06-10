@@ -209,6 +209,12 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
             session: 数据库会话
         """
         try:
+            # 先查 loop 是否存在，避免 loop 不存在时误删接口
+            loop = await InterfaceLoopMapper.get_by_id(
+                ident=loop_id, session=session
+            )
+            if not loop:
+                return False
 
             await session.execute(
                 delete(Interface).where(
@@ -220,11 +226,6 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
                 )
             )
 
-            loop = await InterfaceLoopMapper.get_by_id(
-                ident=loop_id, session=session
-            )
-            if not loop:
-                return False
             await session.delete(loop)
             return True
         except Exception as e:

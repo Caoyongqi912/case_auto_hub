@@ -21,7 +21,7 @@ from utils import log
 
 def calc_total_pages(total: int, page_size: int) -> int:
     """计算总页数"""
-    if total == 0 or total is None:
+    if total is None or total == 0:
         return 0
     return ceil(total / page_size)
 
@@ -624,7 +624,7 @@ class Mapper(Generic[M]):
                 elif isinstance(value, tuple) and len(value) == 2:
                     conditions.append(and_(field >= value[0], field <= value[1]))
                 elif isinstance(value, list):
-                    conditions.append(and_(*[field == v for v in value]))
+                    conditions.append(field.in_(value))
                 elif isinstance(value, str):
                     conditions.append(field.like(f"%{value}%"))
                 elif isinstance(value, (int, float, bool)):
@@ -769,7 +769,7 @@ class Mapper(Generic[M]):
                 return await _execute_query(sess)
         except Exception as e:
             log.error(f"page_by_module error: module_id={module_id}, module_ids={module_ids}, error={e}")
-            return []
+            return {"items": [], "pageInfo": {"total": 0, "pages": 0, "page": 0, "limit": page_size}}
 
     @classmethod
     async def _manage_session(cls, session: Optional[AsyncSession], model: M) -> M:

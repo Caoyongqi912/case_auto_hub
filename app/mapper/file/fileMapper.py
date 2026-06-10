@@ -24,17 +24,19 @@ class FileMapper(Mapper[FileModel]):
         """
         删除本地文件
         """
+        path = None
         try:
             async with cls.session_scope(session=session) as session:
                 async with session.begin():
                     file = await cls.get_by_uid(uid.strip(), session=session, raise_error=False)
-
                     if file:
                         path = file.file_path
                         await session.delete(file)
-                        from utils.fileManager import FileManager
-                        FileManager.delFile(path)
-                        log.debug(f"删除 {path}")
+            # DB commit 后再删物理文件，避免 DB 回滚但文件已丢
+            if path:
+                from utils.fileManager import FileManager
+                FileManager.delFile(path)
+                log.debug(f"删除 {path}")
         except Exception as e:
             raise e
 

@@ -360,7 +360,7 @@ class InterfaceMapper(Mapper[Interface]):
             result = await session.execute(
                 select(Module).where(
                     and_(
-                        Module.project_id == parent_id,
+                        Module.project_id == project_id,
                         Module.title == module_name,
                         Module.module_type == ModuleEnum.API
                     )
