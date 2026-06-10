@@ -218,6 +218,13 @@ class UploadPreviewResult(BaseModel):
     errors: List[Dict[str, Any]] = Field(default_factory=list, description="具体错误信息")
     preview_data: List[Dict[str, Any]] = Field(default_factory=list, description="预览数据（前10条）")
     file_exists: bool = Field(False, description="文件是否已存在")
+    can_commit: bool = Field(
+        True,
+        description=(
+            "是否可提交入库. False 时 Redis 中无预览缓存, 前端必须禁用 commit 按钮, "
+            "强制用户修正 Excel 后整批重传."
+        ),
+    )
 
 
 class UploadCommitSchema(BaseModel):

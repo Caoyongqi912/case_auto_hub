@@ -398,6 +398,25 @@ async def upload_cases(
                 f"invalid_paths={[e['path'] for e in group_path_errors]}"
             )
 
+    # 严格策略: 任意行存在错误 (aioFileReader 字段校验 / 用例库目录校验) 都不写 Redis,
+    # 前端只能看到 errors, 不允许走 commit. 用户必须修正 Excel 后整批重传,
+    # 避免"部分有效 + 静默丢行"的体验陷阱.
+    if result.errors:
+        log.info(
+            f"upload preview rejected: project_id={project_id}, "
+            f"file_md5={result.file_md5}, "
+            f"total_count={result.total_count}, "
+            f"error_count={len(result.errors)}"
+        )
+        return Response.success(UploadPreviewResult(
+            file_md5=result.file_md5,
+            total_count=result.total_count,
+            valid_count=0,
+            invalid_count=result.invalid_count,
+            errors=result.errors,
+            can_commit=False,
+        ).model_dump())
+
     await _cache_service.save_preview(
         file_md5=result.file_md5,
         user_id=user.id,
@@ -413,4 +432,5 @@ async def upload_cases(
         valid_count=result.valid_count,
         invalid_count=result.invalid_count,
         errors=result.errors,
+        can_commit=True,
     ).model_dump())
