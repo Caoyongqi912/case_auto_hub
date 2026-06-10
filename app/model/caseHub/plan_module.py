@@ -17,10 +17,17 @@ class PlanModule(BaseModel):
     parent_id = Column(Integer, nullable=True, comment="父级模块ID，根模块为NULL")
     title = Column(String(50), nullable=False, comment="模块名称")
     order = Column(Integer, default=0, comment="排序顺序")
+    source_module_id = Column(
+        Integer,
+        ForeignKey('module.id', ondelete='SET NULL'),
+        nullable=True,
+        comment="来源用例库模块ID（从用例库复制/关联时记录）"
+    )
 
     __table_args__ = (
         Index('idx_plan_id', 'plan_id'),
         Index('idx_parent_id', 'parent_id'),
+        Index('idx_source_module_id', 'source_module_id'),
     )
 
     @property
@@ -34,4 +41,7 @@ class PlanModule(BaseModel):
         }
 
     def __repr__(self):
-        return f"<PlanModule(id={self.id}, title={self.title}, parent_id={self.parent_id}, plan_id={self.plan_id})>"
+        return (
+            f"<PlanModule(id={self.id}, title={self.title}, parent_id={self.parent_id}, "
+            f"plan_id={self.plan_id}, source_module_id={self.source_module_id})>"
+        )

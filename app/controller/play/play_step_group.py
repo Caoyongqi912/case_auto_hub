@@ -49,13 +49,13 @@ async def get_group(group_id: int, _: User = Depends(Authentication())):
 
 
 @router.post("/update", description="修改组")
-async def update_group(group: EditPlayStepSchema, user: User = Depends(Authentication())):
+async def update_group(group: EditPlayStepSchema, _: User = Depends(Authentication())):
     """
     更新用例组信息
 
     Args:
         group: 用例组更新信息
-        user: 当前登录用户
+        _: 当前登录用户（未使用）
 
     Returns:
         更新后的用例组信息

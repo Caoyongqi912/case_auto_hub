@@ -273,17 +273,6 @@ async def get_module_tree(plan_id: int, _: User = Depends(Authentication())):
     return Response.success(data=modules)
 
 
-@router.get("/modules/stats", description="批量获取计划下各模块用例统计")
-async def get_plan_modules_stats(plan_id: int, _: User = Depends(Authentication())):
-    """
-    一次返回计划下所有模块的用例状态分布
-    用于替换前端对每个模块单独调用 /api/hub/plan/cases 的 N+1 模式
-    :param plan_id: 计划ID
-    :param _: 认证用户
-    :return: {module_id: {total, passed, failed, pending, blocked, skipped, pass_rate, execution_rate}}
-    """
-    data = await PlanCaseMapper.get_module_stats(plan_id=plan_id)
-    return Response.success(data=data)
 
 
 @router.post("/case/associate", description="关联用例到计划")
@@ -420,10 +409,10 @@ async def reorder_plan_cases(
             target_module_id=data.target_module_id,
         )
     except CommonError as err:
-        log.warning("reorder_plan_cases rejected: %s", err)
+        log.warning(f"reorder_plan_cases rejected: {err}")
         return Response.error(msg=str(err))
     except Exception as err:
-        log.exception("reorder_plan_cases 异常: %s", err)
+        log.exception(f"reorder_plan_cases 异常: {err}")
         return Response.error(msg=f"重排序失败: {err}")
     return Response.success(affected)
 
@@ -431,7 +420,7 @@ async def reorder_plan_cases(
 @router.post("/cases/reorder/bulk", description="批量重排序计划用例")
 async def reorder_plan_cases_bulk(
     data: BulkReorderPlanCaseSchema,
-    user: User = Depends(Authentication()),
+    _: User = Depends(Authentication()),
 ):
     """批量重排序计划用例（多选拖拽 / 跨 module 批量调整）。
 
@@ -439,12 +428,11 @@ async def reorder_plan_cases_bulk(
     返回值为每条 item 的 affected 行数列表。
 
     :param data: 批量重排序参数（含 plan_id 与 items）
-    :param user: 认证用户
+    :param _: 认证用户
     :return: 各 item 的 affected 行数列表
     """
     log.info(
-        "reorder_plan_cases_bulk plan=%s item_count=%d",
-        data.plan_id, len(data.items),
+        f"reorder_plan_cases_bulk plan={data.plan_id} item_count={len(data.items)}",
     )
     try:
         # 把 Pydantic model 转成 dict 列表，传给 mapper
@@ -453,10 +441,10 @@ async def reorder_plan_cases_bulk(
             items=[it.model_dump() for it in data.items],
         )
     except CommonError as err:
-        log.warning("reorder_plan_cases_bulk rejected: %s", err)
+        log.warning(f"reorder_plan_cases_bulk rejected: {err}")
         return Response.error(msg=str(err))
     except Exception as err:
-        log.exception("reorder_plan_cases_bulk 异常: %s", err)
+        log.exception(f"reorder_plan_cases_bulk 异常: %s", err)
         return Response.error(msg=f"批量重排序失败: {err}")
     return Response.success(results)
 
@@ -480,10 +468,10 @@ async def update_plan_cases(data: UpdateCaseToCasePlan, user: User = Depends(Aut
         )
     except CommonError as err:
         # 业务校验失败（如越权 / 长度超限），4xx 透传给前端
-        log.warning("update_plan_cases rejected: %s", err)
+        log.warning(f"update_plan_cases rejected: {err}")
         return Response.error(msg=str(err))
     except Exception as err:
-        log.exception("update_plan_cases 异常: %s", err)
+        log.exception(f"update_plan_cases 异常: {err}")
         return Response.error(msg=f"更新失败: {err}")
     return Response.success(values)
 
@@ -506,7 +494,7 @@ async def insert_plan_cases(data: AddPlanCaseSchema, user: User = Depends(Authen
 @router.post("/cases/delete_permanent", description="彻底删除计划用例（物理删除）")
 async def delete_plan_cases_permanent(
     data: RemovePlanCaseSchema,
-    user: User = Depends(Authentication()),
+    _: User = Depends(Authentication()),
 ):
     """
     彻底删除计划下的用例：
@@ -599,36 +587,12 @@ async def get_plan_cases(
     return Response.success(result)
 
 
-@router.post("/phase", description="更新计划执行阶段")
-async def update_plan_phase(data: UpdatePlanPhaseSchema, user: User = Depends(Authentication())):
-    """
-    更新计划执行阶段
-    :param data: 计划ID和阶段
-    :param user: 认证用户
-    :return: 操作结果
-    """
-    log.info(data)
-    await PlanMapper.update_by_id(
-        update_user=user,
-        id=data.plan_id,
-        plan_phase=data.plan_phase
-    )
-    return Response.success()
 
 
-@router.get("/phase", description="获取计划执行阶段")
-async def get_plan_phase(plan_id: int, _: User = Depends(Authentication())):
-    """
-    获取计划执行阶段
-    :param plan_id: 计划ID
-    :param _: 认证用户
-    :return: 阶段信息
-    """
-    plan = await PlanMapper.get_by_id(ident=plan_id)
-    if not plan:
-        return Response.success(data=None)
-    return Response.success(data={"plan_phase": plan.plan_phase})
 
+
+
+# =============== 统计相关==============
 
 @router.get("/overview", description="获取计划概览统计")
 async def get_plan_overview(plan_id: int, _: User = Depends(Authentication())):

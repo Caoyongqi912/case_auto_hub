@@ -25,8 +25,6 @@ from app.model.caseHub.requirement import Requirement
 from app.model.caseHub.plan_module import PlanModule
 from utils import log
 from utils.caseEnumResolver import find_group_path, resolve_plan_group_path, _split_group_path
-
-# _parse_steps 提升到模块顶部, 避免函数体内反复 import
 from app.mapper.test_case.testcaseMapper import _parse_steps
 
 
@@ -514,6 +512,33 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     rows = (await session.execute(max_order_stmt)).all()
                     max_order_per_module = {row[0]: int(row[1] or 0) for row in rows}
 
+                # 3) 补齐 Excel 上传链路的 source_module_id
+                #    case_module_map: case_index -> plan_module_id
+                #    case_module_id_map: case_index -> module_id (用例库)
+                #    把 plan_module_id -> module_id 的映射一次性回填到 plan_module 表，
+                #    使后续反向查找能直接命中 source_module_id。
+                plan_module_to_source: Dict[int, int] = {}
+                for idx, pm_id in case_module_map.items():
+                    src_id = case_module_id_map.get(idx)
+                    if src_id is not None:
+                        plan_module_to_source[pm_id] = src_id
+
+                if plan_module_to_source:
+                    case_whens = [
+                        (PlanModule.id == pm_id, src_id)
+                        for pm_id, src_id in plan_module_to_source.items()
+                    ]
+                    await session.execute(
+                        update(PlanModule)
+                        .where(PlanModule.id.in_(plan_module_to_source.keys()))
+                        .where(PlanModule.source_module_id.is_(None))
+                        .values(source_module_id=case(*case_whens, else_=PlanModule.source_module_id))
+                    )
+                    log.info(
+                        "insert_upload_case: 回填 %s 个 plan_module 的 source_module_id",
+                        len(plan_module_to_source),
+                    )
+
                 # 游标字典: 存的是"最近一次写出的 order", 第一条新 case 直接 +1.
                 # 与 testcaseMapper._prepare_requirement_associations 的 last_order+1 风格一致,
                 # 避免出现 max+2 起始的 off-by-one 缺口.
@@ -621,12 +646,136 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             raise
 
     @classmethod
+    async def _resolve_plan_module_to_library_module(
+        cls,
+        session: AsyncSession,
+        plan_module_id: int,
+        project_id: int,
+    ) -> Optional[int]:
+        """
+        根据 plan_module_id 反向查找对应的用例库 Module.id。
+
+        优先走 source_module_id（双向同步持久化关联），
+        不存在时 fallback 到 title 路径反向匹配（兼容旧数据 & 手动分组）。
+
+        快捷路径（O(1)）：
+            plan_module.source_module_id 非 NULL → 直接返回
+
+        Fallback 路径（O(N)）：
+            1. 从 plan_module_id 出发，沿 parent_id 走到根，收集完整路径 [root, ..., leaf]
+            2. 去掉 plan_root（PlanModule 有而 Module 没有的那层"全部用例"根节点）
+            3. 在 Module 表中按 (project_id, module_type=CASE, title_path) 逐层查找
+            4. 匹配成功后，懒加载回填 plan_module.source_module_id，供下次直接命中
+            5. 返回叶子 Module.id；任一级找不到则返回 None（用例落入未分组）
+
+        边界：
+        - plan_module_id 指向 plan_root 本身 → 去掉根后路径为空 → None
+        - PlanModule 是用户在计划中手动创建的 → Module 树中无匹配 → None
+        - 路径有多级嵌套 → 正常逐级查找
+
+        :param session: 数据库会话（复用外层事务）
+        :param plan_module_id: 计划分组ID
+        :param project_id: 项目ID（用于 Module 表过滤）
+        :return: 用例库 Module.id；找不到返回 None
+        """
+        from app.model.base.module import Module
+
+        # ── 快捷路径：source_module_id 已持久化 ──
+        stmt = select(PlanModule).where(PlanModule.id == plan_module_id)
+        start_module = (await session.execute(stmt)).scalars().first()
+        if start_module is None:
+            return None
+        if start_module.source_module_id is not None:
+            return start_module.source_module_id
+
+        log.info(
+            f"_resolve_plan_module_to_library_module: plan_module_id={plan_module_id} "
+            "source_module_id 为空，走 title fallback",
+        )
+
+        # ── Fallback：title 路径反向匹配（兼容旧数据 & 手动分组） ──
+        # 1) 收集该 plan 下所有 plan_module（用于沿 parent 链查找）
+        plan_mod_stmt = select(PlanModule).where(
+            PlanModule.plan_id == start_module.plan_id
+        )
+        plan_modules = (await session.execute(plan_mod_stmt)).scalars().all()
+        plan_mod_by_id: Dict[int, PlanModule] = {pm.id: pm for pm in plan_modules}
+
+        # 2) 沿 parent_id 走到根，收集完整路径（从 leaf 到 root）
+        path_titles: List[str] = []
+        current = start_module
+        while current is not None:
+            path_titles.append(current.title)
+            if current.parent_id is None:
+                break
+            current = plan_mod_by_id.get(current.parent_id)
+            if current is None:
+                # parent 链断裂（不应该发生，除非数据不一致）
+                break
+        path_titles.reverse()  # 现在是从 root 到 leaf
+
+        # 3) 去掉 plan_root：Module 树没有"全部用例"这一层
+        #    plan_root 的 parent_id 为 None，它的子节点才是对应 Module 树的根
+        if len(path_titles) <= 1:
+            # 只有 plan_root 一层，或路径为空 → 无对应 Module
+            log.info(
+                f"_resolve_plan_module_to_library_module: plan_module_id={plan_module_id} "
+                "只有根节点，无对应 Module",
+            )
+            return None
+        module_title_path = path_titles[1:]  # 去掉根节点
+
+        # 4) 在 Module 表中逐层查找
+        parent_id: Optional[int] = None
+        for title in module_title_path:
+            if parent_id is None:
+                cond = Module.parent_id.is_(None)
+            else:
+                cond = Module.parent_id == parent_id
+            mod_stmt = select(Module).where(
+                Module.project_id == project_id,
+                Module.module_type == CASE_MODULE_TYPE,
+                cond,
+                Module.title == title,
+            )
+            node = (await session.execute(mod_stmt)).scalars().first()
+            if node is None:
+                log.info(
+                    "_resolve_plan_module_to_library_module: plan_module_id=%s "
+                    "title fallback 在 '%s' 处中断",
+                    plan_module_id, title,
+                )
+                return None
+            parent_id = node.id
+
+        # 5) 懒加载回填：匹配成功后将 source_module_id 写回，下次直接命中
+        if parent_id is not None:
+            await session.execute(
+                update(PlanModule)
+                .where(PlanModule.id == plan_module_id)
+                .values(source_module_id=parent_id)
+            )
+            log.info(
+                f"_resolve_plan_module_to_library_module: plan_module_id={plan_module_id} "
+                "title fallback 命中 module_id=%s，已回填",
+                parent_id,
+            )
+            # 不需要 flush：复用外层事务，由调用方统一提交
+
+        return parent_id
+
+    @classmethod
     async def insert_plan_case(cls, user: User, plan_id: int, plan_module_id: int, **kwargs):
         """
         添加计划关联的用例（含步骤和动态记录）
 
         创建测试用例及其步骤，关联到指定计划，并记录操作动态。
         适用于单个用例的手动创建场景。
+
+        新增逻辑：自动将用例同步到用例库对应分组。
+        - 根据 plan_module_id 反向解析出用例库的 module_id
+        - 若 plan_module 在用例库中存在对应路径，则 module_id 设为目标分组
+        - 若不存在对应路径（如手动创建的计划分组），则 module_id 为 None，落入未分组
 
         Args:
             user: 认证用户
@@ -638,15 +787,34 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             TestCase: 创建的用例对象
         """
         case_sub_steps = kwargs.pop("case_sub_steps", [])
-    
+
         kwargs = set_creator(user, **kwargs)
         kwargs['is_common'] = True
 
         async with cls.transaction() as session:
             from app.mapper.test_case.planMapper import PlanMapper
-            
+
             plan = await PlanMapper.get_by_id(ident=plan_id, session=session)
             kwargs['project_id'] = plan.project_id
+
+            # 根据 plan_module_id 反向查找用例库对应分组
+            library_module_id = await cls._resolve_plan_module_to_library_module(
+                session=session,
+                plan_module_id=plan_module_id,
+                project_id=plan.project_id,
+            )
+            if library_module_id is not None:
+                kwargs['module_id'] = library_module_id
+                log.info(
+                    "insert_plan_case: plan_module_id=%s 映射到用例库 module_id=%s",
+                    plan_module_id, library_module_id,
+                )
+            else:
+                log.info(
+                    "insert_plan_case: plan_module_id=%s 未找到用例库对应分组，用例落入未分组",
+                    plan_module_id,
+                )
+
             case_obj: TestCase = await TestCaseMapper.save(session=session, **kwargs)
             if case_sub_steps:
                 steps = [
@@ -774,12 +942,12 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 session=session, step_id=step_id
             )
             if test_case_id is None:
-                log.warning("步骤不存在: step_id=%s", step_id)
+                log.warning(f"步骤不存在: step_id={step_id}")
                 return {"test_case_id": None}
 
             # 4. 收集状态变更并同步到父级用例
             #    仅当状态字段被显式传入（非 None）时才触发同步
-            status_changes: Dict[str, int] = {}
+            status_changes: Dict[str, str] = {}
             if first_status is not None:
                 status_changes["first_status"] = first_status
             if second_status is not None:
@@ -1708,11 +1876,18 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         all_modules = (await sess.execute(all_stmt)).scalars().all()
         all_by_id: Dict[int, Module] = {m.id: m for m in all_modules}
 
-        # 4) 拉取该 plan 下所有 plan_modules，按 (title, parent_id) 索引
+        # 4) 拉取该 plan 下所有 plan_modules，构建双重索引
+        #    - plan_mod_index:        (title, parent_id)   → 兼容旧数据 & 手动分组
+        #    - plan_mod_by_source_id: (source_module_id, parent_id) → 精确匹配
         plan_mod_stmt = select(PlanModule).where(PlanModule.plan_id == plan_id)
         plan_modules = (await sess.execute(plan_mod_stmt)).scalars().all()
         plan_mod_index: Dict[tuple, PlanModule] = {
             (pm.title, pm.parent_id): pm for pm in plan_modules
+        }
+        plan_mod_by_source_id: Dict[tuple, PlanModule] = {
+            (pm.source_module_id, pm.parent_id): pm
+            for pm in plan_modules
+            if pm.source_module_id is not None
         }
 
         # 4.1) 关键：每个 plan 有且仅有一个根分组（parent_id IS NULL），
@@ -1760,25 +1935,55 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 continue
             current_parent_id: int = plan_root.id
             for node in path:
-                key = (node.title, current_parent_id)
-                existing = plan_mod_index.get(key)
+                # 第一层：按 source_module_id + parent_id 精确匹配（双向同步核心）
+                exact_key = (node.id, current_parent_id)
+                existing = plan_mod_by_source_id.get(exact_key)
                 if existing is not None:
                     current_parent_id = existing.id
-                else:
-                    new_pm = PlanModule(
-                        plan_id=plan_id,
-                        title=node.title,
-                        parent_id=current_parent_id,
-                        order=0,
-                    )
-                    if user is not None:
-                        new_pm.creator = user.id
-                        new_pm.creatorName = user.username
-                    sess.add(new_pm)
-                    await sess.flush()
-                    # 同步到索引，避免同批次重复创建
-                    plan_mod_index[key] = new_pm
-                    current_parent_id = new_pm.id
+                    continue
+
+                # 第二层：fallback 到 title + parent_id 兼容匹配（旧数据 & 手动分组）
+                fuzzy_key = (node.title, current_parent_id)
+                existing = plan_mod_index.get(fuzzy_key)
+                if existing is not None:
+                    if existing.source_module_id is None:
+                        # 回填：老数据没有 source_module_id，现在知道它来自当前 Module
+                        existing.source_module_id = node.id
+                        await sess.flush()
+                        plan_mod_by_source_id[exact_key] = existing
+                        log.info(
+                            "_resolve_source_to_plan_module_map: 回填 plan_module_id=%s "
+                            "source_module_id=%s title=%s",
+                            existing.id, node.id, node.title,
+                        )
+                    elif existing.source_module_id != node.id:
+                        # 防御：同一 (plan_id, title, parent_id) 对应了不同的 Module
+                        # 保留现有 source_module_id，不覆盖，仅告警
+                        log.warning(
+                            "_resolve_source_to_plan_module_map: source_module_id 冲突 "
+                            "plan_module_id=%s 现有=%s 新=%s title=%s",
+                            existing.id, existing.source_module_id, node.id, node.title,
+                        )
+                    current_parent_id = existing.id
+                    continue
+
+                # 新建 PlanModule，写入 source_module_id 建立持久化关联
+                new_pm = PlanModule(
+                    plan_id=plan_id,
+                    title=node.title,
+                    parent_id=current_parent_id,
+                    source_module_id=node.id,
+                    order=0,
+                )
+                if user is not None:
+                    new_pm.creator = user.id
+                    new_pm.creatorName = user.username
+                sess.add(new_pm)
+                await sess.flush()
+                # 同步到两个索引，避免同批次重复创建
+                plan_mod_index[fuzzy_key] = new_pm
+                plan_mod_by_source_id[exact_key] = new_pm
+                current_parent_id = new_pm.id
             source_to_plan[leaf_id] = current_parent_id
 
         return source_to_plan
@@ -2299,21 +2504,53 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 second_status_counts[row.second_status] = \
                     second_status_counts.get(row.second_status, 0) + row.count
 
-            first_passed = first_status_counts.get(1, 0)
-            first_failed = first_status_counts.get(2, 0)
-            second_passed = second_status_counts.get(1, 0)
-            second_failed = second_status_counts.get(2, 0)
+            # first_status / second_status 在数据库中是 String(255) 类型,
+            # 状态值走配置中心 (CaseConfig.value) 统一为字符串 ('1','2','3','4','0'),
+            # 用 int 索引 Dict 永远查不到 —— 转 str 后再查
+            first_passed = first_status_counts.get("1", 0)
+            first_failed = first_status_counts.get("2", 0)
+            second_passed = second_status_counts.get("1", 0)
+            second_failed = second_status_counts.get("2", 0)
 
-            # 缺陷链接统计（SQL 层已过滤 NULL 和空串，无需 Python 层再过滤）
-            bug_urls_stmt = select(PlanCaseAssociation.bug_url).where(
-                and_(
-                    PlanCaseAssociation.plan_id == plan_id,
-                    PlanCaseAssociation.bug_url.isnot(None),
-                    PlanCaseAssociation.bug_url != ""
+            # 缺陷链接统计
+            # 实际业务里 bug_url 写入到「步骤结果」表 (TestCaseStepResult.bug_url)，
+            # 不是计划关联表 (PlanCaseAssociation.bug_url)，原 SQL 走错位置导致 bug_total 永远 0。
+            # 这里改成从 step_result 取，并 join 步骤 / 用例拿到 case_name + step_order，
+            # 前端可以展示成「用例名 · 步骤n · 链接」的形式。
+            bug_stmt = (
+                select(
+                    TestCaseStepResult.bug_url,
+                    TestCase.case_name,
+                    TestCaseStep.order.label("step_order"),
+                    TestCaseStep.id.label("step_id"),
                 )
+                .join(TestCaseStep, TestCaseStep.id == TestCaseStepResult.step_id)
+                .join(TestCase, TestCase.id == TestCaseStep.test_case_id)
+                .where(
+                    and_(
+                        TestCaseStepResult.plan_id == plan_id,
+                        TestCaseStepResult.bug_url.isnot(None),
+                        TestCaseStepResult.bug_url != "",
+                    )
+                )
+                .order_by(TestCaseStepResult.id.desc())
             )
-            bug_urls_result = await session.execute(bug_urls_stmt)
-            bug_urls = bug_urls_result.scalars().all()
+            bug_result = await session.execute(bug_stmt)
+            bug_rows = bug_result.all()
+            # 同链接可能在多个步骤上重复提交，去重保留首次出现
+            bug_list: List[Dict[str, Any]] = []
+            seen_urls: set = set()
+            for row in bug_rows:
+                url = row.bug_url
+                if url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                bug_list.append({
+                    "case_name": row.case_name,
+                    "step_id": row.step_id,
+                    "step_order": row.step_order,
+                    "bug_url": url,
+                })
 
             # 需求完成度统计
             req_stmt = (
@@ -2354,78 +2591,14 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     "not_executed": second_not_executed,
                     "completion_rate": second_completion_rate
                 },
-                "bug_total": len(bug_urls),
-                "bug_urls": bug_urls,
+                "bug_total": len(bug_list),
+                "bug_list": bug_list,
+                # 兼容字段: 历史前端若仍读 bug_urls 不会爆, 拿到一个去重后的 url 列表
+                "bug_urls": [item["bug_url"] for item in bug_list],
                 "requirement_total": requirement_total,
                 "requirement_completed": requirement_completed,
                 "requirement_completion_rate": requirement_completion_rate
             }
-
-    @classmethod
-    async def get_module_stats(cls, plan_id: int) -> Dict[str, Dict[str, int]]:
-        """
-        批量获取计划下每个模块的用例状态分布统计
-
-        一次 SQL 按 (plan_module_id, first_status, second_status) 分组聚合，
-        避免前端对每个模块单独调用接口造成的 N+1 问题。
-
-        性能优化：
-        - 使用 _count_status_bucket 辅助方法消除 first_round/second_round 的重复 if-elif 链
-
-        Args:
-            plan_id: 计划ID
-
-        Returns:
-            字典：{module_id_str: {total, first_round: {passed, failed, ...}, second_round: {passed, failed, ...}}}
-            只包含至少有一条用例关联的模块（plan_module_id 非空）。
-        """
-        async with cls.transaction() as session:
-            stmt = (
-                select(
-                    PlanCaseAssociation.plan_module_id,
-                    PlanCaseAssociation.first_status,
-                    PlanCaseAssociation.second_status,
-                    func.count().label("count"),
-                )
-                .where(PlanCaseAssociation.plan_id == plan_id)
-                .group_by(
-                    PlanCaseAssociation.plan_module_id,
-                    PlanCaseAssociation.first_status,
-                    PlanCaseAssociation.second_status,
-                )
-            )
-            result = await session.execute(stmt)
-            rows = result.all()
-
-            stats: Dict[str, Dict[str, Any]] = {}
-            for row in rows:
-                mid = row.plan_module_id
-                if mid is None:
-                    continue
-                key = str(mid)
-                if key not in stats:
-                    stats[key] = {
-                        "total": 0,
-                        "first_round": {"passed": 0, "failed": 0, "pending": 0, "blocked": 0, "skipped": 0},
-                        "second_round": {"passed": 0, "failed": 0, "pending": 0, "blocked": 0, "skipped": 0},
-                    }
-
-                cnt = row.count
-                stats[key]["total"] += cnt
-
-                # 使用辅助方法消除重复的 if-elif 状态桶计数
-                cls._count_status_bucket(stats[key]["first_round"], row.first_status, cnt)
-                cls._count_status_bucket(stats[key]["second_round"], row.second_status, cnt)
-
-            # 计算通过率和执行率
-            for s in stats.values():
-                for round_name in ["first_round", "second_round"]:
-                    round_data = s[round_name]
-                    executed = round_data["passed"] + round_data["failed"]
-                    round_data["pass_rate"] = round((round_data["passed"] / executed) * 100) if executed > 0 else 0
-                    round_data["execution_rate"] = round((executed / s["total"]) * 100) if s["total"] > 0 else 0
-
-            return stats
 
     @classmethod
     async def get_statistics(cls, plan_id: int) -> dict:
@@ -2435,6 +2608,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         按用例等级和多轮测试状态两个维度进行分组统计。
         通过 JOIN TestCase 获取 case_level（PlanCaseAssociation 无此字段）。
 
+        状态文案从配置中心 (CaseConfig.config_key = 'CASE_STATUS') 动态加载,
+        与前端 useCaseEnumConfig('CASE_STATUS') 共用同一份数据源, 配置变更即生效.
+
         Args:
             plan_id: 计划ID
 
@@ -2442,6 +2618,20 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             dict: 统计数据，包含 case_by_level、case_by_first_status、case_by_second_status、daily_trend
         """
         async with cls.transaction() as session:
+            # 从 CaseConfig 加载 CASE_STATUS 状态值 -> 标签 映射
+            # 失败时降级为 str(value) —— 与 CaseDynamicRenderer 的 fallback 策略一致
+            from app.mapper.test_case.caseConfigMapper import CaseConfigMapper
+            try:
+                cfg_rows = await CaseConfigMapper.query_by_key(
+                    config_key="CASE_STATUS",
+                    enabled_only=True,
+                    session=session,
+                )
+                status_label_map: Dict[str, str] = {row.value: row.label for row in cfg_rows}
+            except Exception as err:
+                log.warning("get_statistics 加载 CASE_STATUS 配置失败, 降级为原始值: %s", err)
+                status_label_map = {}
+
             stmt = (
                 select(
                     TestCase.case_level,
@@ -2460,16 +2650,22 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             case_by_first_status = {}
             case_by_second_status = {}
 
+            def _label_of(raw: Any) -> str:
+                if raw is None:
+                    return "未设置"
+                key = str(raw)
+                return status_label_map.get(key) or key or "未知"
+
             for row in rows:
                 # 按等级统计
                 case_by_level[row.case_level] = case_by_level.get(row.case_level, 0) + row.count
 
-                # 按一轮状态统计（使用类常量映射，替代硬编码字典）
-                first_key = cls._STATUS_LABEL_MAP.get(row.first_status, "未知")
+                # 按一轮状态统计（文案走配置中心）
+                first_key = _label_of(row.first_status)
                 case_by_first_status[first_key] = case_by_first_status.get(first_key, 0) + row.count
 
                 # 按二轮状态统计
-                second_key = cls._STATUS_LABEL_MAP.get(row.second_status, "未知")
+                second_key = _label_of(row.second_status)
                 case_by_second_status[second_key] = case_by_second_status.get(second_key, 0) + row.count
 
             return {

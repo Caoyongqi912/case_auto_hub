@@ -52,15 +52,18 @@ class PlanModuleMapper(Mapper[PlanModule]):
         title: str,
         user: User,
         parent_id: Optional[int] = None,
-        order: int = 0
+        order: int = 0,
+        source_module_id: Optional[int] = None,
     ) -> PlanModule:
         """
         添加计划分组
+
         :param plan_id: 计划ID
         :param title: 分组名称
         :param user: 创建人
         :param parent_id: 父级分组ID
         :param order: 排序顺序
+        :param source_module_id: 来源用例库模块ID（从用例库复制/关联时记录）
         :return: 创建的分组
         """
         return await cls.save(
@@ -68,7 +71,8 @@ class PlanModuleMapper(Mapper[PlanModule]):
             plan_id=plan_id,
             title=title,
             parent_id=parent_id,
-            order=order
+            order=order,
+            source_module_id=source_module_id,
         )
 
     @classmethod
