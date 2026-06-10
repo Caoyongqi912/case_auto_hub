@@ -562,12 +562,15 @@ class TestCaseMapper(Mapper[TestCase]):
             async with cls.transaction() as session:
                 case_obj: TestCase = await cls.get_by_id(ident=caseId, session=session)
 
-                if case_obj.is_common and requirement_id:
-                    # 公共用例只解除当前需求关联，不删本体
+                # 有需求关联时，先更新需求计数（公共/非公共都需要）
+                if requirement_id:
                     req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
                     if req and req.case_number > 0:
                         req.case_number -= 1
-                    # 不删 test_case 本体，数据库不会触发级联，需手动删关联
+
+                if case_obj.is_common and requirement_id:
+                    # 公共用例只解除当前需求关联，不删本体
+                    # 数据库不会触发级联（因为没删 test_case），需手动删关联
                     await session.execute(
                         delete(RequirementCaseAssociation).where(
                             and_(
@@ -891,6 +894,7 @@ class TestCaseMapper(Mapper[TestCase]):
 
             steps = source_steps_map.get(source_case.id, [])
             # 不设置 test_case_id，由 SQLAlchemy relationship 在 flush 时自动填充
+            # 但需要 pop 掉 copy_map() 中残留的旧 test_case_id，避免指向源用例
             new_case_model.case_sub_steps = [
                 TestCaseStep(
                     **{
@@ -901,6 +905,9 @@ class TestCaseMapper(Mapper[TestCase]):
                 )
                 for step in steps
             ]
+            # 显式清除旧外键，确保 SQLAlchemy 重新绑定到新用例
+            for sub_step in new_case_model.case_sub_steps:
+                sub_step.test_case_id = None
             new_case_list.append(new_case_model)
 
         return new_case_list
