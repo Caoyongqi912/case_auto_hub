@@ -90,12 +90,18 @@ return {"items": [], "pageInfo": {"total": 0, "pages": 0, "page": 0, "limit": pa
 - 公共用例 → 只删需求关联，不删用例本体 → 孤儿用例
 - 非公共用例 → 只删用例本体，不清理步骤/动态/关联 → 孤儿记录
 
-**修复**: 统一走完整级联删除：
-1. 删 `CaseStepDynamic`（步骤动态）
-2. 删 `TestCaseStep`（用例步骤）
-3. 删 `RequirementCaseAssociation` + 更新需求计数
-4. 删 `PlanCaseAssociation`（计划关联）
-5. 删 `TestCase`（用例本体）
+**确认**: 数据库层面已配置 `ON DELETE CASCADE`：
+- `TestCaseStep.test_case_id` → `ondelete="cascade"`
+- `CaseStepDynamic.test_case_id` → `ondelete="cascade"`
+- `PlanCaseAssociation.case_id` → `ondelete="CASCADE"`
+- `RequirementCaseAssociation.case_id` → `ondelete="CASCADE"`
+
+因此手动 `DELETE` 子表是多余的，直接用 `session.delete(case_obj)` 即可让数据库自动级联。
+
+**修复**:
+- 保留原业务逻辑：公共用例 + 有 requirement_id 时只解除关联，不删本体
+- 非公共用例直接 `session.delete(case_obj)`，数据库自动级联所有子表
+- 仅保留 `RequirementCaseAssociation` 的手动删除（因为公共用例不删本体，不会触发级联）
 
 ---
 
