@@ -52,38 +52,8 @@ class InterfaceCaseContentMapper(Mapper):
         CaseStepContentType.STEP_LOOP: LoopStepContent,
     }
 
-    @classmethod
-    async def get_by_id(
-        cls,
-        ident: int,
-        session: AsyncSession = None,
-        desc: str = ''
-    ) -> InterfaceCaseContents:
-        """
-        根据 ID 获取步骤内容（多态查询）。
-
-        本方法重写基类 get_by_id，保持签名兼容的同时支持 JTI 多态返回。
-        在 Joined Table Inheritance 中，ident 是子表的主键（step_content_id），
-        也是基类表的主键（id），SQLAlchemy 会自动处理多态返回对应的子类实例。
-
-        Args:
-            ident: 步骤内容 ID
-            session: 可选的数据库会话。传入时复用；未传入时自行创建
-            desc: 错误描述前缀（保持与基类签名兼容）
-
-        Returns:
-            InterfaceCaseContents: 步骤内容实例（具体子类）
-
-        Raises:
-            NotFind: 记录不存在时抛出（与基类行为对齐）
-        """
-        # 复用基类的 session_scope 处理 session 的传入/创建逻辑
-        async with cls.session_scope(session) as session:
-            result = await session.get(InterfaceCaseContents, ident)
-            if not result:
-                error_msg = f"数据{desc}不存在或已经删除，id: {ident}" if desc else f"数据不存在，id: {ident}"
-                raise NotFind(error_msg)
-            return result
+    # 基类 Mapper.get_by_id 已足够处理 JTI 多态查询，无需重写
+    # cls.__model__ 即为 InterfaceCaseContents，SQLAlchemy 自动返回对应子类实例
 
     @classmethod
     async def update_content(cls, content_id: int, **kwargs):

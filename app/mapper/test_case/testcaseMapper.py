@@ -723,12 +723,10 @@ class TestCaseMapper(Mapper[TestCase]):
     @classmethod
     async def delete_batch_cases(cls, delete_case_list: List[int]) -> int:
         """
-        批量删除测试用例及其关联数据
+        批量删除测试用例
 
-        高性能策略：
-        1. 单次 DELETE 删除关联表记录（步骤、需求关联）
-        2. 单次 DELETE 删除用例主表
-        3. 批量记录删除动态
+        数据库已配置 ON DELETE CASCADE，删用例主表会自动清理：
+        - case_sub_step / case_step_dynamic / requirement_case_association / plan_case_association
 
         :param delete_case_list: 用例ID列表
         :return: 删除的用例数量
@@ -737,13 +735,11 @@ class TestCaseMapper(Mapper[TestCase]):
             return 0
         try:
             async with cls.transaction() as session:
-             
                 case_stmt = delete(TestCase).where(TestCase.id.in_(delete_case_list))
                 result = await session.execute(case_stmt)
                 delete_count = result.rowcount
                 log.info(f"批量删除成功: 删除{delete_count}条用例")
                 return delete_count
-
         except Exception as e:
             log.error(f"delete_batch_cases error: ids={delete_case_list}, error={e}")
             raise
@@ -894,11 +890,11 @@ class TestCaseMapper(Mapper[TestCase]):
             new_case_model = TestCase(**new_case_data)
 
             steps = source_steps_map.get(source_case.id, [])
+            # 不设置 test_case_id，由 SQLAlchemy relationship 在 flush 时自动填充
             new_case_model.case_sub_steps = [
                 TestCaseStep(
                     **{
                         **step.copy_map(),
-                        "test_case_id": new_case_model.id,
                         "creator": user.id,
                         "creatorName": user.username
                     }

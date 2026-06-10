@@ -151,31 +151,8 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         CaseStepContentType.STEP_LOOP: LoopStepContentResult,
     }
 
-    @classmethod
-    async def get_by_id(cls, ident: int, session: AsyncSession = None) -> InterfaceCaseContentResult:
-        """
-        根据 ID 获取步骤内容结果（多态查询）
-
-        注意：在 Joined Table Inheritance 中，ident 是基类表的主键（id），
-        SQLAlchemy 会自动处理多态返回对应的子类实例
-
-        Args:
-            ident: 步骤内容结果 ID
-            session: 可选的数据库会话
-
-        Returns:
-            InterfaceCaseContentResult: 步骤内容结果实例（具体子类）
-        """
-        try:
-            async with cls.session_scope(session) as session:
-                result = await session.get(InterfaceCaseContentResult, ident)
-                if not result:
-                    raise ValueError(f"步骤内容结果不存在，id: {ident}")
-                return result
-        except Exception as e:
-            log.error(e)
-            raise e
-
+    # 基类 Mapper.get_by_id 已足够，无需重写
+    # 原重写把 NotFind 改成了 ValueError，破坏调用方一致性
 
     @classmethod
     async def query_by_case_result_id(
