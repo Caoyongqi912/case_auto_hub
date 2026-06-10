@@ -111,7 +111,7 @@ class PlayTaskMapper(Mapper[PlayTask]):
                 )
                 result = await session.execute(sql)
                 last_step_order = result.scalar()  # Fetch the first (and only) result
-                last_step_order or 0
+                last_case_index = last_step_order or 0
                 # 批量插入用例
                 new_cases = [
                     {

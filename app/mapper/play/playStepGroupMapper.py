@@ -511,12 +511,7 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
             async with cls.transaction() as session:
                 group = await cls.get_by_id(ident=group_id, session=session)
 
-                stmt = delete(PlayGroupStepAssociation
-                              ).where(
-                    PlayGroupStepAssociation.group_id == group_id
-                )
-                await session.execute(stmt)
-
+                # 先查询关联的步骤（在删除关联表之前）
                 stmt = select(PlayStepModel).join(
                     PlayGroupStepAssociation,
                     PlayGroupStepAssociation.play_step_id == PlayStepModel.id
@@ -525,11 +520,19 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
                 ).order_by(
                     PlayGroupStepAssociation.step_order
                 )
-
                 steps = await session.scalars(stmt)
-                for step in steps:
-                    if not step.is_common:
-                        await session.delete(step)
+                steps_to_delete = [step for step in steps if not step.is_common]
+
+                # 再删除关联表
+                stmt = delete(PlayGroupStepAssociation
+                              ).where(
+                    PlayGroupStepAssociation.group_id == group_id
+                )
+                await session.execute(stmt)
+
+                # 最后删除非公共步骤和组本身
+                for step in steps_to_delete:
+                    await session.delete(step)
                 await session.delete(group)
         except Exception as e:
             raise e

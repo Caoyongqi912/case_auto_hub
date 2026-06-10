@@ -386,7 +386,7 @@ class TestCaseMapper(Mapper[TestCase]):
                  - skipped_count: 因 on_duplicate="skip" 跳过的用例数
         """
         if not cases:
-            return 0
+            return 0, 0
 
         # 预校验 group_path -> module_id (在事务外, 避免嵌套事务破坏原子性)
         # 业务约定: Excel 中的"所属分组"必须已存在于用例库 module 树
@@ -663,6 +663,7 @@ class TestCaseMapper(Mapper[TestCase]):
                     )
                 )
                 # debug 级别: 标签通常很少, 仅调试时打开; 原 info 会把所有 tag 刷到日志
+                all_tags = tags.all()
                 log.debug(f"query_tags: requirement_id={requirement_id}, tag_count={len(all_tags)}")
                 return set(all_tags) if all_tags else []
         except Exception as e:
@@ -829,13 +830,13 @@ class TestCaseMapper(Mapper[TestCase]):
                 kwargs.pop("id", None)
                 new_case = await cls.update_cls(case_obj, session, **kwargs)
 
-            await CaseDynamicMapper.update_dynamic(
-                    cr=ur,
-                    case_id=case_obj.id,
-                    old_case=old_data,
-                    new_case=new_case.map,
-                    session=session
-                )
+                await CaseDynamicMapper.update_dynamic(
+                        cr=ur,
+                        case_id=case_obj.id,
+                        old_case=old_data,
+                        new_case=new_case.map,
+                        session=session
+                    )
         except Exception as e:
             log.error(f"update_case error: kwargs={kwargs}, error={e}")
             raise

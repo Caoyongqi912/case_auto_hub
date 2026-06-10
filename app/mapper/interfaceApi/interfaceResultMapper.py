@@ -463,14 +463,12 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
             InterfaceCaseContentResult.case_result_id == case_result_id
         )
 
-        if session:
+        # 统一使用 transaction(session)：
+        # - session 为 None：自动创建 session + begin + commit
+        # - session 不为 None：复用外部 session，由调用方控制 commit
+        async with cls.transaction(session) as session:
             result = await session.execute(stmt)
-            await session.flush()
             return result.rowcount
-        else:
-            async with cls.transaction() as session:
-                result = await session.execute(stmt)
-                return result.rowcount
 
     @classmethod
     async def get_statistics_by_case_result_id(

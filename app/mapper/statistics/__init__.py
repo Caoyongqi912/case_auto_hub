@@ -42,7 +42,7 @@ class StatisticsMapper:
             "ui_tasks": []
         }
         try:
-            async with cls.transaction() as session:
+            async with async_session() as session:
                 api_task = await session.execute(
                     select(
                         InterfaceTaskResult.run_day.label("date"),
@@ -93,7 +93,7 @@ class StatisticsMapper:
         try:
             result = {}
             date = GenerateTools.getTime(5)
-            async with cls.session_scope() as session:
+            async with async_session() as session:
                 api_task = await session.execute(
                     select(
                         InterfaceTaskResult.run_day.label("date"),
@@ -153,7 +153,7 @@ class StatisticsMapper:
     # Helper function to perform count queries
             
 
-            async with cls.transaction() as session:
+            async with async_session() as session:
                 async def get_count(model, start_date, end_date=None):
                     query = select(func.count()).select_from(model).filter(
                         model.create_time >= start_date,

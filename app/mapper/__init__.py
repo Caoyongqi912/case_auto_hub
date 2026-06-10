@@ -829,7 +829,6 @@ class Mapper(Generic[M]):
 
 
     @classmethod
-    @classmethod
     async def bulk_insert_models(cls, models: List[M], session: AsyncSession = None) -> int:
         """
         批量插入模型实例（直接接受模型实例列表）。

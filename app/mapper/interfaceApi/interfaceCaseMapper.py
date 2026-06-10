@@ -16,6 +16,7 @@ from app.mapper.interfaceApi.dynamicMapper import InterfaceCaseDynamicMapper
 from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
 from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
 from app.mapper.project.dbConfigMapper import DBExecuteMapper
+from app.exception import CommonError
 from app.mapper import Mapper
 from app.model.base import User
 from app.model.interfaceAPIModel.associationModel import InterfaceCaseStepContentAssociation
@@ -274,6 +275,8 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     session=session,
                     description=f"关联接口组步骤  {''.join([content.content_name if content.content_name else '' for content in case_step_content_group_apis])}"
                 )
+
+                return case_step_content_group_apis
         except Exception as e:
             log.error(f"associate_groups error {e}")
             raise
@@ -443,11 +446,12 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                             content_type=CaseStepContentType.STEP_API_SCRIPT,
                             script_text=""
                         )
+                    case _:
+                        raise CommonError(f"不支持的步骤类型: {content_type}")
                 log.debug(f"associate_content {content} {case_id}")
                 last_index = await cls._get_last_step_order(case_id=case_id, session=session)
                 if not content:
-                    log.error(f"associate_content error {content}")
-                    return
+                    raise CommonError(f"associate_content 创建步骤内容失败: case_id={case_id}, content_type={content_type}")
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
                     case_id=case_id,
@@ -600,6 +604,8 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     await session.execute(
                         insert(InterfaceCaseStepContentAssociation).values(assoc_values)
                     )
+
+                return new_case
 
         except Exception as e:
             log.error(e)

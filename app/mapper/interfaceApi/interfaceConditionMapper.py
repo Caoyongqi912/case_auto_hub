@@ -12,6 +12,7 @@ from sqlalchemy import select, delete, insert, and_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
+from app.model import async_session
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.model.base import User
 from app.model.interfaceAPIModel.interfaceConditionModel import InterfaceCondition
