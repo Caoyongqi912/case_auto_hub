@@ -272,7 +272,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         避免在 first_round/second_round 中重复 if-elif 链。
 
         :param bucket: 统计桶字典，键为语义化名称（passed/failed/...），值为计数
-        :param status: 状态值（0=未开始 1=通过 2=失败 3=阻塞 4=跳过）
+        :param status: 状态值
         :param count: 本次需累加的数量
         """
         key = cls._STATUS_BUCKET_MAP.get(status)
@@ -409,29 +409,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             log.error(f"insert_upload_case: 预查询 plan 失败 plan_id={plan_id}, error={e}")
             raise
 
-        # 1) 预解析 group_path -> plan_module_id (在过滤后的 cases 上, index 0..N-1)
-        #    - dedupe paths: N 条 case 经常只对应 K 个 unique path
-        #    - 每个 unique path 只 resolve 一次, 大幅减少 find_or_create_path 调用
-        #    - 解析失败的回退到入参 plan_module_id
-        case_module_map: Dict[int, int] = {}
-        unique_path_resolved: Dict[str, Optional[int]] = {}
-        for case_index, case_data in enumerate(cases):
-            raw_path = case_data.get("group_path")
-            if not raw_path:
-                continue
-            titles = _split_group_path(raw_path)
-            cache_key = "\x1f".join(titles)
-            if cache_key not in unique_path_resolved:
-                unique_path_resolved[cache_key] = await resolve_plan_group_path(
-                    plan_id=plan_id,
-                    raw_group_path=raw_path,
-                    user=user,
-                )
-            resolved = unique_path_resolved[cache_key]
-            if resolved is not None:
-                case_module_map[case_index] = resolved
-
-                # 1.5) 预校验 group_path -> module_id (用例库树, module_type=ModuleEnum.CASE=10).
+        # 1) 预校验 group_path -> module_id (用例库树, module_type=ModuleEnum.CASE=10).
         #      业务约定: Excel 中的"所属分组"必须已存在于用例库 module 树.
         #      本步**只查不建**: 用 find_group_path 拿叶子 id, 缺失即整批拒绝.
         #      计划侧的 plan_module 树不受影响: 它在 1) 步里依旧可以 find-or-create,
@@ -474,17 +452,32 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             )
 
         try:
-            # 预收集所有目标 plan_module_id, 用于:
-            # 1) 一次性 GROUP BY 查所有 module 的 max(order), 替代按 module 懒查询 (省 K-1 次 round-trip)
-            # 2) 仅在 plan_module_id 缺失时一次性查 root, 替代循环内 N 次 root 查询
-            target_module_ids: set = set(case_module_map.values())
-            if plan_module_id is not None:
-                target_module_ids.add(plan_module_id)
-
             async with cls.transaction() as session:
 
-                # 1) root 兜底查询提到循环外
-                #    仅在 plan_module_id 未指定时才有可能走 root 兜底
+                # 1) 根据用例库 module_id 在 plan 中精确复用/创建 PlanModule
+                #    收集唯一 module_ids，一次性调用 _resolve_source_to_plan_module_map。
+                #    该方法会按 source_module_id 精确匹配，未命中则按 title 路径新建，
+                #    并自动写入 source_module_id，保证 plan_module 与 module 的持久化关联。
+                case_module_map: Dict[int, int] = {}
+                if case_module_id_map:
+                    unique_module_ids = list(set(case_module_id_map.values()))
+                    source_to_plan = await cls._resolve_source_to_plan_module_map(
+                        sess=session,
+                        plan_id=plan_id,
+                        user=user,
+                        module_ids=unique_module_ids,
+                    )
+                    for idx, mid in case_module_id_map.items():
+                        pm_id = source_to_plan.get(mid)
+                        if pm_id is not None:
+                            case_module_map[idx] = pm_id
+                        else:
+                            log.warning(
+                                f"insert_upload_case: module_id={mid} 未映射到 plan_module, "
+                                f"case_index={idx} 将 fallback"
+                            )
+
+                # 2) root 兜底查询提到循环外
                 root_id: Optional[int] = None
                 if plan_module_id is None:
                     root_stmt = select(PlanModule).where(
@@ -493,11 +486,14 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     ).order_by(PlanModule.order, PlanModule.id)
                     root_modules = (await session.execute(root_stmt)).scalars().all()
                     root_id = root_modules[0].id if root_modules else None
-                    if root_id is not None:
-                        target_module_ids.add(root_id)
 
-                # 2) 一次性 GROUP BY 拿所有 target module 的 max(order)
-                #    替代旧的"按 module 懒初始化"模式, 1 次 round-trip 完成
+                # 3) 预收集所有目标 plan_module_id，一次性 GROUP BY 查 max(order)
+                target_module_ids: set = set(case_module_map.values())
+                if plan_module_id is not None:
+                    target_module_ids.add(plan_module_id)
+                if root_id is not None:
+                    target_module_ids.add(root_id)
+
                 max_order_per_module: Dict[int, int] = {}
                 if target_module_ids:
                     max_order_stmt = select(
@@ -512,42 +508,13 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     rows = (await session.execute(max_order_stmt)).all()
                     max_order_per_module = {row[0]: int(row[1] or 0) for row in rows}
 
-                # 3) 补齐 Excel 上传链路的 source_module_id
-                #    case_module_map: case_index -> plan_module_id
-                #    case_module_id_map: case_index -> module_id (用例库)
-                #    把 plan_module_id -> module_id 的映射一次性回填到 plan_module 表，
-                #    使后续反向查找能直接命中 source_module_id。
-                plan_module_to_source: Dict[int, int] = {}
-                for idx, pm_id in case_module_map.items():
-                    src_id = case_module_id_map.get(idx)
-                    if src_id is not None:
-                        plan_module_to_source[pm_id] = src_id
-
-                if plan_module_to_source:
-                    case_whens = [
-                        (PlanModule.id == pm_id, src_id)
-                        for pm_id, src_id in plan_module_to_source.items()
-                    ]
-                    await session.execute(
-                        update(PlanModule)
-                        .where(PlanModule.id.in_(plan_module_to_source.keys()))
-                        .where(PlanModule.source_module_id.is_(None))
-                        .values(source_module_id=case(*case_whens, else_=PlanModule.source_module_id))
-                    )
-                    log.info(
-                        "insert_upload_case: 回填 %s 个 plan_module 的 source_module_id",
-                        len(plan_module_to_source),
-                    )
-
                 # 游标字典: 存的是"最近一次写出的 order", 第一条新 case 直接 +1.
-                # 与 testcaseMapper._prepare_requirement_associations 的 last_order+1 风格一致,
-                # 避免出现 max+2 起始的 off-by-one 缺口.
                 module_order_cursor: Dict[int, int] = dict(max_order_per_module)
 
                 # 只打印数量, 避免把用例内容全部写日志 (PII + 性能)
                 log.info(
                     f"insert_upload_case: plan_id={plan_id} 入参={len(cases)} 条, "
-                    f"resolved_paths={len(unique_path_resolved)}, "
+                    f"module_ids={len(case_module_id_map)}, "
                     f"target_modules={len(target_module_ids)}"
                 )
 
@@ -555,17 +522,19 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 all_steps = []
                 case_plan_associations = []
 
+                # 用于诊断: 统计 effective_module_id 的决策来源
+                diag_resolved_count = 0
+                diag_fallback_plan_module_count = 0
+                diag_fallback_root_count = 0
+
                 # 第一阶段: 在内存中构建所有对象 (无数据库交互)
                 for case_index, case_data in enumerate(cases):
-                    # module_id 来自 1.5) 阶段预解析 (用例库 tree), 与
+                    # module_id 来自预解析 (用例库 tree), 与
                     # 后续 effective_module_id (plan tree) 完全独立.
                     # group_path 缺失/解析失败时为 None, 落到用例库"未分组数据".
                     case_library_module_id = case_module_id_map.get(case_index)
                     case_obj = cls._prepare_plan_case_data(
                         case_data=case_data.copy(),
-                        # 用上面 session 内缓存的 project_id, 不要走 plan.project_id:
-                        # plan 来自上一个已关闭的 session, 此时已 detached,
-                        # 再访问属性会触发 DetachedInstanceError.
                         project_id=project_id,
                         user=user,
                         module_id=case_library_module_id,
@@ -581,13 +550,19 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     all_steps.extend(steps)
 
                     # 该 case 实际写入的 plan_module_id:
-                    # 1) group_path 解析成功 -> 用解析出的 id
+                    # 1) group_path 解析成功 -> 用 _resolve_source_to_plan_module_map 映射出的 id
                     # 2) group_path 缺失/解析失败 -> 用入参 plan_module_id 兜底
-                    # 3) 兜底仍为 None -> 退化到 plan 的根 "全部用例" 分组 (root_id 已提前查到)
-                    effective_module_id = (
-                        case_module_map.get(case_index, plan_module_id)
-                        or root_id
-                    )
+                    # 3) 兜底仍为 None -> 退化到 plan 的根 "全部用例" 分组
+                    resolved_pm = case_module_map.get(case_index)
+                    if resolved_pm is not None:
+                        effective_module_id = resolved_pm
+                        diag_resolved_count += 1
+                    elif plan_module_id is not None:
+                        effective_module_id = plan_module_id
+                        diag_fallback_plan_module_count += 1
+                    else:
+                        effective_module_id = root_id
+                        diag_fallback_root_count += 1
 
                     if effective_module_id is None:
                         raise ValueError(
@@ -610,6 +585,14 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                         second_status=second_status
                     )
                     case_plan_associations.append(assoc)
+
+                # 诊断日志: 统计 effective_module_id 的决策分布
+                log.info(
+                    f"insert_upload_case: plan_id={plan_id} module_id 决策分布: "
+                    f"resolved={diag_resolved_count} fallback_plan_module={diag_fallback_plan_module_count} "
+                    f"fallback_root={diag_fallback_root_count} "
+                    f"case_module_map_keys={list(case_module_map.keys())}"
+                )
 
                 # ────────── 阶段 2: 批量写入用例, flush 获取自增 ID ──────────
                 session.add_all(case_objects)
@@ -741,9 +724,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             node = (await session.execute(mod_stmt)).scalars().first()
             if node is None:
                 log.info(
-                    "_resolve_plan_module_to_library_module: plan_module_id=%s "
-                    "title fallback 在 '%s' 处中断",
-                    plan_module_id, title,
+                    f"_resolve_plan_module_to_library_module: plan_module_id={plan_module_id} "
+                    f"title fallback 在 '{title}' 处中断"
                 )
                 return None
             parent_id = node.id
@@ -757,8 +739,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             )
             log.info(
                 f"_resolve_plan_module_to_library_module: plan_module_id={plan_module_id} "
-                "title fallback 命中 module_id=%s，已回填",
-                parent_id,
+                f"title fallback 命中 module_id={parent_id}，已回填"
             )
             # 不需要 flush：复用外层事务，由调用方统一提交
 
@@ -806,13 +787,11 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             if library_module_id is not None:
                 kwargs['module_id'] = library_module_id
                 log.info(
-                    "insert_plan_case: plan_module_id=%s 映射到用例库 module_id=%s",
-                    plan_module_id, library_module_id,
+                    f"insert_plan_case: plan_module_id={plan_module_id} 映射到用例库 module_id={library_module_id}"
                 )
             else:
                 log.info(
-                    "insert_plan_case: plan_module_id=%s 未找到用例库对应分组，用例落入未分组",
-                    plan_module_id,
+                    f"insert_plan_case: plan_module_id={plan_module_id} 未找到用例库对应分组，用例落入未分组"
                 )
 
             case_obj: TestCase = await TestCaseMapper.save(session=session, **kwargs)
@@ -1073,8 +1052,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             session=session,
         )
         log.info(
-            "记录步骤结果动态成功: plan_id=%s, case_id=%s, changes=%s",
-            plan_id, test_case_id, list(new_data.keys()),
+            f"记录步骤结果动态成功: plan_id={plan_id}, case_id={test_case_id}, changes={list(new_data.keys())}"
         )
 
     @classmethod
@@ -1253,7 +1231,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 if not diff_info:
                     continue
 
-                log.debug("用例 %d 变更: %s", case_id, diff_info)
+                log.debug(f"用例 {case_id} 变更: {diff_info}")
                 pending_dynamics.append(
                     CaseStepDynamic(
                         description=(
@@ -1398,8 +1376,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 results.append(affected)
 
             log.info(
-                "reorder_plan_cases_bulk plan=%s items=%d total_affected=%d",
-                plan_id, len(items), sum(results),
+                f"reorder_plan_cases_bulk plan={plan_id} items={len(items)} total_affected={sum(results)}"
             )
             return results
 
@@ -1534,11 +1511,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         result = await session.execute(update_stmt)
         # 日志：跨 module 时 old_index 记为 None（语义上 case 不在原列表中）
         log.debug(
-            "_apply_single_reorder plan=%s case=%s old=%s new=%s module=%s→%s affected=%s",
-            plan_id, case_id,
-            old_index if "old_index" in locals() else None,
-            new_index,
-            origin_module_id, target_module_id, result.rowcount,
+            f"_apply_single_reorder plan={plan_id} case={case_id} "
+            f"old={old_index if 'old_index' in locals() else None} new={new_index} "
+            f"module={origin_module_id}→{target_module_id} affected={result.rowcount}"
         )
         return result.rowcount
 
@@ -1952,17 +1927,15 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                         await sess.flush()
                         plan_mod_by_source_id[exact_key] = existing
                         log.info(
-                            "_resolve_source_to_plan_module_map: 回填 plan_module_id=%s "
-                            "source_module_id=%s title=%s",
-                            existing.id, node.id, node.title,
+                            f"_resolve_source_to_plan_module_map: 回填 plan_module_id={existing.id} "
+                            f"source_module_id={node.id} title={node.title}"
                         )
                     elif existing.source_module_id != node.id:
                         # 防御：同一 (plan_id, title, parent_id) 对应了不同的 Module
                         # 保留现有 source_module_id，不覆盖，仅告警
                         log.warning(
-                            "_resolve_source_to_plan_module_map: source_module_id 冲突 "
-                            "plan_module_id=%s 现有=%s 新=%s title=%s",
-                            existing.id, existing.source_module_id, node.id, node.title,
+                            f"_resolve_source_to_plan_module_map: source_module_id 冲突 "
+                            f"plan_module_id={existing.id} 现有={existing.source_module_id} 新={node.id} title={node.title}"
                         )
                     current_parent_id = existing.id
                     continue
@@ -2629,7 +2602,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 )
                 status_label_map: Dict[str, str] = {row.value: row.label for row in cfg_rows}
             except Exception as err:
-                log.warning("get_statistics 加载 CASE_STATUS 配置失败, 降级为原始值: %s", err)
+                log.warning(f"get_statistics 加载 CASE_STATUS 配置失败, 降级为原始值: {err}")
                 status_label_map = {}
 
             stmt = (

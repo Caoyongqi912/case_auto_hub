@@ -283,7 +283,8 @@ class PlanModuleMapper(Mapper[PlanModule]):
 
         async with cls.transaction() as session:
             # 1) 找到 plan 的根目录 (parent_id=NULL).
-            #    init_module 会在 plan 创建时建好; 若缺失说明数据异常, 抛错让上层感知.
+            #    init_module 理论上会在 plan 创建时建好, 但开发/测试阶段可能遗漏.
+            #    这里改为自动兜底创建, 避免 Excel 上传因 root 缺失而整批失败.
             #    用 order, id 排序兜底多根的极端情况, 取最靠前那一个.
             root_stmt = (
                 select(PlanModule)
@@ -295,8 +296,20 @@ class PlanModuleMapper(Mapper[PlanModule]):
             )
             root_module = (await session.execute(root_stmt)).scalars().first()
             if root_module is None:
-                raise ValueError(
-                    f"plan_id={plan_id} 缺少根目录, 请先初始化"
+                root_module = PlanModule(
+                    plan_id=plan_id,
+                    title="全部用例",
+                    parent_id=None,
+                    order=0,
+                )
+                if user is not None:
+                    root_module.creator = user.id
+                    root_module.creatorName = user.username
+                session.add(root_module)
+                await session.flush()
+                log.info(
+                    "find_or_create_path: plan_id=%s 缺少根目录, 已自动创建 "
+                    "root_id=%s", plan_id, root_module.id,
                 )
 
             # 2) 计算同一 plan 内最大 order, 新建节点接在末尾 (避免插入到中间)
