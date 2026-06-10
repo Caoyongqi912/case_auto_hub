@@ -286,14 +286,13 @@ class InterfaceMapper(Mapper[Interface]):
                     )
                     module_map[name] = mid
 
-                tasks = [
-                    cls._batch_insert_apis(
+                # 串行执行，避免多个协程共享同一个 AsyncSession
+                # AsyncSession 不是协程安全的，并发 add() 会损坏内部状态
+                for idx, api in enumerate(apis):
+                    await cls._batch_insert_apis(
                         session, int(project_id), int(env_id),
                         module_map[module_names[idx]], creator, api["data"]
                     )
-                    for idx, api in enumerate(apis)
-                ]
-                await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
             log.error(f"upload error: {e}")
             raise

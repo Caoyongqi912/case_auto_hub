@@ -180,56 +180,58 @@ class PlayConditionMapper(Mapper[PlayCondition]):
                                     content_name=step.name
                                 )
                                 case_step_content_play_step_list.append(content)
-                    else:
-                        # 使用异步并发处理，提高复制步骤的效率
-                        copy_jobs = []
-                        for play_step_id in play_step_id_list:
-                            copy_jobs.append(
-                                PlayStepV2Mapper.copy_step(
-                                    step_id=play_step_id,
-                                    session=session,
-                                    copy_step_name=True,
-                                    is_common=False,
-                                    user=user
-                                )
-                            )
-
-                        try:
-                            copied_steps = await asyncio.gather(*copy_jobs)
-                        except Exception as gather_err:
-                            log.exception(f"复制步骤时出现错误: {gather_err}")
-                            raise ValueError("复制步骤失败")
-
-                        for step in copied_steps:
-                            content = await PlayStepContentMapper.init_content(
-                                target_id=step.id,
-                                content_type=PlayStepContentType.STEP_PLAY,
+                else:
+                    # quote=False：复制步骤
+                    copy_jobs = []
+                    for play_step_id in play_step_id_list:
+                        copy_jobs.append(
+                            PlayStepV2Mapper.copy_step(
+                                step_id=play_step_id,
                                 session=session,
-                                content_desc=step.method,
-                                content_name=step.name,
-                                is_common=False
+                                copy_step_name=True,
+                                is_common=False,
+                                user=user
                             )
-                            case_step_content_play_step_list.append(content)
-                    last_index = await cls._get_last_step_order(condition_id, session)
-                    content_ids = [content.id for content in case_step_content_play_step_list]
+                        )
 
-                    if content_ids:
-                        values = []
-                        for index, content_id in enumerate(content_ids, start=last_index + 1):
-                            values.append({
-                                "condition_id": condition_id,
-                                "step_content_id": content_id,
-                                "step_order": index
-                            })
+                    try:
+                        copied_steps = await asyncio.gather(*copy_jobs)
+                    except Exception as gather_err:
+                        log.exception(f"复制步骤时出现错误: {gather_err}")
+                        raise ValueError("复制步骤失败")
 
-                        if values:
-                            await session.execute(
-                                insert(ConditionStepAssociation).prefix_with('IGNORE').values(values)
-                            )
-                    else:
-                        log.warning(f"没有创建任何步骤关联，用例ID: {condition_id}")
-                        # 回滚步骤数量更新
-                        condition.condition_step_num -= len(play_step_id_list)
+                    for step in copied_steps:
+                        content = await PlayStepContentMapper.init_content(
+                            target_id=step.id,
+                            content_type=PlayStepContentType.STEP_PLAY,
+                            session=session,
+                            content_desc=step.method,
+                            content_name=step.name,
+                            is_common=False
+                        )
+                        case_step_content_play_step_list.append(content)
+
+                # 公共逻辑：排序并插入关联（quote=True/False 都走这里）
+                last_index = await cls._get_last_step_order(condition_id, session)
+                content_ids = [content.id for content in case_step_content_play_step_list]
+
+                if content_ids:
+                    values = []
+                    for index, content_id in enumerate(content_ids, start=last_index + 1):
+                        values.append({
+                            "condition_id": condition_id,
+                            "step_content_id": content_id,
+                            "step_order": index
+                        })
+
+                    if values:
+                        await session.execute(
+                            insert(ConditionStepAssociation).prefix_with('IGNORE').values(values)
+                        )
+                else:
+                    log.warning(f"没有创建任何步骤关联，用例ID: {condition_id}")
+                    # 没有生成任何步骤，回滚之前加的 step_num
+                    condition.condition_step_num -= len(play_step_id_list)
 
 
         except Exception:

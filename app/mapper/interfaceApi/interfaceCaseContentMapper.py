@@ -16,6 +16,7 @@ from app.mapper.interfaceApi.interfaceGroupMapper import InterfaceGroupMapper
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
 from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
+from app.exception import NotFind
 from app.model.base import User
 from app.model.interfaceAPIModel.contents import (
     InterfaceCaseContents,
@@ -175,7 +176,7 @@ class InterfaceCaseContentMapper(Mapper):
         new_content = cls_model(
             target_id=content.target_id,
             creator=user.id,
-            creatorName=user.creatorName,
+            creatorName=user.username,  # User 模型只有 username，没有 creatorName
         )
 
         new_target_id = content.target_id
