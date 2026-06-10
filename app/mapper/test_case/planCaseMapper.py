@@ -685,8 +685,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         user: User,
         actual_result: Optional[str] = None,
         bug_url: Optional[str] = None,
-        first_status: Optional[int] = None,
-        second_status: Optional[int] = None
+        first_status: Optional[str] = None,
+        second_status: Optional[str] = None
     ):
         """
         新增或更新计划用例步骤执行结果（upsert）
@@ -702,8 +702,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             user: 操作用户
             actual_result: 实际结果
             bug_url: 缺陷链接
-            first_status: 一轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
-            second_status: 二轮测试状态 (0:未开始 1:通过 2:失败 3:阻塞 4:跳过)
+            first_status: 一轮测试状态 
+            second_status: 二轮测试状态
 
         Returns:
             dict: {"test_case_id": int} 用例ID（供调用方使用）
@@ -720,8 +720,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             )
         except Exception as err:
             log.error(
-                "更新步骤结果失败: plan_id=%s, step_id=%s, error=%s",
-                plan_id, step_id, err,
+                f"更新步骤结果失败: plan_id={plan_id}, step_id={step_id}, error={err}",
             )
             raise
 
@@ -786,13 +785,11 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             if second_status is not None:
                 status_changes["second_status"] = second_status
 
-            for status_field, status_value in status_changes.items():
+            for status_field in status_changes.keys():
                 await cls._sync_single_step_status(
                     session=session,
                     plan_id=plan_id,
                     case_id=test_case_id,
-                    step_id=step_id,
-                    status=status_value,
                     status_field=status_field,
                 )
 
@@ -918,79 +915,58 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         session: AsyncSession,
         plan_id: int,
         case_id: int,
-        step_id: int,
-        status: int,
         status_field: str
     ) -> None:
         """
-        同步单个步骤的状态到父级用例
+        同步步骤状态到父级用例
 
-        根据当前步骤的状态更新，决定是否需要更新父级 PlanCaseAssociation 的对应状态字段。
+        逻辑：case 下所有 steps 的对应 status 全部相同时，
+        把这个值同步到 PlanCaseAssociation；否则不修改。
 
-        同步策略：
-        - 非通过状态（!=1）：直接将父级用例状态更新为该状态（一票否决）
-        - 通过状态（==1）：检查同用例下所有步骤是否都通过，全部通过才更新父级为通过
-
-        性能优化：
-        - 通过状态场景：使用单条 SQL 的 LEFT JOIN + COUNT 判断是否存在未通过的步骤，
-          替代原有的"查全部步骤ID + 查全部步骤结果"两次查询方案，减少一次数据库往返
+        不硬编码任何 status value，所有值通过 caseConfig 控制。
 
         Args:
             session: 数据库会话
             plan_id: 计划ID
             case_id: 用例ID
-            step_id: 当前更新的步骤ID
-            status: 当前步骤的新状态值
-            status_field: 要更新的状态字段名 ('first_status', 'second_status')
+            status_field: 要同步的状态字段名 ('first_status', 'second_status')
         """
         target_column = cls._resolve_status_column(status_field)
         if target_column is None:
             return
 
-        if status != 1:
-            # 非通过状态：一票否决，直接更新父级用例状态
+        # 单条 SQL 查：总 step 数 / 有结果数 / status 最小值 / 最大值
+        # 全部有结果 + 全部相同(非NULL) 才同步
+        check_stmt = (
+            select(
+                func.count(TestCaseStep.id).label("total"),
+                func.count(TestCaseStepResult.id).label("has_result"),
+                func.min(target_column).label("min_status"),
+                func.max(target_column).label("max_status"),
+            )
+            .select_from(TestCaseStep)
+            .outerjoin(
+                TestCaseStepResult,
+                and_(
+                    TestCaseStepResult.step_id == TestCaseStep.id,
+                    TestCaseStepResult.plan_id == plan_id,
+                ),
+            )
+            .where(TestCaseStep.test_case_id == case_id)
+        )
+
+        result = await session.execute(check_stmt)
+        row = result.one()
+        total, has_result, min_status, max_status = row
+
+        if total > 0 and has_result == total and min_status is not None and min_status == max_status:
             update_assoc_stmt = update(PlanCaseAssociation).where(
                 and_(
                     PlanCaseAssociation.plan_id == plan_id,
-                    PlanCaseAssociation.case_id == case_id
+                    PlanCaseAssociation.case_id == case_id,
                 )
-            ).values(**{status_field: status})
+            ).values(**{status_field: min_status})
             await session.execute(update_assoc_stmt)
-        else:
-            # 通过状态：使用单条 SQL 检查是否存在未通过的步骤
-            # 逻辑等价于：NOT EXISTS (step WHERE step.status != 1 OR step无结果记录)
-            # 若 non_pass_count == 0，则所有步骤均已通过，可更新父级为通过
-            non_pass_count_stmt = (
-                select(func.count())
-                .select_from(TestCaseStep)
-                .outerjoin(
-                    TestCaseStepResult,
-                    and_(
-                        TestCaseStepResult.step_id == TestCaseStep.id,
-                        TestCaseStepResult.plan_id == plan_id
-                    )
-                )
-                .where(
-                    and_(
-                        TestCaseStep.test_case_id == case_id,
-                        or_(
-                            # 步骤尚无结果记录（未执行）
-                            TestCaseStepResult.id.is_(None),
-                            # 步骤结果状态非通过（coalesce 防止 NULL 比较）
-                            func.coalesce(target_column, 0) != 1,
-                        )
-                    )
-                )
-            )
-            result = await session.execute(non_pass_count_stmt)
-            if result.scalar() == 0:
-                update_assoc_stmt = update(PlanCaseAssociation).where(
-                    and_(
-                        PlanCaseAssociation.plan_id == plan_id,
-                        PlanCaseAssociation.case_id == case_id
-                    )
-                ).values(**{status_field: 1})
-                await session.execute(update_assoc_stmt)
 
     # ------------------------------------------------------------------
     #  用例批量更新
