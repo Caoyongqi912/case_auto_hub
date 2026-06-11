@@ -2649,6 +2649,69 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 "daily_trend": []
             }
 
+    @classmethod
+    async def query_plan_cases_for_export(
+        cls,
+        plan_id: int,
+        case_ids: Optional[List[int]] = None,
+    ):
+        """
+        拉 plan_case_association 下的用例 + 子步骤 (计划 scope).
+        排序 plan_case_association.order asc, 跟 PlanCaseList 页面默认序一致.
+        """
+        try:
+            async with cls.session_scope() as session:
+                stmt = (
+                    select(TestCase, cls.__model__.order, cls.__model__.plan_module_id)
+                    .join(cls.__model__, cls.__model__.case_id == TestCase.id)
+                    .where(cls.__model__.plan_id == plan_id)
+                    .order_by(cls.__model__.order.asc())
+                )
+                if case_ids:
+                    stmt = stmt.where(cls.__model__.case_id.in_(case_ids))
+                rows = (await session.execute(stmt)).all()
+                if not rows:
+                    return []
+                ids = [case.id for case, _, _ in rows]
+                step_rows = (await session.scalars(
+                    select(TestCaseStep)
+                    .where(TestCaseStep.test_case_id.in_(ids))
+                    .order_by(TestCaseStep.test_case_id, TestCaseStep.order)
+                )).all()
+                steps_by_case = {}
+                for s in step_rows:
+                    steps_by_case.setdefault(s.test_case_id, []).append(s.to_dict())
+                return [
+                    {
+                        **case.to_dict(),
+                        "case_sub_steps": steps_by_case.get(case.id, []),
+                        "plan_order": order,
+                        "plan_module_id": plan_module_id,
+                    }
+                    for case, order, plan_module_id in rows
+                ]
+        except Exception as e:
+            log.error(f"query_plan_cases_for_export error: plan_id={plan_id}, error={e}")
+            raise
+
+    @classmethod
+    async def build_plan_module_path_map(
+        cls,
+        session: AsyncSession,
+        plan_id: int,
+        plan_module_ids: list,
+    ) -> dict:
+        """plan_module_id -> 'root/.../leaf' 路径. 复用调用方 session, 一次拉全内存回溯."""
+        from app.service.exportCaseService import _walk_paths
+        if not plan_module_ids:
+            return {}
+        rows = (await session.execute(
+            select(PlanModule.id, PlanModule.title, PlanModule.parent_id)
+            .where(PlanModule.plan_id == plan_id)
+        )).all()
+        id_to_node = {r.id: (r.title, r.parent_id) for r in rows}
+        return _walk_paths(id_to_node, list(plan_module_ids))
+
     @staticmethod
     def _map_step_id(step_data: Dict[str, Any], case_id_map: Dict[int, int]) -> Dict[str, Any]:
         """将步骤的临时索引替换为实际用例ID（flush 后调用）"""

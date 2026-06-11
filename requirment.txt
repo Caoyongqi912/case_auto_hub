@@ -61,6 +61,7 @@ mitmproxy-macos==0.12.7
 mitmproxy_rs==0.12.7
 msgpack==1.1.2
 numpy==2.3.5
+openpyxl==3.1.5
 orjson==3.11.4
 packaging==25.0
 pandas==2.3.3

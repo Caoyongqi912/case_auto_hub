@@ -5,12 +5,15 @@
 # @File : test_case
 # @Software: PyCharm
 # @Desc: 测试用例管理路由
-from typing import Optional
+from datetime import datetime
+from io import BytesIO
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, UploadFile, Form, File
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, Query, UploadFile, Form, File
+from fastapi.responses import FileResponse, StreamingResponse
 
-from app.mapper.test_case import TestCaseMapper, TestCaseStepMapper, CaseDynamicMapper
+from app.exception import CommonError
+from app.mapper.test_case import TestCaseMapper, TestCaseStepMapper, CaseDynamicMapper, PlanCaseMapper
 from app.schema.hub.testCaseSchema import (
     AddTestCaseSchema, PageTestCaseSchema, AddDefaultCaseSchema,
     UpdateTestCaseSchema, QueryTestCaseSchemaByField, RemoveCaseSchema, RemoveCaseStep,
@@ -19,7 +22,10 @@ from app.schema.hub.testCaseSchema import (
     UploadCommitSchema, UploadCancelSchema,UpdateTestCasesSchema,DeleteTestCasesSchema
 )
 from app.service.uploadCacheService import UploadCacheService
+from app.service.exportCaseService import ExportCaseService
+from utils.roundtripReader import RoundtripReader
 from common import rc
+from enums import ModuleEnum
 from app.controller import Authentication
 from app.model.base import User
 from app.response import Response
@@ -284,6 +290,183 @@ async def download_case_template(_: User = Depends(Authentication())):
     )
 
 
+@router.get("/export", description="按 scope 导出用例为 Excel (导出-编辑-导回 圆桌)")
+async def export_cases(
+    scope_type: str = Query(..., description="范围类型: library / plan"),
+    scope_id: int = Query(..., description="范围ID: library=module_id / plan=plan_id"),
+    project_id: int = Query(..., description="项目ID; library 用于 module 校验, plan 可忽略"),
+    case_ids: Optional[str] = Query(None, description="逗号分隔的 case_id 列表; 空=范围内全量"),
+    include_steps: bool = Query(True, description="是否包含子步骤(多行展开)"),
+    _: User = Depends(Authentication()),
+):
+    """
+    导出-编辑-导回 圆桌的"导" 入口. 3-Sheet xlsx:
+      1. 用例数据 - 主表, 14 列 (PR-2 解析端按表头识别)
+      2. 编辑指引 - 可见
+      3. _meta    - 隐藏, scope 校验位
+
+    字段: TestCase 本体 + 子步骤. 计划关联字段
+    (is_review / first_status / second_status / bug_url) 不导出.
+    """
+    if scope_type not in ("library", "plan"):
+        raise CommonError(message=f"scope_type 必须是 library 或 plan, 收到: {scope_type!r}")
+
+    case_id_list: Optional[List[int]] = None
+    if case_ids:
+        try:
+            case_id_list = [int(s) for s in case_ids.split(",") if s.strip()]
+        except ValueError:
+            raise CommonError(message="case_ids 必须为逗号分隔的整数")
+
+    try:
+        if scope_type == "library":
+            async with TestCaseMapper.session_scope() as session:
+                case_dicts = await TestCaseMapper.query_cases_for_export(
+                    project_id=project_id,
+                    module_id=scope_id,
+                    case_ids=case_id_list,
+                )
+                if not case_dicts:
+                    raise CommonError(message="范围内没有用例, 无需导出")
+                group_path_map = await TestCaseMapper.build_module_path_map(
+                    session=session,
+                    module_ids=[c.get("module_id") for c in case_dicts if c.get("module_id") is not None],
+                    project_id=project_id,
+                    module_type=ModuleEnum.CASE,
+                )
+        else:  # plan
+            async with PlanCaseMapper.session_scope() as session:
+                case_dicts = await PlanCaseMapper.query_plan_cases_for_export(
+                    plan_id=scope_id,
+                    case_ids=case_id_list,
+                )
+                if not case_dicts:
+                    raise CommonError(message="计划下没有用例, 无需导出")
+                group_path_map = await PlanCaseMapper.build_plan_module_path_map(
+                    session=session,
+                    plan_id=scope_id,
+                    plan_module_ids=[c.get("plan_module_id") for c in case_dicts if c.get("plan_module_id") is not None],
+                )
+    except CommonError:
+        raise
+    except ValueError as ve:
+        raise CommonError(message=str(ve))
+    except Exception as e:
+        log.exception(f"export_cases 失败: scope_type={scope_type}, scope_id={scope_id}, error={e}")
+        raise CommonError(message=f"导出失败: {str(e)}")
+
+    service = ExportCaseService(
+        scope_type=scope_type,
+        scope_id=scope_id,
+        case_dicts=case_dicts,
+        group_path_map=group_path_map,
+        include_steps=include_steps,
+    )
+    buf: BytesIO = service.build_workbook()
+    filename = f"用例导出-{scope_type}{scope_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx"
+    log.info(f"export_cases ok: scope={scope_type}:{scope_id}, cases={service.case_count}, filename={filename}")
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.post("/import/preview", description="导出-编辑-导回 圆桌: 预览 (解析 + 校验 scope)")
+async def import_preview(
+    file: UploadFile = File(..., description="圆桌导出的 3-Sheet xlsx"),
+    scope_type: str = Form(..., description="范围类型: library / plan"),
+    scope_id: int = Form(..., description="范围ID: library=module_id / plan=plan_id"),
+    mode: str = Form("mixed", description="mixed (默认) | insert_only"),
+    user: User = Depends(Authentication()),
+):
+    """
+    解析 PR-1 导出的 3-Sheet xlsx, 校验 scope 与 _meta 一致, 入 Redis 预览缓存.
+
+    与老 /upload 的区别:
+      - 解析 14 列新格式 (PR-1 协议), 不是 9 列老格式
+      - 强制 scope 校验, 跨 scope 上传直接拒绝
+      - 响应里多 scope_check / warnings 字段, 给前端做提示
+      - mode=insert_only 时, 含用例ID 的行会被拒 (只允许纯新增)
+
+    失败时不写 Redis, can_commit=false, 强制用户修 Excel 重传.
+    """
+    if scope_type not in ("library", "plan"):
+        raise CommonError(message=f"scope_type 必须是 library 或 plan, 收到: {scope_type!r}")
+    if mode not in ("mixed", "insert_only"):
+        raise CommonError(message=f"mode 必须是 mixed 或 insert_only, 收到: {mode!r}")
+
+    try:
+        reader = RoundtripReader(scope_type=scope_type, scope_id=scope_id)
+        result = await reader.async_read(file)
+    except ValueError as ve:
+        # 文件超限 / 解析异常
+        return Response.success({
+            "file_md5": None,
+            "total_count": 0,
+            "valid_count": 0,
+            "invalid_count": 0,
+            "errors": [{"row": 0, "errors": [{"field": "file", "message": str(ve)}]}],
+            "warnings": [],
+            "scope_check": {},
+            "can_commit": False,
+        })
+    except Exception as e:
+        log.exception(f"import/preview 失败: scope={scope_type}:{scope_id}, error={e}")
+        raise CommonError(message=f"预览失败: {str(e)}")
+
+    # mode=insert_only: 用例ID 非空的行视为错误
+    if mode == "insert_only":
+        for r in result.valid_rows:
+            if r.get("case_id") is not None:
+                result.errors.append({
+                    "row": r.get("_row", 0),
+                    "errors": [{
+                        "field": "用例ID",
+                        "message": "mode=insert_only 时不允许带 用例ID 的行 (本圆桌不支持纯新增场景, 请用 mixed)",
+                    }],
+                })
+        # 重新过滤
+        result.valid_rows = [r for r in result.valid_rows if r.get("case_id") is None]
+        result.valid_count = len(result.valid_rows)
+        result.invalid_count = len(result.errors)
+
+    # 任意错误都不写缓存, can_commit=false
+    can_commit = len(result.errors) == 0
+    file_md5 = result.file_md5 if can_commit else None
+
+    if can_commit:
+        await _cache_service.save_preview(
+            file_md5=result.file_md5,
+            user_id=user.id,
+            valid_cases=[],   # 老字段, 圆桌不用
+            errors=result.errors,
+            total_count=result.total_count,
+            valid_rows=result.valid_rows,
+            meta=result.meta,
+            scope_check=result.scope_check,
+            warnings=result.warnings,
+        )
+
+    log.info(
+        f"import/preview: scope={scope_type}:{scope_id}, mode={mode}, "
+        f"file_md5={result.file_md5}, total={result.total_count}, "
+        f"valid={result.valid_count}, invalid={result.invalid_count}, "
+        f"can_commit={can_commit}"
+    )
+
+    return Response.success({
+        "file_md5": file_md5,
+        "total_count": result.total_count,
+        "valid_count": result.valid_count,
+        "invalid_count": result.invalid_count,
+        "errors": result.errors,
+        "warnings": result.warnings,
+        "scope_check": result.scope_check,
+        "can_commit": can_commit,
+    })
+
+
 @router.post("/updateCommon", description="批量设置公共用例")
 async def batch_set_common(data: SetCasesCommonSchema, _: User = Depends(Authentication())):
     """
@@ -343,13 +526,9 @@ async def upload_cancel(
     return Response.success()
 
 
-@router.post("/upload", description="批量导入用例")
+@router.post("/upload", description="[DEPRECATED] 批量导入用例 (老格式 9 列). 走导出-编辑-导回 请用 /import/preview")
 async def upload_cases(
         file: UploadFile = File(..., description="Excel文件"),
-        # 必填: 用于预览阶段"用例库分组"硬门禁校验. 前端必须从"所属项目"下拉框
-        # 拿到选中项目的 id, 通过 Form 字段 (multipart/form-data) 一并提交.
-        # 计划上传会复用这个预览接口, 计划上传时前端把 plan.project_id 传过来即可.
-        # 不传则 FastAPI 直接 422, 强制前端带项目上下文.
         project_id: int = Form(..., description="项目ID; 用于预览阶段校验用例库分组"),
         user: User = Depends(Authentication())
 ):
@@ -366,6 +545,7 @@ async def upload_cases(
     # 用例库分组校验 (预览阶段的硬门禁). project_id 已在签名层强制必填,
     # 命中校验失败的行从 valid_cases 移到 errors, 前端 preview 就能立刻看到
     # "目录不存在"提示, 不需要走到 commit 才发现.
+    log.info(f"upload preview:  valid_count={result.valid_count}")
     if result.valid_cases:
         group_path_errors = await TestCaseMapper.validate_group_paths(
             cases=result.valid_cases,
@@ -409,9 +589,9 @@ async def upload_cases(
             f"error_count={len(result.errors)}"
         )
         return Response.success(UploadPreviewResult(
-            file_md5=result.file_md5,
+            file_md5=None,
             total_count=result.total_count,
-            valid_count=0,
+            valid_count=result.valid_count,
             invalid_count=result.invalid_count,
             errors=result.errors,
             can_commit=False,

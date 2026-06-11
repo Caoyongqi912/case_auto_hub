@@ -33,6 +33,12 @@ class UploadCacheService:
             valid_cases: List[Dict[str, Any]],
             errors: List[Dict[str, Any]],
             total_count: int,
+            *,
+            # 圆桌 (PR-2+) 用的额外字段, 老调用方不传, 新调用方走 valid_rows / meta / scope_check
+            valid_rows: Optional[List[Dict[str, Any]]] = None,
+            meta: Optional[Dict[str, str]] = None,
+            scope_check: Optional[Dict[str, Any]] = None,
+            warnings: Optional[List[Dict[str, Any]]] = None,
     ) -> bool:
         key = self._get_key(file_md5, user_id)
         cache_data = {
@@ -41,10 +47,17 @@ class UploadCacheService:
             "valid_cases": valid_cases,
             "errors": errors,
             "total_count": total_count,
+            "valid_rows": valid_rows or [],
+            "meta": meta or {},
+            "scope_check": scope_check or {},
+            "warnings": warnings or [],
         }
         try:
             await self.redis.r.set(key, json.dumps(cache_data), ex=self.expires)
-            log.info(f"保存预览缓存成功: {key}, 有效用例: {len(valid_cases)}, 错误: {len(errors)}")
+            log.info(
+                f"保存预览缓存成功: {key}, 有效用例: {len(valid_cases)}, "
+                f"valid_rows: {len(valid_rows or [])}, 错误: {len(errors)}"
+            )
             return True
         except Exception as e:
             log.error(f"保存预览缓存失败: {key}, error: {e}")

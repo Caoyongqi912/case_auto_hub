@@ -18,6 +18,8 @@ from app.model.base import User
 from app.model.caseHub.test_case import TestCase
 from app.model.caseHub.test_case_step import TestCaseStep
 from app.model.caseHub.association import RequirementCaseAssociation
+from app.model.base.module import Module
+from enums import ModuleEnum
 from app.model.caseHub.case_step_dynamic import CaseStepDynamic
 from utils import log
 
@@ -130,6 +132,72 @@ class TestCaseMapper(Mapper[TestCase]):
         except Exception as e:
             log.error(f"case_info error: case_id={case_id}, error={e}")
             raise
+
+    @classmethod
+    async def query_cases_for_export(
+        cls,
+        project_id: int,
+        module_id: int,
+        case_ids: Optional[List[int]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        拉目标模块下要导出的用例 + 子步骤 (用例库 scope).
+        排序 create_time desc, 跟页面默认序一致. 子步骤一次拉完避免 N+1.
+        """
+        try:
+            async with cls.session_scope() as session:
+                stmt = (
+                    select(cls.__model__)
+                    .where(
+                        cls.__model__.project_id == project_id,
+                        cls.__model__.module_id == module_id,
+                        cls.__model__.is_common.is_(True),
+                    )
+                    .order_by(cls.__model__.create_time.desc())
+                )
+                if case_ids:
+                    stmt = stmt.where(cls.__model__.id.in_(case_ids))
+                cases = (await session.scalars(stmt)).all()
+                if not cases:
+                    return []
+                ids = [c.id for c in cases]
+                step_rows = (await session.scalars(
+                    select(TestCaseStep)
+                    .where(TestCaseStep.test_case_id.in_(ids))
+                    .order_by(TestCaseStep.test_case_id, TestCaseStep.order)
+                )).all()
+                steps_by_case = {}
+                for s in step_rows:
+                    steps_by_case.setdefault(s.test_case_id, []).append(s.to_dict())
+                return [
+                    {**c.to_dict(), "case_sub_steps": steps_by_case.get(c.id, [])}
+                    for c in cases
+                ]
+        except Exception as e:
+            log.error(f"query_cases_for_export error: project_id={project_id}, module_id={module_id}, error={e}")
+            raise
+
+    @classmethod
+    async def build_module_path_map(
+        cls,
+        session: AsyncSession,
+        module_ids: list,
+        project_id: int,
+        module_type: int,
+    ) -> dict:
+        """module_id -> 'root/.../leaf' 路径. 复用调用方 session, 一次拉全内存回溯."""
+        from app.service.exportCaseService import _walk_paths
+        if not module_ids:
+            return {}
+        rows = (await session.execute(
+            select(Module.id, Module.title, Module.parent_id)
+            .where(
+                Module.project_id == project_id,
+                Module.module_type == module_type,
+            )
+        )).all()
+        id_to_node = {r.id: (r.title, r.parent_id) for r in rows}
+        return _walk_paths(id_to_node, list(module_ids))
 
     @classmethod
     async def update_cases_common(cls, case_ids: List[int], project_id: int, module_id: int):
