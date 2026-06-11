@@ -7,6 +7,7 @@
 # @Desc: 测试用例管理路由
 from datetime import datetime
 from io import BytesIO
+from urllib.parse import quote
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, UploadFile, Form, File
@@ -365,10 +366,12 @@ async def export_cases(
     buf: BytesIO = service.build_workbook()
     filename = f"用例导出-{scope_type}{scope_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx"
     log.info(f"export_cases ok: scope={scope_type}:{scope_id}, cases={service.case_count}, filename={filename}")
+    # 关键: filename 含中文 (用例导出), 拼到 header 里 Starlette 会强制 latin-1 编码挂掉 (UnicodeEncodeError).
+    # 走 RFC 6266/5987 的 filename*=UTF-8'' 形式 URL-encode 整个文件名, 现代浏览器都吃这个.
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}"},
     )
 
 
