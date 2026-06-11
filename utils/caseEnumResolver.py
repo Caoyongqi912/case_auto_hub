@@ -51,6 +51,32 @@ async def load_case_enum_config() -> CaseEnumConfig:
     )
 
 
+async def load_case_enum_label_map() -> Dict[str, str]:
+    """
+    加载 case_config 中 CASE_LEVEL / CASE_TYPE 的 value -> label 反向映射.
+
+    用于导出时把 DB 存的 value (如 "GN") 翻成 label (如 "功能") 写进 Excel,
+    与用户上传模板时的认知一致. 同一 config_key 下 label 唯一, 后注册的
+    覆盖先注册 (防御性合并, 一般不会重复).
+
+    失败/无数据时返回空 dict, 调用方按"无映射" 处理 (label_map.get(value, value) 回退原值).
+    """
+    try:
+        level_configs, type_configs = await asyncio.gather(
+            CaseConfigMapper.query_by_key(LEVEL_CONFIG_KEY),
+            CaseConfigMapper.query_by_key(TYPE_CONFIG_KEY),
+        )
+    except Exception as err:
+        from utils import log
+        log.error(f"load_case_enum_label_map error: {err}")
+        return {}
+
+    label_map: Dict[str, str] = {}
+    for cfg in list(level_configs) + list(type_configs):
+        if cfg.value and cfg.label:
+            label_map[cfg.value] = cfg.label
+    return label_map
+
 # ----------------------------------------------------------------------------
 # UploadModuleResolver: Excel "所属分组" 字符串 → module_id
 # ----------------------------------------------------------------------------

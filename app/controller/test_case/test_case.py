@@ -10,7 +10,7 @@ from io import BytesIO
 from urllib.parse import quote
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query, UploadFile, Form, File
+from fastapi import APIRouter, Body, Depends, Query, UploadFile, Form, File
 from fastapi.responses import FileResponse, StreamingResponse
 
 from app.exception import CommonError
@@ -291,13 +291,17 @@ async def download_case_template(_: User = Depends(Authentication())):
     )
 
 
-@router.get("/export", description="按 scope 导出用例为 Excel (导出-编辑-导回 圆桌)")
+@router.post("/export", description="按 scope 导出用例为 Excel (导出-编辑-导回 圆桌)")
 async def export_cases(
     scope_type: str = Query(..., description="范围类型: library / plan"),
     scope_id: int = Query(..., description="范围ID: library=module_id / plan=plan_id"),
     project_id: int = Query(..., description="项目ID; library 用于 module 校验, plan 可忽略"),
-    case_ids: Optional[str] = Query(None, description="逗号分隔的 case_id 列表; 空=范围内全量"),
-    include_steps: bool = Query(True, description="是否包含子步骤(多行展开)"),
+    # 空 = scope 内全量
+    case_ids: Optional[List[int]] = Body(
+        None,
+        embed=True,
+        description="case_id 列表; 空=范围内全量. library 走白名单语义, plan 走全量关联.",
+    ),
     _: User = Depends(Authentication()),
 ):
     """
@@ -312,20 +316,13 @@ async def export_cases(
     if scope_type not in ("library", "plan"):
         raise CommonError(message=f"scope_type 必须是 library 或 plan, 收到: {scope_type!r}")
 
-    case_id_list: Optional[List[int]] = None
-    if case_ids:
-        try:
-            case_id_list = [int(s) for s in case_ids.split(",") if s.strip()]
-        except ValueError:
-            raise CommonError(message="case_ids 必须为逗号分隔的整数")
-
     try:
         if scope_type == "library":
             async with TestCaseMapper.session_scope() as session:
                 case_dicts = await TestCaseMapper.query_cases_for_export(
                     project_id=project_id,
                     module_id=scope_id,
-                    case_ids=case_id_list,
+                    case_ids=case_ids,
                 )
                 if not case_dicts:
                     raise CommonError(message="范围内没有用例, 无需导出")
@@ -339,7 +336,7 @@ async def export_cases(
             async with PlanCaseMapper.session_scope() as session:
                 case_dicts = await PlanCaseMapper.query_plan_cases_for_export(
                     plan_id=scope_id,
-                    case_ids=case_id_list,
+                    case_ids=case_ids,
                 )
                 if not case_dicts:
                     raise CommonError(message="计划下没有用例, 无需导出")
@@ -348,6 +345,11 @@ async def export_cases(
                     plan_id=scope_id,
                     plan_module_ids=[c.get("plan_module_id") for c in case_dicts if c.get("plan_module_id") is not None],
                 )
+
+        # 枚举 value -> label, 导出时把 DB 存的 code 翻成给用户看的文字.
+        # 缺 key 时 ExportCaseService 自动回退到原 value, 这里失败不阻断导出.
+        from utils.caseEnumResolver import load_case_enum_label_map
+        label_map = await load_case_enum_label_map()
     except CommonError:
         raise
     except ValueError as ve:
@@ -361,7 +363,7 @@ async def export_cases(
         scope_id=scope_id,
         case_dicts=case_dicts,
         group_path_map=group_path_map,
-        include_steps=include_steps,
+        label_map=label_map,
     )
     buf: BytesIO = service.build_workbook()
     filename = f"用例导出-{scope_type}{scope_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx"

@@ -139,24 +139,62 @@ class TestCaseMapper(Mapper[TestCase]):
         project_id: int,
         module_id: int,
         case_ids: Optional[List[int]] = None,
+        recursive: bool = True,
     ) -> List[Dict[str, Any]]:
         """
         拉目标模块下要导出的用例 + 子步骤 (用例库 scope).
         排序 create_time desc, 跟页面默认序一致. 子步骤一次拉完避免 N+1.
+
+        :param case_ids: 显式白名单. 非空时**互斥** module_id 范围, 按 ID 全量查
+                         (跨 module 的 case_ids 仍全返回, scope 防御由 PR-3 commit 端按 _meta 做).
+        :param recursive: case_ids 为空时, scope = module_id 还是 module_id + 所有子 module.
+                          默认 True, 符合"选目录 = 整个子树" 的用户直觉 (FE CaseDataTable 工具栏"导出" 走这个).
+                          单叶子 case 场景无差别 (无子 module); 中间目录场景必须 True.
         """
         try:
             async with cls.session_scope() as session:
-                stmt = (
-                    select(cls.__model__)
-                    .where(
-                        cls.__model__.project_id == project_id,
-                        cls.__model__.module_id == module_id,
-                        cls.__model__.is_common.is_(True),
-                    )
-                    .order_by(cls.__model__.create_time.desc())
-                )
                 if case_ids:
-                    stmt = stmt.where(cls.__model__.id.in_(case_ids))
+                    # 白名单语义: 不限制 module_id, 信任前端的 ID 选择.
+                    # 跨 module 的 case_ids 一并返回 (PR-3 commit 端有 _meta scope 严格防御).
+                    stmt = (
+                        select(cls.__model__)
+                        .where(
+                            cls.__model__.project_id == project_id,
+                            cls.__model__.is_common.is_(True),
+                            cls.__model__.id.in_(case_ids),
+                        )
+                        .order_by(cls.__model__.create_time.desc())
+                    )
+                elif recursive:
+                    # 选目录语义: scope = module_id 及其所有子 module.
+                    # 复用 moduleMapper.get_subtree_ids 走 CTE 一次拿全, 避免 N+1.
+                    from app.mapper.project.moduleMapper import get_subtree_ids
+                    from enums import ModuleEnum as _ME
+                    all_module_ids = await get_subtree_ids(
+                        session=session,
+                        module_id=module_id,
+                        module_type=_ME.CASE,
+                    )
+                    stmt = (
+                        select(cls.__model__)
+                        .where(
+                            cls.__model__.project_id == project_id,
+                            cls.__model__.is_common.is_(True),
+                            cls.__model__.module_id.in_(all_module_ids),
+                        )
+                        .order_by(cls.__model__.create_time.desc())
+                    )
+                else:
+                    # 精确 module_id (旧默认行为, 兼容不走 recursive 的调用方)
+                    stmt = (
+                        select(cls.__model__)
+                        .where(
+                            cls.__model__.project_id == project_id,
+                            cls.__model__.module_id == module_id,
+                            cls.__model__.is_common.is_(True),
+                        )
+                        .order_by(cls.__model__.create_time.desc())
+                    )
                 cases = (await session.scalars(stmt)).all()
                 if not cases:
                     return []

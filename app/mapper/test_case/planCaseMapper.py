@@ -58,6 +58,41 @@ def _step_to_dict(
     }
 
 
+
+async def get_plan_module_subtree_ids(
+    session: AsyncSession,
+    plan_id: int,
+    plan_module_id: int,
+) -> List[int]:
+    """
+    递归查询某个 PlanModule 节点及其所有子节点的 ID (在指定 plan 内).
+
+    与 moduleMapper.get_subtree_ids 对称: 那里是 Module (用例库) 的 parent_id 递归,
+    这里是 plan_module (计划内) 的 parent_id 递归, 多一层 plan_id 限定避免跨计划.
+
+    :param session: 异步数据库会话
+    :param plan_id: 所属计划 ID
+    :param plan_module_id: 起始节点的 ID
+    :return: 所有子节点 (含自身) 的 ID 列表
+    """
+    try:
+        base_query = select(PlanModule.id).where(and_(
+            PlanModule.id == plan_module_id,
+            PlanModule.plan_id == plan_id,
+        ))
+        cte = base_query.cte(name="PlanModuleSubtree", recursive=True)
+        cte = cte.union_all(
+            select(PlanModule.id).where(PlanModule.parent_id == cte.c.id)
+        )
+        return (await session.execute(select(cte.c.id))).scalars().all()
+    except Exception as e:
+        log.error(
+            f"PlanModule 递归查询失败: plan_id={plan_id}, "
+            f"plan_module_id={plan_module_id}, error={e}"
+        )
+        raise
+
+
 class PlanCaseMapper(Mapper[PlanCaseAssociation]):
     """
     计划用例关联数据访问层
@@ -2654,21 +2689,72 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         cls,
         plan_id: int,
         case_ids: Optional[List[int]] = None,
+        plan_module_id: Optional[int] = None,
+        recursive: bool = True,
     ):
         """
         拉 plan_case_association 下的用例 + 子步骤 (计划 scope).
         排序 plan_case_association.order asc, 跟 PlanCaseList 页面默认序一致.
+
+        :param case_ids: 显式白名单. 非空时**互斥** plan_module_id 范围, 按 ID 全量查
+                         (跨 plan_module 的 case_ids 仍全返回, 前提是这些 case 都属于本 plan;
+                          PR-3 commit 端按 _meta 做 plan 范围严格防御).
+        :param plan_module_id: 限制到某个 plan_module. case_ids 为空时生效.
+        :param recursive: case_ids + plan_module_id 都为空时无效; plan_module_id 有值时:
+                          - True  = plan_module_id + 所有子 plan_module (走 CTE, 避免 N+1)
+                          - False = 精确 plan_module_id (旧行为, 兼容不走 recursive 的调用方)
+                          默认 True, 符合"选目录 = 整个子树" 的用户直觉.
+                          plan_module_id=None 时无论 recursive 真假, 都查整个 plan (旧默认).
         """
         try:
             async with cls.session_scope() as session:
-                stmt = (
-                    select(TestCase, cls.__model__.order, cls.__model__.plan_module_id)
-                    .join(cls.__model__, cls.__model__.case_id == TestCase.id)
-                    .where(cls.__model__.plan_id == plan_id)
-                    .order_by(cls.__model__.order.asc())
-                )
                 if case_ids:
-                    stmt = stmt.where(cls.__model__.case_id.in_(case_ids))
+                    # 白名单语义: 不限制 plan_module_id, 信任前端的 ID 选择.
+                    # case_ids 限定在当前 plan 内 (base where), 跨 plan_module 全返回.
+                    stmt = (
+                        select(TestCase, cls.__model__.order, cls.__model__.plan_module_id)
+                        .join(cls.__model__, cls.__model__.case_id == TestCase.id)
+                        .where(
+                            cls.__model__.plan_id == plan_id,
+                            cls.__model__.case_id.in_(case_ids),
+                        )
+                        .order_by(cls.__model__.order.asc())
+                    )
+                elif plan_module_id is not None and recursive:
+                    # 选目录语义: scope = plan_module_id 及其所有子 plan_module.
+                    all_module_ids = await get_plan_module_subtree_ids(
+                        session=session,
+                        plan_id=plan_id,
+                        plan_module_id=plan_module_id,
+                    )
+                    stmt = (
+                        select(TestCase, cls.__model__.order, cls.__model__.plan_module_id)
+                        .join(cls.__model__, cls.__model__.case_id == TestCase.id)
+                        .where(
+                            cls.__model__.plan_id == plan_id,
+                            cls.__model__.plan_module_id.in_(all_module_ids),
+                        )
+                        .order_by(cls.__model__.order.asc())
+                    )
+                elif plan_module_id is not None:
+                    # 精确 plan_module_id (兼容不走 recursive 的调用方)
+                    stmt = (
+                        select(TestCase, cls.__model__.order, cls.__model__.plan_module_id)
+                        .join(cls.__model__, cls.__model__.case_id == TestCase.id)
+                        .where(
+                            cls.__model__.plan_id == plan_id,
+                            cls.__model__.plan_module_id == plan_module_id,
+                        )
+                        .order_by(cls.__model__.order.asc())
+                    )
+                else:
+                    # plan_module_id=None: 拉整个 plan 下全部用例 (旧默认行为, controller 当前走这个)
+                    stmt = (
+                        select(TestCase, cls.__model__.order, cls.__model__.plan_module_id)
+                        .join(cls.__model__, cls.__model__.case_id == TestCase.id)
+                        .where(cls.__model__.plan_id == plan_id)
+                        .order_by(cls.__model__.order.asc())
+                    )
                 rows = (await session.execute(stmt)).all()
                 if not rows:
                     return []
@@ -2691,7 +2777,10 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     for case, order, plan_module_id in rows
                 ]
         except Exception as e:
-            log.error(f"query_plan_cases_for_export error: plan_id={plan_id}, error={e}")
+            log.error(
+                f"query_plan_cases_for_export error: plan_id={plan_id}, "
+                f"plan_module_id={plan_module_id}, error={e}"
+            )
             raise
 
     @classmethod
