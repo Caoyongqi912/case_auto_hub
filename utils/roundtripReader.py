@@ -4,7 +4,7 @@
 # @Author : cyq
 # @File : roundtripReader
 # @Software: PyCharm
-# @Desc: 导出-编辑-导回 圆桌专用的 Excel 解析 (PR-2)
+# @Desc: 导出-编辑-导回 导回专用的 Excel 解析 (PR-2)
 #
 # 跟 utils/aioFileReader.py 的关系:
 #   - 老 aioFileReader 解析老模板 (标题*/用例等级*/步骤描述) 走 /upload 增量导入
@@ -93,7 +93,7 @@ class RoundtripReader:
                     "row": 0,
                     "errors": [{
                         "field": "file",
-                        "message": f"找不到主表 Sheet '{DATA_SHEET_NAME}', 该文件不是导出-编辑-导回 圆桌格式",
+                        "message": f"找不到主表 Sheet '{DATA_SHEET_NAME}', 该文件不是导出-编辑-导回 导回格式",
                     }],
                 })
                 return result
@@ -107,7 +107,7 @@ class RoundtripReader:
                     "row": 0,
                     "errors": [{
                         "field": "_meta",
-                        "message": "找不到 _meta Sheet, 该文件可能不是圆桌导出的格式",
+                        "message": "找不到 _meta Sheet, 该文件可能不是导出的格式",
                     }],
                 })
                 return result

@@ -1,8 +1,8 @@
 """
-用例导出服务: 基于 file/用例模版.xlsx 模板生成圆桌导出文件.
+用例导出服务: 基于 file/用例模版.xlsx 模板生成导出文件.
 
 复用上传模板的 3 行结构 (标题引导 + 标头 + demo) 保证视觉一致, 增量写入:
-  - 第 10 列 "用例ID" (下载模板没有, 圆桌导出才有)
+  - 第 10 列 "用例ID" (下载模板没有, 导出才有)
   - 第 4 行起的真实数据 (下载模板无数据)
   - 隐藏的 _meta Sheet (跨 scope 防御 / 变更检测 / 版本号)
 
@@ -27,10 +27,10 @@ from app.model.caseHub.plan_module import PlanModule
 # 单次导出硬上限. 超量走二期异步任务.
 EXPORT_HARD_LIMIT = 10_000
 
-# 圆桌导出文件协议版本. 与下载模板 (version=N/A) 区分, 解析端可据此拒绝老格式.
+# 导出文件协议版本. 与下载模板 (version=N/A) 区分, 解析端可据此拒绝老格式.
 META_VERSION = 2
 
-# 导出 Sheet 名. 模板里原叫 "template", 圆桌导出改名让用户更直观.
+# 导出 Sheet 名. 模板里原叫 "template", 导出改名让用户更直观.
 SHEET_DATA = "用例数据"
 SHEET_META = "_meta"
 
@@ -54,7 +54,7 @@ class ExportCaseService:
     """
 
     # 协议列: 表头中文名 = 解析端识别 key. 改了就破坏 PR-2 解析.
-    # 顺序固定, "用例ID" 放最后一列 (圆桌导出独有, 下载模板没有).
+    # 顺序固定, "用例ID" 放最后一列 (导出独有, 下载模板没有).
     DATA_COLUMNS: List[Tuple[str, str]] = [
         ("标题*", "case_name"),
         ("所属分组", "group_path"),
@@ -100,7 +100,7 @@ class ExportCaseService:
         # 替换 row 1: 标题 + 编辑引导 (覆盖原模板 A1 的 "导入模板" 标题)
         ws.cell(1, 1, _EXPORT_GUIDE)
 
-        # 把模板 J2 原占位 "备注" 覆盖为 "用例ID". 圆桌导出独有的协议列, 解析端按此识别.
+        # 把模板 J2 原占位 "备注" 覆盖为 "用例ID". 导出独有的协议列, 解析端按此识别.
         ws.cell(2, len(self.DATA_COLUMNS), self.DATA_COLUMNS[-1][0])
 
         # 删 row 3 demo 行: 导出是真实数据, 留 demo 会被 PR-2 当成 INSERT 假数据.

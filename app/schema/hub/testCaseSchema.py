@@ -211,7 +211,7 @@ class SetCasesCommonSchema(BaseModel):
 
 class UploadPreviewResult(BaseModel):
     """上传预览结果模型"""
-    file_md5: str = Field(..., description="文件唯一标识")
+    file_md5: Optional[str] = Field(None, description="文件唯一标识")
     total_count: int = Field(..., description="总行数")
     valid_count: int = Field(..., description="有效用例数")
     invalid_count: int = Field(..., description="无效行数")

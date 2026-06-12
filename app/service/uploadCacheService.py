@@ -34,7 +34,7 @@ class UploadCacheService:
             errors: List[Dict[str, Any]],
             total_count: int,
             *,
-            # 圆桌 (PR-2+) 用的额外字段, 老调用方不传, 新调用方走 valid_rows / meta / scope_check
+            # 导回 (PR-2+) 用的额外字段, 老调用方不传, 新调用方走 valid_rows / meta / scope_check
             valid_rows: Optional[List[Dict[str, Any]]] = None,
             meta: Optional[Dict[str, str]] = None,
             scope_check: Optional[Dict[str, Any]] = None,

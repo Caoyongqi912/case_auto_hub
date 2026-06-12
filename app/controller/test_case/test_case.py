@@ -286,12 +286,12 @@ async def download_case_template(_: User = Depends(Authentication())):
     from file import TestCaseDemoFile
     return FileResponse(
         path=TestCaseDemoFile,
-        filename="用例模板.xlsx",
+        filename="用例模版.xlsx",
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
-@router.post("/export", description="按 scope 导出用例为 Excel (导出-编辑-导回 圆桌)")
+@router.post("/export", description="按 scope 导出用例为 Excel (导出-编辑-导回 导回)")
 async def export_cases(
     scope_type: str = Query(..., description="范围类型: library / plan"),
     scope_id: int = Query(..., description="范围ID: library=module_id / plan=plan_id"),
@@ -305,7 +305,7 @@ async def export_cases(
     _: User = Depends(Authentication()),
 ):
     """
-    导出-编辑-导回 圆桌的"导" 入口. 3-Sheet xlsx:
+    导出-编辑-导回 导回的"导" 入口. 3-Sheet xlsx:
       1. 用例数据 - 主表, 14 列 (PR-2 解析端按表头识别)
       2. 编辑指引 - 可见
       3. _meta    - 隐藏, scope 校验位
@@ -377,9 +377,9 @@ async def export_cases(
     )
 
 
-@router.post("/import/preview", description="导出-编辑-导回 圆桌: 预览 (解析 + 校验 scope)")
+@router.post("/import/preview", description="导出-编辑-导回 导回: 预览 (解析 + 校验 scope)")
 async def import_preview(
-    file: UploadFile = File(..., description="圆桌导出的 3-Sheet xlsx"),
+    file: UploadFile = File(..., description="导出的 3-Sheet xlsx"),
     scope_type: str = Form(..., description="范围类型: library / plan"),
     scope_id: int = Form(..., description="范围ID: library=module_id / plan=plan_id"),
     mode: str = Form("mixed", description="mixed (默认) | insert_only"),
@@ -428,7 +428,7 @@ async def import_preview(
                     "row": r.get("_row", 0),
                     "errors": [{
                         "field": "用例ID",
-                        "message": "mode=insert_only 时不允许带 用例ID 的行 (本圆桌不支持纯新增场景, 请用 mixed)",
+                        "message": "mode=insert_only 时不允许带 用例ID 的行 (本导回不支持纯新增场景, 请用 mixed)",
                     }],
                 })
         # 重新过滤
@@ -444,7 +444,7 @@ async def import_preview(
         await _cache_service.save_preview(
             file_md5=result.file_md5,
             user_id=user.id,
-            valid_cases=[],   # 老字段, 圆桌不用
+            valid_cases=[],   # 老字段, 导回不用
             errors=result.errors,
             total_count=result.total_count,
             valid_rows=result.valid_rows,
