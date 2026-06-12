@@ -22,6 +22,7 @@ from app.model.base.module import Module
 from enums import ModuleEnum
 from app.model.caseHub.case_step_dynamic import CaseStepDynamic
 from utils import log
+import re
 
 
 async def get_last_index(session: AsyncSession, requirement_id: int) -> int:
@@ -84,6 +85,8 @@ async def insert_requirement_case(session: AsyncSession, requirement_id: int, ca
     req.case_number += 1
 
 
+
+
 def _parse_steps(action: Optional[str], expected_result: Optional[str]) -> List[Dict[str, Optional[str]]]:
     """
     将按行分割的操作步骤和预期结果解析为步骤列表
@@ -95,8 +98,12 @@ def _parse_steps(action: Optional[str], expected_result: Optional[str]) -> List[
     if action is None and expected_result is None:
         return [{"action": None, "expected_result": None}]
 
-    act_lines = action.strip().split("\n") if action else None
-    exp_lines = expected_result.strip().split("\n") if expected_result else None
+    def _clean_line(line: str) -> str:
+        """移除行中的【xx】序号标记"""
+        return re.sub(r"【\d+】", "", line).strip()
+
+    act_lines = [_clean_line(l) for l in action.strip().split("\n")] if action else None
+    exp_lines = [_clean_line(l) for l in expected_result.strip().split("\n")] if expected_result else None
     max_steps = max(len(act_lines) if act_lines else 0, len(exp_lines) if exp_lines else 0)
 
     return [
@@ -595,6 +602,7 @@ class TestCaseMapper(Mapper[TestCase]):
             last_order = await get_last_index(session, requirement_id) if requirement_id else 0
 
             for case_index, case_data in enumerate(cases):
+                case_data.pop("case_id", None) # 导入时 case_id 为 None 兼容
                 effective_module_id = case_module_map.get(case_index, module_id)
                 case_obj = cls._prepare_case_data(
                     case_data=case_data.copy(),
