@@ -531,26 +531,55 @@ async def upload_cancel(
     return Response.success()
 
 
-@router.post("/upload", description="[DEPRECATED] 批量导入用例 (老格式 9 列). 走导出-编辑-导回 请用 /import/preview")
+@router.post("/upload", description="批量导入用例 (自适应 M1 老格式 / M2 导回格式)")
 async def upload_cases(
-        file: UploadFile = File(..., description="Excel文件"),
-        project_id: int = Form(..., description="项目ID; 用于预览阶段校验用例库分组"),
+        file: UploadFile = File(..., description="Excel文件 (M1 模板 或 导出-编辑-导回 导回模板)"),
+        project_id: int = Form(..., description="项目ID; 用于预览阶段校验用例库分组 (M1 路径生效)"),
         user: User = Depends(Authentication())
 ):
+    """
+    PR-3: /upload 端点自适应 M1/M2 模板.
+    - 探测 _meta sheet 存在 -> 走 M2 (RoundtripReader) 解析
+    - 无 _meta sheet -> 走 M1 (AsyncFilesReader) 老路径
+    响应里多 template_type 字段, 前端根据它决定 commit 走 /upload/commit (M1) 还是
+    /import/commit (M2, 待 PR-3 后续). 老调用方不感知, 默认 template_type=M1.
+    """
+    from utils.aioFileReader import AsyncFilesReader
+    from utils.caseEnumResolver import load_case_enum_config
+    from utils.roundtripReader import RoundtripReader
+    from app.mapper.test_case.testcaseMapper import TestCaseMapper
+
+    # 1) 一次性读 bytes, 探测模板类型 + 后续解析共用 (避免传 UploadFile 让下游重读时空读)
+    content = await file.read()
+    template_type = RoundtripReader.detect_template_type(content)
+    log.info(f"/upload 探测模板: template_type={template_type}, project_id={project_id}")
+
+    if template_type == "M2":
+        return await _upload_m2_path(
+            content=content, project_id=project_id, user=user
+        )
+    return await _upload_m1_path(
+        content=content, project_id=project_id, user=user
+    )
+
+
+async def _upload_m1_path(content: bytes, project_id: int, user) -> Response:
+    """M1 老路径: 9 列 aioFileReader + 用例库分组校验 + on_duplicate 老 commit."""
     from utils.aioFileReader import AsyncFilesReader
     from utils.caseEnumResolver import load_case_enum_config
     from app.mapper.test_case.testcaseMapper import TestCaseMapper
+
     enum_config = await load_case_enum_config()
     try:
-        result = await AsyncFilesReader(enum_config=enum_config).async_read_excel_for_case(file)
+        result = await AsyncFilesReader(enum_config=enum_config).async_read_from_bytes(content)
     except Exception as e:
-        log.exception(f"文件解析失败: {e}")
+        log.exception(f"M1 文件解析失败: {e}")
         return Response.error(msg=f"文件解析失败: {str(e)}")
 
     # 用例库分组校验 (预览阶段的硬门禁). project_id 已在签名层强制必填,
     # 命中校验失败的行从 valid_cases 移到 errors, 前端 preview 就能立刻看到
     # "目录不存在"提示, 不需要走到 commit 才发现.
-    log.info(f"upload preview:  valid_count={result.valid_count}")
+    log.info(f"upload preview (M1): valid_count={result.valid_count}")
     if result.valid_cases:
         group_path_errors = await TestCaseMapper.validate_group_paths(
             cases=result.valid_cases,
@@ -577,7 +606,7 @@ async def upload_cases(
                     new_valid.append(case)
             result.valid_cases = new_valid
             log.info(
-                f"upload preview: project_id={project_id}, "
+                f"upload preview (M1): project_id={project_id}, "
                 f"file_md5={result.file_md5}, "
                 f"group_path_invalid_count={len(row_to_err)}, "
                 f"invalid_paths={[e['path'] for e in group_path_errors]}"
@@ -588,7 +617,7 @@ async def upload_cases(
     # 避免"部分有效 + 静默丢行"的体验陷阱.
     if result.errors:
         log.info(
-            f"upload preview rejected: project_id={project_id}, "
+            f"upload preview (M1) rejected: project_id={project_id}, "
             f"file_md5={result.file_md5}, "
             f"total_count={result.total_count}, "
             f"error_count={len(result.errors)}"
@@ -600,6 +629,7 @@ async def upload_cases(
             invalid_count=result.invalid_count,
             errors=result.errors,
             can_commit=False,
+            template_type="M1",
         ).model_dump())
 
     await _cache_service.save_preview(
@@ -610,7 +640,6 @@ async def upload_cases(
         total_count=result.total_count,
     )
 
-
     return Response.success(UploadPreviewResult(
         file_md5=result.file_md5,
         total_count=result.total_count,
@@ -618,4 +647,83 @@ async def upload_cases(
         invalid_count=result.invalid_count,
         errors=result.errors,
         can_commit=True,
+        template_type="M1",
+    ).model_dump())
+
+
+async def _upload_m2_path(content: bytes, project_id: int, user) -> Response:
+    """
+    M2 导回路径: 从 _meta 读 scope, RoundtripReader 解析 + scope 校验.
+    错误时 (缺主表 / _meta 缺 scope / scope 不匹配 / 字段错误) 都不写 Redis,
+    can_commit=false, 强制用户修 Excel 重传. 响应里 template_type="M2".
+    """
+    from utils.roundtripReader import RoundtripReader
+
+    # 从 _meta 拿 scope, 拿不到就用占位让下游 _validate_meta 把错误写入 errors
+    scope_info = RoundtripReader.extract_scope_from_meta(content)
+    if scope_info is None:
+        scope_type, scope_id = "library", 0
+        log.info(f"/upload M2: _meta 缺 scope, 用占位 (library, 0) 让 scope 校验自然失败")
+    else:
+        scope_type, scope_id = scope_info
+        log.info(f"/upload M2: 从 _meta 拿 scope = {scope_type}:{scope_id}")
+
+    try:
+        reader = RoundtripReader(scope_type=scope_type, scope_id=scope_id)
+        m2_result = await reader.async_read_from_bytes(content)
+    except ValueError as ve:
+        # 文件超限 / 解析异常, 跟 /import/preview 一致: 返 errors 不写 Redis
+        return Response.success(UploadPreviewResult(
+            file_md5=None,
+            total_count=0,
+            valid_count=0,
+            invalid_count=0,
+            errors=[{"row": 0, "errors": [{"field": "file", "message": str(ve)}]}],
+            can_commit=False,
+            template_type="M2",
+        ).model_dump())
+    except Exception as e:
+        log.exception(f"/upload M2 解析失败: scope={scope_type}:{scope_id}, error={e}")
+        return Response.error(msg=f"文件解析失败: {str(e)}")
+
+    # 任意错误都不写缓存, can_commit=false
+    can_commit = len(m2_result.errors) == 0
+    file_md5 = m2_result.file_md5 if can_commit else None
+
+    if can_commit:
+        # PR-3 重写后: M2 跟 M1 valid_cases 结构一致, 多 case_id 字段. save_preview 复用.
+        # 提交入库前 controller 剥 _row; 步骤 (action / expected_result) 保持 cell 拼多步原样,
+        # 入库时由 commit 阶段做 cell split.
+        await _cache_service.save_preview(
+            file_md5=m2_result.file_md5,
+            user_id=user.id,
+            valid_cases=m2_result.valid_cases,
+            errors=m2_result.errors,
+            total_count=m2_result.total_count,
+            meta=m2_result.meta,
+            scope_check=m2_result.scope_check,
+        )
+
+    log.info(
+        f"upload preview (M2): scope={scope_type}:{scope_id}, project_id={project_id}, "
+        f"file_md5={file_md5}, total={m2_result.total_count}, "
+        f"valid={m2_result.valid_count}, invalid={m2_result.invalid_count}, "
+        f"can_commit={can_commit}"
+    )
+
+    # 响应 valid_cases 预览取前 10 条 (跟 M1 一致), 不暴露 _row / case_id 给 FE preview
+    preview_data = []
+    for c in m2_result.valid_cases[:10]:
+        c.pop("_row", None)
+        preview_data.append(c)
+
+    return Response.success(UploadPreviewResult(
+        file_md5=file_md5,
+        total_count=m2_result.total_count,
+        valid_count=m2_result.valid_count,
+        invalid_count=m2_result.invalid_count,
+        errors=m2_result.errors,
+        preview_data=preview_data,
+        can_commit=can_commit,
+        template_type="M2",
     ).model_dump())

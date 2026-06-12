@@ -30,6 +30,10 @@ FIELD_MAPPING = {
     # "所属分组" 仅在解析阶段捕获原始字符串, 提交时由 UploadModuleResolver
     # 按 project_id 解析为 module_id. 列缺失或为空时, 该行直接判无效, 不做兜底.
     "所属分组": "group_path",
+    # PR-3 M2 协议: 用例ID 列 (M1 老模板没有, M2 导出独有). 解析后塞到 case dict
+    # 的 "case_id" 字段. 老 M1 调用方传的文件没这列, _match_column 会返回 None,
+    # 不会报错, case_id 字段也不写进 valid_cases.
+    "用例ID": "case_id",
 }
 
 # 必填字段 (对应 FIELD_MAPPING 的 value)
@@ -139,15 +143,23 @@ class AsyncFilesReader:
 
     async def async_read_excel_for_case(self, file: UploadFile) -> ParseResult:
         file_content = await file.read()
-        if len(file_content) > MAX_FILE_SIZE:
+        return await self.async_read_from_bytes(file_content)
+
+    async def async_read_from_bytes(self, content: bytes) -> ParseResult:
+        """
+        从原始 bytes 读 M1 老格式. 给 /upload 入口做模板探测后直接传 bytes,
+        避免 controller 读一次 stream 再让本类读第二次时空读.
+
+        跟 async_read_excel_for_case 的差别: 不接 UploadFile, 不用 seek(0).
+        """
+        if len(content) > MAX_FILE_SIZE:
             raise ValueError(f"文件大小超过限制，最大支持 {MAX_FILE_SIZE // 1024 // 1024}MB")
-        file_bytes = BytesIO(file_content)
-        file_md5 = self._calculate_md5(file_content)
+        file_bytes = BytesIO(content)
+        file_md5 = self._calculate_md5(content)
         loop = asyncio.get_event_loop()
-        await file.seek(0)
         return await self.tph.run_in_exe(
             loop,
-            self.__read,
+            self._read,
             file_bytes,
             file_md5,
             self.enum_config,
@@ -165,7 +177,7 @@ class AsyncFilesReader:
         return True
 
     @staticmethod
-    def __read(
+    def _read(
         file: BytesIO,
         file_md5: str,
         enum_config: CaseEnumConfig,
@@ -289,27 +301,36 @@ class AsyncFilesReader:
                     is_valid = False
                     errors.append({"field": _display_field_name("标题*"), "message": "用例名称不能为空"})
 
-                # 用例等级: label → value; 空值用 default; 非法值打回
-                mapped_case["case_level"], level_err = _resolve_enum(
-                    raw=mapped_case.get("case_level"),
-                    enum_map=level_map,
-                    default=enum_config.default_level,
-                    display_name=_display_field_name("用例等级*"),
-                )
-                if level_err:
-                    is_valid = False
-                    errors.append(level_err)
+                # 用例等级: label → value; 空值用 default; 非法值打回.
+                # enum_map 空时 (preview-only 场景) 跳过校验, 原样保留 label, commit 阶段再校.
+                if level_map:
+                    mapped_case["case_level"], level_err = _resolve_enum(
+                        raw=mapped_case.get("case_level"),
+                        enum_map=level_map,
+                        default=enum_config.default_level,
+                        display_name=_display_field_name("用例等级*"),
+                    )
+                    if level_err:
+                        is_valid = False
+                        errors.append(level_err)
+                else:
+                    v = mapped_case.get("case_level")
+                    mapped_case["case_level"] = (str(v).strip() if v is not None and not pd.isna(v) else None) or enum_config.default_level
 
                 # 用例类型: 同上
-                mapped_case["case_type"], type_err = _resolve_enum(
-                    raw=mapped_case.get("case_type"),
-                    enum_map=type_map,
-                    default=enum_config.default_type,
-                    display_name=_display_field_name("用例类型"),
-                )
-                if type_err:
-                    is_valid = False
-                    errors.append(type_err)
+                if type_map:
+                    mapped_case["case_type"], type_err = _resolve_enum(
+                        raw=mapped_case.get("case_type"),
+                        enum_map=type_map,
+                        default=enum_config.default_type,
+                        display_name=_display_field_name("用例类型"),
+                    )
+                    if type_err:
+                        is_valid = False
+                        errors.append(type_err)
+                else:
+                    v = mapped_case.get("case_type")
+                    mapped_case["case_type"] = (str(v).strip() if v is not None and not pd.isna(v) else None) or enum_config.default_type
 
                 if is_valid:
                     # _row: 仅做预览阶段"行号级"错误提示用, 提交入库前由 controller 剥掉,

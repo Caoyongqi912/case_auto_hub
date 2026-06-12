@@ -225,6 +225,20 @@ class UploadPreviewResult(BaseModel):
             "强制用户修正 Excel 后整批重传."
         ),
     )
+    # PR-3 新增: 模板类型. M1=老模板(下载的空白模版)走 on_duplicate 老逻辑,
+    # M2=导出模板(有 _meta sheet)走 case_id 同步. 老调用方不感知, 默认 M1.
+    template_type: Literal["M1", "M2"] = Field(
+        "M1",
+        description=(
+            "模板类型: M1=老模板(9 列, 无 _meta), M2=导回模板(14 列, 有 _meta sheet). "
+            "M1 走 on_duplicate 老逻辑, M2 走 case_id 同步."
+        ),
+    )
+    # PR-3 新增: 警告信息. M2 解析可能产生 (如某行有 case_id 但 DB 查不到对应 case).
+    warnings: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="警告信息, 不阻塞 commit, 仅前端提示用",
+    )
 
 
 class UploadCommitSchema(BaseModel):
