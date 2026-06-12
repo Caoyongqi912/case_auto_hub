@@ -490,6 +490,8 @@ async def upload_commit(
         data: UploadCommitSchema,
         user: User = Depends(Authentication())
 ):
+    log.debug(f"upload_commit: {data}")
+    
     if await _cache_service.is_committed(data.file_md5, user.id):
         return Response.error(msg="该文件已提交过，不能重复提交")
 
@@ -631,7 +633,7 @@ async def _upload_m1_path(content: bytes, project_id: int, user) -> Response:
             can_commit=False,
             template_type="M1",
         ).model_dump())
-
+    log.debug(f"case =  {result.valid_cases}")
     await _cache_service.save_preview(
         file_md5=result.file_md5,
         user_id=user.id,
