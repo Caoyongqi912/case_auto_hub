@@ -7,7 +7,7 @@
 # @Desc: 上传文件缓存服务
 
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Literal, Optional
 from dataclasses import asdict
 
 from common import RedisClient
@@ -15,6 +15,9 @@ from utils import log
 
 UPLOAD_CACHE_PREFIX = "upload:case:"
 UPLOAD_CACHE_EXPIRES = 1800
+
+# PR-3: 模板类型. 缓存里跟响应保持一致, M2 commit 阶段做防御性校验.
+TemplateTypeLiteral = Literal["M1", "M2"]
 
 
 class UploadCacheService:
@@ -39,6 +42,9 @@ class UploadCacheService:
             meta: Optional[Dict[str, str]] = None,
             scope_check: Optional[Dict[str, Any]] = None,
             warnings: Optional[List[Dict[str, Any]]] = None,
+            # PR-3 新增: 模板类型. 走 /upload 时 controller 显式传 M1/M2, 老调用方
+            # (如 /import/preview) 不传, 缓存里缺省 None, M2 commit 阶段会拒绝.
+            template_type: Optional[TemplateTypeLiteral] = None,
     ) -> bool:
         key = self._get_key(file_md5, user_id)
         cache_data = {
@@ -51,6 +57,9 @@ class UploadCacheService:
             "meta": meta or {},
             "scope_check": scope_check or {},
             "warnings": warnings or [],
+            # PR-3: 缓存层存 template_type, M2 commit 阶段靠它做防御性校验
+            # (防止 M1 缓存误走 /import/commit 端点).
+            "template_type": template_type,
         }
         try:
             await self.redis.r.set(key, json.dumps(cache_data), ex=self.expires)

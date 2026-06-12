@@ -316,3 +316,57 @@ class CaseDynamicMapper(Mapper[CaseStepDynamic]):
             )
         )
         await session.flush()
+
+
+# ============================================================
+# PR-3 Step 3 新增 (M2 导回 commit 用, 见 PLAN.md Step 3 段)
+# ============================================================
+
+class M2CaseDynamicWriter:
+    """
+    PR-3 Step 3: M2 导回 commit 时用的动态写入工具 (跟 update_dynamic 不同, 接受
+    已经渲染好的 description 字符串, 不在这里算 diff).
+
+    跟 update_dynamic 的差异:
+    - update_dynamic 接受 old_case / new_case, 内部调 CaseDynamicRenderer.diff_dict 算
+      变更描述. 适合"FE 提交 case_id + 字段改动"这种走 controller 的场景.
+    - write_case_dynamic (M2) 接受已经渲染好的 description, 适合"BE 内部
+      M2ImportService 走 RoundtripReader 拿到 valid_cases, 自己渲染 diff 后
+      写入"这种内部链路.
+
+    共用同一个 CaseStepDynamic model, 字段语义跟 update_dynamic 一致:
+    - test_case_id: 必填, 用例 ID
+    - plan_id: 传 None (用例自身变更, 跟 update_dynamic 一致)
+    - description: 必填, 已经是渲染好的可读文本 (跟 update_dynamic 输出格式一致)
+    - creator / creatorName: 来自 User 对象
+    """
+
+    @staticmethod
+    async def write_case_dynamic(
+        cr: User,
+        case_id: int,
+        description: str,
+        session: AsyncSession,
+        plan_id: Optional[int] = None,
+    ) -> None:
+        """
+        写入用例变更动态 (M2 导回 commit 专用).
+
+        :param cr: 更新者用户
+        :param case_id: 用例 ID
+        :param description: 渲染好的可读变更描述 (例如 "用例等级 从 P1 变更为 P2")
+        :param session: 数据库会话 (事务由调用方控制)
+        :param plan_id: 计划 ID (用例自身变更传 None, 默认)
+        """
+        if not description:
+            return
+        session.add(
+            CaseStepDynamic(
+                description=f"{cr.username} 更新了测试用例 :{description}",
+                test_case_id=case_id,
+                plan_id=plan_id,
+                creator=cr.id,
+                creatorName=cr.username,
+            )
+        )
+        # 不 flush, 留给调用方的事务统一 commit; 跟 update_dynamic 的语义一致

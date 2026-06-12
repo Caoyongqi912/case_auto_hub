@@ -262,3 +262,28 @@ class UploadCommitSchema(BaseModel):
 class UploadCancelSchema(BaseModel):
     """取消上传请求模型"""
     file_md5: str = Field(..., description="文件唯一标识")
+
+
+# ============================================================
+# PR-3 Step 3 新增 (见 PLAN.md 4 步实施段)
+# ============================================================
+
+class ImportCommitSchema(BaseModel):
+    """
+    PR-3 Step 3: M2 导回 commit 请求模型.
+
+    跟老 UploadCommitSchema 的区别:
+    - 没有 on_duplicate 字段 (M2 强制按 case_id 同步, 名字冲突不跳过)
+    - 没有 is_common 字段 (M2 导回时通过 _meta 决定)
+    - module_id 改可选, 因为 M2 导回时 scope_type/scope_id 在 _meta 里,
+      库场景 module_id 就从 _meta 拿 (没传就用 _meta 里的 scope_id 当 module)
+    - requirement_id 仍保留, 但 M2 库场景不会传
+    """
+    file_md5: str = Field(..., description="preview 阶段返的 MD5 指纹")
+    project_id: int = Field(..., description="目标项目 ID")
+    module_id: Optional[int] = Field(None, description="模块ID (可选, new case 默认 module 兜底)")
+
+
+class ImportCancelSchema(BaseModel):
+    """PR-3 Step 3: M2 导回 cancel 请求模型 (跟老 UploadCancelSchema 一致)."""
+    file_md5: str = Field(..., description="文件唯一标识")

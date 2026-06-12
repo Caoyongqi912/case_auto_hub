@@ -20,7 +20,7 @@ from app.schema.hub.testCaseSchema import (
     UpdateTestCaseSchema, QueryTestCaseSchemaByField, RemoveCaseSchema, RemoveCaseStep,
     CopyCase, CopyCaseStep, AddDefaultCaseStep, UpdateTestCaseStep, ReorderCaseStep,
     UpdateTestCaseStatusSchema, SetCasesCommonSchema, UploadPreviewResult,
-    UploadCommitSchema, UploadCancelSchema,UpdateTestCasesSchema,DeleteTestCasesSchema
+    UploadCommitSchema, UploadCancelSchema,UpdateTestCasesSchema,DeleteTestCasesSchema, ImportCommitSchema, ImportCancelSchema
 )
 from app.service.uploadCacheService import UploadCacheService
 from app.service.exportCaseService import ExportCaseService
@@ -638,6 +638,9 @@ async def _upload_m1_path(content: bytes, project_id: int, user) -> Response:
         valid_cases=result.valid_cases,
         errors=result.errors,
         total_count=result.total_count,
+        # PR-3: 缓存层存 template_type="M1", M2 commit 阶段会校验,
+        # 防止 M1 缓存误走 /import/commit.
+        template_type="M1",
     )
 
     return Response.success(UploadPreviewResult(
@@ -702,6 +705,8 @@ async def _upload_m2_path(content: bytes, project_id: int, user) -> Response:
             total_count=m2_result.total_count,
             meta=m2_result.meta,
             scope_check=m2_result.scope_check,
+            # PR-3: 缓存层存 template_type="M2", M2 commit 阶段校验一致才放行.
+            template_type="M2",
         )
 
     log.info(
@@ -727,3 +732,57 @@ async def _upload_m2_path(content: bytes, project_id: int, user) -> Response:
         can_commit=can_commit,
         template_type="M2",
     ).model_dump())
+
+
+# ============================================================
+# PR-3 Step 3 新增 (见 PLAN.md Step 3 段)
+# ============================================================
+
+@router.post("/import/commit", description="M2 导回 commit: 按 用例ID 同步 UPDATE/INSERT + 写 case_dynamic 审计")
+async def import_commit(
+    data: ImportCommitSchema,
+    user: User = Depends(Authentication()),
+):
+    """
+    M2 导回 commit 端点 (跟老 /upload/commit 走不同链路):
+
+    - 输入: file_md5 (preview 阶段返的) + project_id (+ 可选 module_id)
+    - 流程: M2ImportService.commit()
+        1) 加载 Redis 预览缓存, 校验 template_type=M2 (防 M1 误走)
+        2) 拆 known (有 case_id) / new (无 case_id)
+        3) known: UPDATE 字段 + 步骤全量覆盖 + 写 1 条 case_dynamic
+        4) new: 跟 M1 同一条 group_path -> module_id 校验, INSERT case + steps
+        5) 单事务, 失败整批回滚
+    - 不删行 (DB 中对应 case 不动, 业务约定)
+    - 响应: {inserted, updated, dynamic_count}
+    """
+    try:
+        from app.service.m2ImportService import M2ImportService
+        service = M2ImportService(_cache_service)
+        result = await service.commit(
+            file_md5=data.file_md5,
+            project_id=data.project_id,
+            user=user,
+            module_id=data.module_id,
+        )
+        return Response.success(result)
+    except CommonError as ce:
+        # 业务异常 (缓存缺失/已提交/M1 走错端点/必填失败/目录不存在)
+        # 走跟老 /upload/commit 一致的错误响应: 400 + msg
+        return Response.error(msg=ce.message)
+    except Exception as e:
+        log.exception(f"import/commit 失败: file_md5={data.file_md5}, error={e}")
+        return Response.error(msg=f"M2 入库失败: {str(e)}")
+
+
+@router.post("/import/cancel", description="M2 导回 cancel: 清理 Redis 预览缓存")
+async def import_cancel(
+    data: ImportCancelSchema,
+    user: User = Depends(Authentication()),
+):
+    """
+    跟老 /upload/cancel 行为一致, 仅端点不同 (FE cancelImportCaseM2 走这个).
+    防止 Redis 30min TTL 内的垃圾缓存.
+    """
+    await _cache_service.delete(data.file_md5, user.id)
+    return Response.success()
