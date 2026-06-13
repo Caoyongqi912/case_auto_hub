@@ -493,11 +493,17 @@ class Mapper(Generic[M]):
         return user
 
     @classmethod
-    async def update_cls(cls, target: M, session: AsyncSession, **kw):
+    async def update_cls(
+        cls, target: M, session: AsyncSession, *, expunge: bool = True, **kw
+    ):
         """
         更新模型实例
         :param target: 目标模型实例
         :param session: 会话对象
+        :param expunge: 是否在 flush 后从 session 分离 target. 默认 True 保持 M1 老行为.
+                         M2 导回 commit 等"同一事务内多次 update + 后续 add_new"场景
+                         应传 False, 避免 SQLAlchemy 异步 session 在 expunge + add_all
+                         之间触发 "Can't operate on closed transaction inside context manager".
         :param kw: 更新字段
         :return: 更新后的模型实例
         """
@@ -511,7 +517,8 @@ class Mapper(Generic[M]):
                     setattr(target, field, value)
 
             await session.flush()
-            session.expunge(target)
+            if expunge:
+                session.expunge(target)
             return target
         except Exception as e:
             raise

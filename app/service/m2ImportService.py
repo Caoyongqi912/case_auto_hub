@@ -12,13 +12,15 @@
 #     1) 加载 Redis 预览缓存, 校验 template_type=M2
 #     2) 拆 valid_cases -> known (有 case_id) / new (无 case_id)
 #     3) known 逐 case: SELECT 拿 old_data -> diff_dict 渲染 -> UPDATE 字段
-#        + 步骤全量覆盖 (DELETE+INSERT) + 写 1 条 case_dynamic
+#        + 步骤全量覆盖 (DELETE+INSERT) + 总是写 1 条 case_dynamic
+#        (new_diff 为空时 description 兜底 "更新了用例步骤")
 #     4) new 逐 case: 跟老 insert_upload_case 走同一条 prepare 路径 (group_path
 #        解析 -> _prepare_case_data -> _prepare_steps), 不走 on_duplicate
 #     5) 删行: 无操作 (DB 中对应 case 不删, 这是 M2 协议约定)
 #     6) 标记 Redis committed
 # - 单事务, 失败整批回滚
 # - 返回: (inserted_count, updated_count, dynamic_count)
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import delete, select
@@ -26,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exception import CommonError
 from app.mapper.test_case.caseDynamicMapper import (
+    CaseDynamicMapper,
     CaseDynamicRenderer,
     M2CaseDynamicWriter,
 )
@@ -35,6 +38,7 @@ from app.model.base import User
 from app.model.caseHub.case_step_dynamic import CaseStepDynamic
 from app.model.caseHub.test_case import TestCase
 from app.model.caseHub.test_case_step import TestCaseStep
+from app.model import async_session
 from app.service.uploadCacheService import UploadCacheService
 from common import rc
 from utils import log
@@ -55,8 +59,23 @@ def _parse_steps_from_m2(action: Optional[str], expected_result: Optional[str]) 
         # 0 步骤合法 (跟 M1 一致)
         return []
 
-    act_lines = action.strip().split("\n") if action else None
-    exp_lines = expected_result.strip().split("\n") if expected_result else None
+    def _clean_line(line: str) -> str:
+        """
+        移除行首/行中的序号标记, 跟 M1 _parse_steps 等价:
+        - 【xx】 (老的中文方括号序号, DB 清洗后剥离)
+        - 行首 数字+.+ (1. / 2. 等, 导回时用户手输的英文点序号)
+        - 行首 数字+、+ (1、 / 2、 等, 中文顿号序号)
+        - 行首 数字+)+ / 数字+)+ (1) / 2) 等, 英文/中文右括号序号)
+        只剥 **行首** 序号, 避免误伤文本中的 "1.0.1" 这种版本号.
+        """
+        # 中文/英文方括号 (行中行首都可能, 都剥)
+        line = re.sub(r"【\d+】", "", line)
+        # 行首数字+点/顿号/右括号 (中文右括号 ）, 英文 \))
+        line = re.sub(r"^\s*\d+[.、)）]\s*", "", line)
+        return line.strip()
+
+    act_lines = [_clean_line(l) for l in action.strip().split("\n")] if action else None
+    exp_lines = [_clean_line(l) for l in expected_result.strip().split("\n")] if expected_result else None
     max_steps = max(len(act_lines) if act_lines else 0, len(exp_lines) if exp_lines else 0)
     return [
         {
@@ -76,7 +95,7 @@ class M2ImportService:
     - 不重解析 (跟 M1 insert_upload_case 一致, 复用 preview 解析结果)
     - 单事务锚点 (TestCaseMapper.transaction), 失败整批回滚
     - 不删除 (删行 = 无操作, 业务约定)
-    - 写动态 (每个 known case UPDATE 后写 1 条 case_dynamic)
+    - 写动态 (每个 known case UPDATE 后写 1 条; 每个 new case 落库后写 1 条创建动态)
     """
 
     def __init__(self, cache_service: Optional[UploadCacheService] = None):
@@ -99,6 +118,7 @@ class M2ImportService:
         :param module_id: 兜底 module_id (new case 在 group_path 缺失时用,
                          跟 M1 insert_upload_case 的 module_id 兜底语义一致)
         :return: {inserted: N, updated: N, dynamic_count: N}
+                       (dynamic_count = known 变更条数 + new 创建条数, 每条入库写 1 条)
         :raises CommonError: 缓存缺失/已提交/template_type != M2/必填失败/目录不存在
         """
         # 0) 加载 Redis 预览缓存
@@ -149,59 +169,96 @@ class M2ImportService:
         )
 
         # 3) 单事务锚点. 失败整批回滚.
-        async with TestCaseMapper.transaction() as session:
-            # 3.1) known: 逐 case UPDATE + 步骤覆盖 + 写动态
-            updated_count = 0
-            dynamic_count = 0
-            if known_cases:
-                # 一次 SELECT 拿所有 old, 减少 round-trip
-                known_ids = [int(c["case_id"]) for c in known_cases]
-                old_map = await self._fetch_old_cases(known_ids, session)
-                # 拿不到对应的 case (DB 里被删了) -> 整批回滚
-                missing = [cid for cid in known_ids if cid not in old_map]
-                if missing:
-                    raise CommonError(
-                        message=(
-                            f"以下 用例ID 在数据库中不存在 (可能被删除): {missing[:5]}"
-                            f"{' ...' if len(missing) > 5 else ''}. "
-                            f"导回协议要求 用例ID 必须存在, 请修正 Excel 后重传"
-                        ),
-                        data={"missing_case_ids": missing, "file_md5": file_md5},
-                    )
-                for c in known_cases:
-                    cid = int(c["case_id"])
-                    old_case = old_map[cid]
-                    new_diff_desc = await self._apply_known_case(
-                        old_case=old_case, new_case=c, user=user, session=session,
-                    )
-                    updated_count += 1
-                    if new_diff_desc:
+        # 改用显式 await session.begin() / commit() / rollback(), 绕开
+        # Mapper.transaction() 内部 `async with session.begin():` 走
+        # TransactionalContext.__exit__ 的 commit-then-close 状态机.
+        # SQLAlchemy 2.x 异步 session 在 known 路径多次 await execute/flush/add
+        # 之后, 那个状态机会让 session._trans_context_manager 指向已 CLOSED 的
+        # SessionTransaction, 后续 add_all(new_objects) 触发 _autobegin_t 报
+        # "Can't operate on closed transaction inside context manager".
+        # 显式 begin/commit/rollback 不走 __exit__, 状态机干净.
+        async with async_session() as session:
+            try:
+                await session.begin()
+                # 3.1) known: 逐 case UPDATE + 步骤覆盖 + 写动态
+                updated_count = 0
+                dynamic_count = 0
+                if known_cases:
+                    # 一次 SELECT 拿所有 old, 减少 round-trip
+                    known_ids = [int(c["case_id"]) for c in known_cases]
+                    old_map = await self._fetch_old_cases(known_ids, session)
+                    # 拿不到对应的 case (DB 里被删了) -> 整批回滚
+                    missing = [cid for cid in known_ids if cid not in old_map]
+                    if missing:
+                        raise CommonError(
+                            message=(
+                                f"以下 用例ID 在数据库中不存在 (可能被删除): {missing[:5]}"
+                                f"{' ...' if len(missing) > 5 else ''}. "
+                                f"导回协议要求 用例ID 必须存在, 请修正 Excel 后重传"
+                            ),
+                            data={"missing_case_ids": missing, "file_md5": file_md5},
+                        )
+                    for c in known_cases:
+                        cid = int(c["case_id"])
+                        old_case = old_map[cid]
+                        # _apply_known_case 现在总是写 1 条 dynamic (new_diff 空时用
+                        # "更新了用例步骤" 兜底, 步骤变化也留痕)
+                        new_diff_desc = await self._apply_known_case(
+                            old_case=old_case, new_case=c, user=user, session=session,
+                        )
+                        updated_count += 1
                         dynamic_count += 1
+                        log.info(
+                            f"M2 known update: case_id={cid}, "
+                            f'old_case_name={old_case.get("case_name")!r}, '
+                            f'new_case_name={c.get("case_name")!r}, '
+                            f"new_diff_desc={new_diff_desc!r}"
+                        )
 
-            # 3.2) new: 跟老 insert_upload_case 走同一套 prepare 路径
-            # 包含 group_path -> module_id 校验 (在事务内, 失败整批回滚)
-            inserted_count = 0
-            if new_cases:
-                case_module_map = await self._resolve_module_ids(
-                    new_cases, project_id,
-                )
-                new_objects, new_step_objects = await self._prepare_new_objects(
-                    new_cases=new_cases,
-                    case_module_map=case_module_map,
-                    default_module_id=module_id,
-                    project_id=project_id,
-                    user=user,
-                )
-                if new_objects:
-                    session.add_all(new_objects)
-                    await session.flush()
-                    # 拿新 case 的 id, 绑给 step
-                    case_id_map = {i: obj.id for i, obj in enumerate(new_objects)}
-                    for step in new_step_objects:
-                        step.test_case_id = case_id_map[step._case_index]
-                        step._case_index = None  # type: ignore[attr-defined]
-                    session.add_all(new_step_objects)
-                    inserted_count = len(new_objects)
+                # 3.2) new: 跟老 insert_upload_case 走同一套 prepare 路径
+                # 包含 group_path -> module_id 校验 (在事务内, 失败整批回滚)
+                inserted_count = 0
+                if new_cases:
+                    case_module_map = await self._resolve_module_ids(
+                        new_cases, project_id,
+                    )
+                    new_objects, new_step_objects = await self._prepare_new_objects(
+                        new_cases=new_cases,
+                        case_module_map=case_module_map,
+                        default_module_id=module_id,
+                        project_id=project_id,
+                        user=user,
+                    )
+                    if new_objects:
+                        session.add_all(new_objects)
+                        await session.flush()
+                        # 拿新 case 的 id, 绑给 step
+                        case_id_map = {i: obj.id for i, obj in enumerate(new_objects)}
+                        for step in new_step_objects:
+                            step.test_case_id = case_id_map[step._case_index]
+                            step._case_index = None  # type: ignore[attr-defined]
+                        session.add_all(new_step_objects)
+                        # 写创建动态 (跟 M1 走 CaseDynamicMapper.new_dynamic 一致)
+                        # case_obj 此时在 session 里, case_name 直接读不触发 lazy load
+                        for case_obj in new_objects:
+                            await CaseDynamicMapper.new_dynamic(
+                                cr=user, test_case=case_obj, session=session,
+                            )
+                        inserted_count = len(new_objects)
+                        dynamic_count += len(new_objects)
+                        for i, case_obj in enumerate(new_objects):
+                            log.info(
+                                f'M2 new insert: idx={i}, case_id={case_obj.id}, '
+                                f'case_name={case_obj.case_name!r}, '
+                                f'module_id={case_obj.module_id}'
+                            )
+
+                # 3.3) 显式 commit (不走 TransactionalContext.__exit__ 状态机)
+                await session.commit()
+            except Exception:
+                # 显式 rollback (同上, 不走 __exit__ 兜底)
+                await session.rollback()
+                raise
 
         # 4) 标记 Redis committed (事务外, 失败不影响 DB 落库)
         await self.cache.mark_committed(file_md5, user.id)
@@ -250,9 +307,10 @@ class M2ImportService:
         2) diff_dict 渲染 description
         3) UPDATE 字段
         4) 步骤全量覆盖 (DELETE + INSERT)
-        5) 写 1 条 case_dynamic (有 diff 才写)
+        5) 写 1 条 case_dynamic (总是写; new_diff 为空时 description
+           用 "更新了用例步骤" 兜底, 保证步骤变化也留痕)
 
-        :return: 渲染好的 diff 描述 (没变更返回 None, 用于上层 dynamic_count 计数)
+        :return: 渲染好的 diff 描述 (没变更返回 None, 仅用于日志/测试断言)
         """
         case_id = int(new_case["case_id"])
         case_obj = await TestCaseMapper.get_by_id(ident=case_id, session=session)
@@ -274,7 +332,13 @@ class M2ImportService:
         new_diff = renderer.diff_dict(old_case, update_payload)
 
         # 3) UPDATE 字段 (update_cls 内部会 flush)
-        await TestCaseMapper.update_cls(case_obj, session, **update_payload)
+        # M2 路径必须 expunge=False: 同一事务内还要 add(TestCaseStep) + add(CaseStepDynamic)
+        # + 可能 add_all(new_objects), 异步 session 在 expunge + 后续 add 之间偶尔会
+        # 触发 _trans_context_manager 状态机异常 ("Can't operate on closed transaction").
+        # 显式 begin/commit/rollback 已经绕开了一部分, 加上 expunge=False 双保险.
+        await TestCaseMapper.update_cls(
+            case_obj, session, expunge=False, **update_payload,
+        )
 
         # 4) 步骤全量覆盖 (DELETE 老 + INSERT 新)
         # 注意: 这里删的仅是 case_sub_step 物理行, 跟 case_dynamic / case_plan_association
@@ -300,12 +364,14 @@ class M2ImportService:
                 )
             )
 
-        # 5) 写动态 (有 diff 才写)
-        if new_diff:
-            await M2CaseDynamicWriter.write_case_dynamic(
-                cr=user, case_id=case_id,
-                description=new_diff, session=session,
-            )
+        # 5) 写动态 (总是写, 步骤变化也要留痕)
+        # new_diff 为空时 (用户只改步骤 / 步骤 + 字段都没变) 用 "更新了用例步骤"
+        # 兜底, 保证 commit known 每次都至少落 1 条 case_dynamic
+        await M2CaseDynamicWriter.write_case_dynamic(
+            cr=user, case_id=case_id,
+            description=new_diff or "更新了用例步骤",
+            session=session,
+        )
         return new_diff
 
     @staticmethod
@@ -404,24 +470,37 @@ class M2ImportService:
 
 def _extract_case_update_payload(new_case: Dict[str, Any]) -> Dict[str, Any]:
     """
-    从 M2 解析后的 valid_case 里抽 UPDATE 字段. 剔除:
+    从 M2 解析后的 valid_case 里抽 UPDATE 字段.
+
+    业务约定: **M2 导回只能修改 Excel 9 列字段** (case_name / case_setup / action /
+    expected_result / case_tag / case_level / case_type / case_mark / group_path;
+    其中 action / expected_result 走 TestCaseStep 子表, 不进主表, group_path 也不动).
+    加上 caller 强加的 updater / updaterName, 一共 8 个字段进 TestCase UPDATE.
+
+    剔除:
     - case_id (主键, 不更新)
     - _row (Excel 行号, 物理存储不需要)
-    - group_path (M2 库场景不更新 module_id, 跟 M2 协议一致; 用户改了分组则 case_id 命中 + 分组冲突
-                  暂时按"不更新"处理, 业务约定: M2 导回只更新字段, 不动 module_id)
+    - group_path (M2 库场景不更新 module_id, 跟 M2 协议一致; 用户改了分组则
+                  case_id 命中 + 分组冲突暂时按"不更新"处理, 业务约定: M2 导回
+                  只更新字段, 不动 module_id)
     - action / expected_result (拼 cell 步骤, 落库时拆, 不进 case 主表)
-    - project_id (不动, 跟 update_case 语义一致)
-    - id / uid / create_time / update_time / creator / creatorName (系统字段)
+    - project_id / module_id / is_common (系统 / 业务关系字段, 不属于用例编辑范围)
+    - id / uid / create_time / update_time / creator / creatorName (元数据)
+
+    跟 CaseDynamicRenderer.IGNORE_KEYS 对齐: 这里剔除的 (is_common / module_id /
+    project_id) 在 diff_dict 里也走 IGNORE_KEYS, 双保险.
     """
     payload = dict(new_case)  # shallow copy
-    # 业务约定: M2 导回不动 module_id (改 group_path 不会改 module_id),
-    # 跟 update_cls 配合. 若用户在 Excel 里改了 group_path 不会触发
-    # module_id 重新解析, 避免"导回后用例飘到别的目录"的体验陷阱.
-    # 落库时 group_path 仍是原 module 里的, 用户需手动挪目录.
     for k in (
-        "case_id", "_row", "group_path", "action", "expected_result",
-        "project_id", "module_id", "id", "uid", "create_time",
-        "update_time", "creator", "creatorName",
+        # 主键 / 行号
+        "case_id", "_row",
+        # 步骤拼 cell 字段 (落库时拆, 不进 case 主表)
+        "action", "expected_result",
+        # 业务关系字段 (M2 协议不动)
+        "group_path", "module_id", "project_id", "is_common",
+        # 元数据
+        "id", "uid", "create_time", "update_time",
+        "creator", "creatorName",
     ):
         payload.pop(k, None)
     return payload

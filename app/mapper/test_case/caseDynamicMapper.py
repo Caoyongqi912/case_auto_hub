@@ -17,7 +17,19 @@ from app.model.caseHub.case_step_dynamic import CaseStepDynamic
 from utils import log
 
 
-IGNORE_KEYS = {"id", "uid", "create_time", "update_time", "creator", "creatorName", "updater", "updaterName"}
+# 系统 / 业务关系字段: 用例编辑场景 (M1 update_step / M2 commit) 不应该出现在
+# dynamic 描述里.
+# - id / uid / create_time / update_time / creator / creatorName / updater / updaterName
+#   元数据 (主键 / 时间戳 / 审计人)
+# - is_common: "是否入库" 标志, 是后台入库动作产物, 不是用例编辑产物
+# - module_id: "所属模块", 改 = 挪目录, 是用例管理动作, 不是用例编辑
+# - project_id: "所属项目", 跨项目不应该走用例编辑
+# 任何 "M2 导回只能改 Excel 9 列" 的诉求都依赖此集合覆盖.
+IGNORE_KEYS = {
+    "id", "uid", "create_time", "update_time",
+    "creator", "creatorName", "updater", "updaterName",
+    "is_common", "module_id", "project_id",
+}
 
 
 class CaseDynamicRenderer:
