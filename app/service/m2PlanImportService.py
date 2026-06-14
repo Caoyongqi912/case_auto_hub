@@ -84,43 +84,14 @@ class M2PlanImportService:
                           (跨 plan 上传 / 新 plan 复用已知 case 时累加, 0 表示无新增关联)
         :raises CommonError: 缓存缺失/已提交/template_type != M2/必填失败/目录不存在
         """
-        # 0) 加载 Redis 预览缓存
-        preview = await self.cache.get_preview(file_md5, user.id)
-        if not preview:
-            raise CommonError(
-                message="预览数据已过期, 请重新上传文件",
-                data={"file_md5": file_md5},
-            )
-        if preview.get("committed"):
-            raise CommonError(
-                message="该文件已提交过, 不能重复提交",
-                data={"file_md5": file_md5},
-            )
-        if preview.get("template_type") != "M2":
-            raise CommonError(
-                message=(
-                    f"本端点仅处理 M2 导回, 当前缓存 template_type="
-                    f"{preview.get('template_type')!r}, 请走 /hub/plan/upload/commit"
-                ),
-                data={"file_md5": file_md5},
-            )
+        # 0/1) 加载 + 校验 (复用 M2ImportService helper, 错误信息带 plan 端点提示)
+        preview = await M2ImportService._load_preview(file_md5, user, self.cache)
+        valid_cases = M2ImportService._validate_m2_template(
+            preview, endpoint_label=", 请走 /hub/plan/upload/commit",
+        )
 
-        valid_cases: List[Dict[str, Any]] = preview.get("valid_cases") or []
-        if not valid_cases:
-            raise CommonError(
-                message="没有可入库的有效用例",
-                data={"file_md5": file_md5},
-            )
-
-        # 1) 拆 known / new (跟 M2ImportService 一致)
-        known_cases: List[Dict[str, Any]] = []
-        new_cases: List[Dict[str, Any]] = []
-        for c in valid_cases:
-            cid = c.get("case_id")
-            if cid is None or cid == "" or cid == 0:
-                new_cases.append(c)
-            else:
-                known_cases.append(c)
+        # 1) 拆 known / new (复用 helper)
+        known_cases, new_cases = M2ImportService._split_known_new(valid_cases)
 
         log.info(
             f"M2 plan commit: file_md5={file_md5}, plan_id={plan_id}, "
@@ -150,7 +121,7 @@ class M2PlanImportService:
                     plan_id=plan_id, user=user, session=session,
                 )
 
-                # 2.3) known: 复用 M2ImportService._apply_known_case
+                # 2.3) known: 复用 M2ImportService._apply_known_cases
                 #       - 该方法只动 library TestCase + TestCaseStep + case_dynamic
                 #       - 已存在的 PlanCaseAssociation 不动, 跟 M2 library 行为一致
                 #       - **不存在的 PlanCaseAssociation 自动补建** (M2 plan 扩展)
@@ -158,21 +129,22 @@ class M2PlanImportService:
                 dynamic_count = 0
                 auto_assoc_count = 0
                 if known_cases:
-                    known_ids = [int(c["case_id"]) for c in known_cases]
-                    old_map = await M2ImportService._fetch_old_cases(known_ids, session)
-                    missing = [cid for cid in known_ids if cid not in old_map]
-                    if missing:
-                        raise CommonError(
-                            message=(
-                                f"以下 用例ID 在数据库中不存在 (可能被删除): {missing[:5]}"
-                                f"{' ...' if len(missing) > 5 else ''}. "
-                                f"导回协议要求 用例ID 必须存在, 请修正 Excel 后重传"
-                            ),
-                            data={"missing_case_ids": missing, "file_md5": file_md5},
-                        )
+                    # _apply_known_cases 拿 old_map + 校验 missing + 逐 case UPDATE
+                    # (R1 抽取, library / plan 两端共用). old_map 返回给本函数
+                    # 用于 auto-associate 按 module_id 反查 plan_module, 不能再 fetch 一次.
+                    uc, dc, old_map = await M2ImportService._apply_known_cases(
+                        known_cases=known_cases,
+                        user=user,
+                        session=session,
+                        file_md5=file_md5,
+                        plan_id=plan_id,
+                    )
+                    updated_count += uc
+                    dynamic_count += dc
 
                     # M2 plan 扩展: batch 查已有 PlanCaseAssociation, 区分
                     # "in plan" (跳过 auto-associate) vs "not in plan" (建关联).
+                    known_ids = [int(c["case_id"]) for c in known_cases]
                     existing_assoc_stmt = select(PlanCaseAssociation.case_id).where(
                         PlanCaseAssociation.plan_id == plan_id,
                         PlanCaseAssociation.case_id.in_(known_ids),
@@ -221,51 +193,37 @@ class M2PlanImportService:
                         }
                     module_order_cursor: Dict[int, int] = dict(max_order_per_module)
 
+                    # 已知 case: 仅缺失关联的补建
                     for c in known_cases:
                         cid = int(c["case_id"])
-                        old_case = old_map[cid]
-                        new_diff_desc = await M2ImportService._apply_known_case(
-                            old_case=old_case, new_case=c, user=user, session=session,
-                            # PR-3 plan 扩展: plan 路径透传 plan_id, 写 case_dynamic 时
-                            # 标记"计划关联变更" (CaseStepDynamic.plan_id 非空),
-                            # 区分 library 自身变更. 不传则按 library 行为, plan_id=None.
-                            plan_id=plan_id,
-                        )
-                        updated_count += 1
-                        dynamic_count += 1
-                        log.info(
-                            f"M2 plan known update: case_id={cid}, "
-                            f'old_case_name={old_case.get("case_name")!r}, '
-                            f'new_case_name={c.get("case_name")!r}, '
-                            f"new_diff_desc={new_diff_desc!r}"
-                        )
-
+                        if cid not in missing_assoc_ids:
+                            continue
                         # M2 plan 扩展: auto-associate 本 plan 没有的 case.
                         # 用 case 的 library module_id 反向定位 plan_module,
                         # 没有 module_id 或 plan_module 不存在则走 plan root.
-                        if cid in missing_assoc_ids:
-                            lib_module_id = old_case.get("module_id")
-                            if lib_module_id is not None and lib_module_id in source_to_plan:
-                                plan_module_id_for_case = source_to_plan[lib_module_id]
-                            else:
-                                plan_module_id_for_case = plan_root.id
+                        old_case = old_map[cid]
+                        lib_module_id = old_case.get("module_id")
+                        if lib_module_id is not None and lib_module_id in source_to_plan:
+                            plan_module_id_for_case = source_to_plan[lib_module_id]
+                        else:
+                            plan_module_id_for_case = plan_root.id
 
-                            module_order_cursor[plan_module_id_for_case] = (
-                                module_order_cursor.get(plan_module_id_for_case, 0) + 1
-                            )
+                        module_order_cursor[plan_module_id_for_case] = (
+                            module_order_cursor.get(plan_module_id_for_case, 0) + 1
+                        )
 
-                            session.add(PlanCaseAssociation(
-                                plan_id=plan_id,
-                                plan_module_id=plan_module_id_for_case,
-                                case_id=cid,
-                                order=module_order_cursor[plan_module_id_for_case],
-                            ))
-                            auto_assoc_count += 1
-                            log.info(
-                                f"M2 plan known auto-associate: case_id={cid}, "
-                                f"lib_module_id={lib_module_id}, "
-                                f"plan_module_id={plan_module_id_for_case}"
-                            )
+                        session.add(PlanCaseAssociation(
+                            plan_id=plan_id,
+                            plan_module_id=plan_module_id_for_case,
+                            case_id=cid,
+                            order=module_order_cursor[plan_module_id_for_case],
+                        ))
+                        auto_assoc_count += 1
+                        log.info(
+                            f"M2 plan known auto-associate: case_id={cid}, "
+                            f"lib_module_id={lib_module_id}, "
+                            f"plan_module_id={plan_module_id_for_case}"
+                        )
 
                 # 2.4) new: 校验 group_path + find-or-create plan_module + 写 4 张表
                 inserted_count = 0

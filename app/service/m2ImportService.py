@@ -121,46 +121,14 @@ class M2ImportService:
                        (dynamic_count = known 变更条数 + new 创建条数, 每条入库写 1 条)
         :raises CommonError: 缓存缺失/已提交/template_type != M2/必填失败/目录不存在
         """
-        # 0) 加载 Redis 预览缓存
-        preview = await self.cache.get_preview(file_md5, user.id)
-        if not preview:
-            raise CommonError(
-                message="预览数据已过期, 请重新上传文件",
-                data={"file_md5": file_md5},
-            )
-        if preview.get("committed"):
-            raise CommonError(
-                message="该文件已提交过, 不能重复提交",
-                data={"file_md5": file_md5},
-            )
+        # 0/1) 加载 + 校验 (复用 helper, 跟 M2PlanImportService 一致)
+        preview = await self._load_preview(file_md5, user, self.cache)
+        valid_cases = self._validate_m2_template(
+            preview, endpoint_label="",
+        )
 
-        # 1) 校验 template_type == M2 (防御性, FE 走 /upload/commit 不会到这里)
-        if preview.get("template_type") != "M2":
-            raise CommonError(
-                message=(
-                    f"本端点仅处理 M2 导回, 当前缓存 template_type="
-                    f"{preview.get('template_type')!r}, 请走 /upload/commit"
-                ),
-                data={"file_md5": file_md5},
-            )
-
-        valid_cases: List[Dict[str, Any]] = preview.get("valid_cases") or []
-        if not valid_cases:
-            raise CommonError(
-                message="没有可入库的有效用例",
-                data={"file_md5": file_md5},
-            )
-
-        # 2) 拆 known / new. 业务约定: case_id 非空 (int, 非 0) = known;
-        # 缺/None/0/空字符串 = new
-        known_cases: List[Dict[str, Any]] = []
-        new_cases: List[Dict[str, Any]] = []
-        for c in valid_cases:
-            cid = c.get("case_id")
-            if cid is None or cid == "" or cid == 0:
-                new_cases.append(c)
-            else:
-                known_cases.append(c)
+        # 2) 拆 known / new
+        known_cases, new_cases = self._split_known_new(valid_cases)
 
         log.info(
             f"M2 commit: file_md5={file_md5}, project_id={project_id}, "
@@ -181,39 +149,12 @@ class M2ImportService:
             try:
                 await session.begin()
                 # 3.1) known: 逐 case UPDATE + 步骤覆盖 + 写动态
-                updated_count = 0
-                dynamic_count = 0
-                if known_cases:
-                    # 一次 SELECT 拿所有 old, 减少 round-trip
-                    known_ids = [int(c["case_id"]) for c in known_cases]
-                    old_map = await self._fetch_old_cases(known_ids, session)
-                    # 拿不到对应的 case (DB 里被删了) -> 整批回滚
-                    missing = [cid for cid in known_ids if cid not in old_map]
-                    if missing:
-                        raise CommonError(
-                            message=(
-                                f"以下 用例ID 在数据库中不存在 (可能被删除): {missing[:5]}"
-                                f"{' ...' if len(missing) > 5 else ''}. "
-                                f"导回协议要求 用例ID 必须存在, 请修正 Excel 后重传"
-                            ),
-                            data={"missing_case_ids": missing, "file_md5": file_md5},
-                        )
-                    for c in known_cases:
-                        cid = int(c["case_id"])
-                        old_case = old_map[cid]
-                        # _apply_known_case 现在总是写 1 条 dynamic (new_diff 空时用
-                        # "更新了用例步骤" 兜底, 步骤变化也留痕)
-                        new_diff_desc = await self._apply_known_case(
-                            old_case=old_case, new_case=c, user=user, session=session,
-                        )
-                        updated_count += 1
-                        dynamic_count += 1
-                        log.info(
-                            f"M2 known update: case_id={cid}, "
-                            f'old_case_name={old_case.get("case_name")!r}, '
-                            f'new_case_name={c.get("case_name")!r}, '
-                            f"new_diff_desc={new_diff_desc!r}"
-                        )
+                updated_count, dynamic_count, _ = await self._apply_known_cases(
+                    known_cases=known_cases,
+                    user=user,
+                    session=session,
+                    file_md5=file_md5,
+                )
 
                 # 3.2) new: 跟老 insert_upload_case 走同一套 prepare 路径
                 # 包含 group_path -> module_id 校验 (在事务内, 失败整批回滚)
@@ -275,6 +216,126 @@ class M2ImportService:
         }
 
     # ---------- private helpers ----------
+
+    # ---------- 共享 helper (R1 抽取, library / plan 两端复用) ----------
+
+    @staticmethod
+    async def _load_preview(
+        file_md5: str, user: User, cache: UploadCacheService,
+    ) -> Dict[str, Any]:
+        """加载 Redis 预览缓存 + 校验 committed 状态.
+
+        :param cache: 调用方注入的 cache service (M2ImportService / M2PlanImportService
+                       各自的 self.cache), 避免 helper 内部 new 出新实例导致
+                       跟外层 mock 状态脱钩.
+        """
+        preview = await cache.get_preview(file_md5, user.id)
+        if not preview:
+            raise CommonError(
+                message="预览数据已过期, 请重新上传文件",
+                data={"file_md5": file_md5},
+            )
+        if preview.get("committed"):
+            raise CommonError(
+                message="该文件已提交过, 不能重复提交",
+                data={"file_md5": file_md5},
+            )
+        return preview
+
+    @staticmethod
+    def _validate_m2_template(
+        preview: Dict[str, Any],
+        endpoint_label: str,
+    ) -> List[Dict[str, Any]]:
+        """校验 template_type=M2, 拿非空 valid_cases.
+
+        :param endpoint_label: 端点描述后缀, library 端传 "" (默认 /upload/commit),
+                                plan 端传 ", 请走 /hub/plan/upload/commit" 之类提示.
+        """
+        if preview.get("template_type") != "M2":
+            raise CommonError(
+                message=(
+                    f"本端点仅处理 M2 导回, 当前缓存 template_type="
+                    f"{preview.get('template_type')!r}{endpoint_label}"
+                ),
+                data={"file_md5": preview.get("file_md5")},
+            )
+        valid_cases: List[Dict[str, Any]] = preview.get("valid_cases") or []
+        if not valid_cases:
+            raise CommonError(
+                message="没有可入库的有效用例",
+                data={"file_md5": preview.get("file_md5")},
+            )
+        return valid_cases
+
+    @staticmethod
+    def _split_known_new(
+        valid_cases: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """拆 known / new. 业务约定: case_id 非空 (int, 非 0) = known;
+        缺/None/0/空字符串 = new.
+        """
+        known_cases: List[Dict[str, Any]] = []
+        new_cases: List[Dict[str, Any]] = []
+        for c in valid_cases:
+            cid = c.get("case_id")
+            if cid is None or cid == "" or cid == 0:
+                new_cases.append(c)
+            else:
+                known_cases.append(c)
+        return known_cases, new_cases
+
+    @staticmethod
+    async def _apply_known_cases(
+        known_cases: List[Dict[str, Any]],
+        user: User,
+        session: AsyncSession,
+        file_md5: str,
+        plan_id: Optional[int] = None,
+    ) -> Tuple[int, int, Dict[int, Dict[str, Any]]]:
+        """known 路径主体: 拿 old_map + 校验 missing + 逐 case UPDATE.
+
+        :return: (updated_count, dynamic_count, old_map).
+                  old_map 返回给 caller, plan 路径要在 known 之后做
+                  auto-associate (按 case 的 library module_id 反查 plan_module),
+                  不能再 fetch 一次.
+        """
+        if not known_cases:
+            return 0, 0, {}
+        # 一次 SELECT 拿所有 old, 减少 round-trip
+        known_ids = [int(c["case_id"]) for c in known_cases]
+        old_map = await M2ImportService._fetch_old_cases(known_ids, session)
+        # 拿不到对应的 case (DB 里被删了) -> 整批回滚
+        missing = [cid for cid in known_ids if cid not in old_map]
+        if missing:
+            raise CommonError(
+                message=(
+                    f"以下 用例ID 在数据库中不存在 (可能被删除): {missing[:5]}"
+                    f"{' ...' if len(missing) > 5 else ''}. "
+                    f"导回协议要求 用例ID 必须存在, 请修正 Excel 后重传"
+                ),
+                data={"missing_case_ids": missing, "file_md5": file_md5},
+            )
+        updated_count = 0
+        dynamic_count = 0
+        for c in known_cases:
+            cid = int(c["case_id"])
+            old_case = old_map[cid]
+            # _apply_known_case 现在总是写 1 条 dynamic (new_diff 空时用
+            # "更新了用例步骤" 兜底, 步骤变化也留痕)
+            new_diff_desc = await M2ImportService._apply_known_case(
+                old_case=old_case, new_case=c, user=user, session=session,
+                plan_id=plan_id,
+            )
+            updated_count += 1
+            dynamic_count += 1
+            log.info(
+                f"M2 known update: case_id={cid}, "
+                f'old_case_name={old_case.get("case_name")!r}, '
+                f'new_case_name={c.get("case_name")!r}, '
+                f"new_diff_desc={new_diff_desc!r}"
+            )
+        return updated_count, dynamic_count, old_map
 
     @staticmethod
     async def _fetch_old_cases(
