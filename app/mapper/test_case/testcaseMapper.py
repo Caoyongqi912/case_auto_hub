@@ -398,6 +398,11 @@ class TestCaseMapper(Mapper[TestCase]):
         # 提交入库时已无意义, 必须弹出, 否则 TestCase(**case_data) 会抛
         # `_row is an invalid keyword argument`.
         case_data.pop("_row", None)
+        # case_id 是 M2 协议 (导出-编辑-导回 导回) 用的字段, M2 commit 端走
+        # case_id 同步. M1 老插入路径不识别, 必须在入库前弹出, 否则
+        # TestCase(**case_data) 会抛 `case_id is an invalid keyword argument`.
+        # 兜底 None (字段不存在 / Excel 没这列), 不影响 M1 文件.
+        case_data.pop("case_id", None)
         case_data.update({
             "project_id": project_id,
             "module_id": module_id,
