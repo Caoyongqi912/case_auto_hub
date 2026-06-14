@@ -22,28 +22,80 @@ class PlanModuleMapper(Mapper[PlanModule]):
     
     
     @classmethod
-    async def init_module(cls,session:AsyncSession,plan_id:int,user:User) -> PlanModule:
+    async def init_module(cls, session: AsyncSession, plan_id: int, user: User) -> PlanModule:
         """
-        初始化计划分组
-        :param session: 会话对象
-        :param plan_id: 计划ID
-        :param user: 创建人
-        :return: 创建的分组
+        初始化计划分组 (plan 创建时使用, PlanMapper.add_plan 流程).
+
+        委托给 get_or_create_root: 共享 session 事务, 实际行为也变成
+        "拿不到根就建一个". 之所以保留这个薄包装, 是为了:
+        1) add_plan 流程不用改成共享 session 模式
+        2) 行为对外仍是 "plan 创建后一定有根", 兼容老 caller
+        3) 跟 import 路径的兜底逻辑共享实现, 减少重复
         """
         try:
-            module = PlanModule(
-                plan_id=plan_id,
-                title="全部用例",
-                parent_id=None,
-                order=0
+            return await cls.get_or_create_root(
+                plan_id=plan_id, user=user, session=session,
             )
-            module.creator = user.id
-            module.creatorName = user.username
-            await cls.add_flush_expunge(model=module, session=session)
-            return module
         except Exception as e:
             log.error(f"init_module error: {e}")
             raise
+
+    @classmethod
+    async def get_or_create_root(
+        cls,
+        plan_id: int,
+        user: User,
+        session: AsyncSession,
+    ) -> PlanModule:
+        """
+        拿 plan 根分组 (parent_id IS NULL). 没有则兜底新建.
+
+        业务约定: 计划创建时 (PlanMapper.add_plan) 会调 init_module 建好根,
+        这是默认状态. 但防御性兜底: import 流程 / find_or_create_path 可能
+        因 race condition 或异常路径导致根缺失, 这时调本方法自愈, 避免
+        整批失败.
+
+        跟 init_module 区别:
+        - init_module: 假设 plan 刚创建 (一定无根, 直接建). 走 add_flush_expunge
+          (自带 flush + expunge, 拿到 detached object).
+        - get_or_create_root: 接受外部 session, 先 SELECT 拿现有根,
+          没有则 session.add + flush, 拿到 attached object (在调用方事务里).
+
+        多根的极端情况: 用 order, id 排序取最靠前的那个. 不会建第二个根,
+        避免破坏"每个 plan 有且仅有一个根"约束.
+
+        :param plan_id: 计划 ID
+        :param user: 创建人 (新建时记录 creator)
+        :param session: 数据库会话 (共享调用方事务)
+        :return: 根 PlanModule (现有或新建)
+        """
+        root_stmt = (
+            select(PlanModule)
+            .where(
+                PlanModule.plan_id == plan_id,
+                PlanModule.parent_id.is_(None),
+            )
+            .order_by(PlanModule.order, PlanModule.id)
+        )
+        root = (await session.execute(root_stmt)).scalars().first()
+        if root is not None:
+            return root
+        root = PlanModule(
+            plan_id=plan_id,
+            title="全部用例",
+            parent_id=None,
+            order=0,
+        )
+        if user is not None:
+            root.creator = user.id
+            root.creatorName = user.username
+        session.add(root)
+        await session.flush()
+        log.warning(
+            f"PlanModuleMapper.get_or_create_root: plan_id={plan_id} 缺少根目录, "
+            f"已自动创建 root_id={root.id}"
+        )
+        return root
 
     @classmethod
     async def add_module(
@@ -282,35 +334,12 @@ class PlanModuleMapper(Mapper[PlanModule]):
             raise ValueError("title_path 中存在空标题段")
 
         async with cls.transaction() as session:
-            # 1) 找到 plan 的根目录 (parent_id=NULL).
-            #    init_module 理论上会在 plan 创建时建好, 但开发/测试阶段可能遗漏.
-            #    这里改为自动兜底创建, 避免 Excel 上传因 root 缺失而整批失败.
-            #    用 order, id 排序兜底多根的极端情况, 取最靠前那一个.
-            root_stmt = (
-                select(PlanModule)
-                .where(
-                    PlanModule.plan_id == plan_id,
-                    PlanModule.parent_id.is_(None),
-                )
-                .order_by(PlanModule.order, PlanModule.id)
+            # 1) 拿 plan 根目录 (parent_id=NULL). 委托 get_or_create_root
+            # (R3 抽取, 跟 init_module / import 路径共享 root 兜底逻辑):
+            # 拿不到 (开发/测试阶段遗漏 / race condition) 就当场建一个.
+            root_module = await cls.get_or_create_root(
+                plan_id=plan_id, user=user, session=session,
             )
-            root_module = (await session.execute(root_stmt)).scalars().first()
-            if root_module is None:
-                root_module = PlanModule(
-                    plan_id=plan_id,
-                    title="全部用例",
-                    parent_id=None,
-                    order=0,
-                )
-                if user is not None:
-                    root_module.creator = user.id
-                    root_module.creatorName = user.username
-                session.add(root_module)
-                await session.flush()
-                log.info(
-                    "find_or_create_path: plan_id=%s 缺少根目录, 已自动创建 "
-                    "root_id=%s", plan_id, root_module.id,
-                )
 
             # 2) 计算同一 plan 内最大 order, 新建节点接在末尾 (避免插入到中间)
             async def _next_order(s: AsyncSession) -> int:

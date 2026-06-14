@@ -23,6 +23,7 @@ from app.model.caseHub.test_case import TestCase
 from app.model.caseHub.test_case_step import TestCaseStep, TestCaseStepResult
 from app.model.caseHub.requirement import Requirement
 from app.model.caseHub.plan_module import PlanModule
+from app.mapper.test_case.planModuleMapper import PlanModuleMapper
 from utils import log
 from utils.caseEnumResolver import find_group_path, resolve_plan_group_path, _split_group_path
 from app.mapper.test_case.testcaseMapper import _parse_steps
@@ -1907,23 +1908,16 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
 
         # 4.1) 关键：每个 plan 有且仅有一个根分组（parent_id IS NULL），
         #       所有关联过去的源目录都挂在这个根下，不能再造新的根。
-        #       若 plan 还没有初始化根（理论上 init_module 已建好），兜底建一个
-        #       名为"全部用例"的根。
-        plan_root: Optional[PlanModule] = next(
+        #       若 plan 还没有初始化根（理论上 init_module 已建好），委托
+        #       PlanModuleMapper.get_or_create_root 兜底（R3 抽取, 跟
+        #       init_module / find_or_create_path 共享 root 兜底逻辑）.
+        plan_root = next(
             (pm for pm in plan_modules if pm.parent_id is None), None
         )
         if plan_root is None:
-            plan_root = PlanModule(
-                plan_id=plan_id,
-                title="全部用例",
-                parent_id=None,
-                order=0,
+            plan_root = await PlanModuleMapper.get_or_create_root(
+                plan_id=plan_id, user=user, session=sess,
             )
-            if user is not None:
-                plan_root.creator = user.id
-                plan_root.creatorName = user.username
-            sess.add(plan_root)
-            await sess.flush()
             plan_mod_index[("全部用例", None)] = plan_root
 
         # 5) 对每个 leaf source module，沿根到叶逐层 find-or-create

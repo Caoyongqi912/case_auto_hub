@@ -46,7 +46,6 @@ from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper
 from app.mapper.test_case.planCaseMapper import PlanCaseMapper
 from app.model.base import User
 from app.model.caseHub.association import PlanCaseAssociation
-from app.model.caseHub.plan_module import PlanModule
 from app.model.caseHub.test_case import TestCase
 from app.model.caseHub.test_case_step import TestCaseStep
 from app.model import async_session
@@ -383,37 +382,3 @@ class M2PlanImportService:
 
     # ---------- private helpers ----------
 
-    @staticmethod
-    async def _get_or_create_plan_root(
-        plan_id: int,
-        user: User,
-        session: AsyncSession,
-    ) -> PlanModule:
-        """
-        拿 plan 根 (parent_id IS NULL). 理论上 init_module 在 plan 创建时已建,
-        防御性兜底: 没有则当场建一个名为"全部用例"的根.
-
-        跟 M1 _resolve_source_to_plan_module_map 的兜底逻辑一致.
-        """
-        stmt = select(PlanModule).where(
-            PlanModule.plan_id == plan_id,
-            PlanModule.parent_id.is_(None),
-        ).order_by(PlanModule.order, PlanModule.id)
-        roots = (await session.execute(stmt)).scalars().all()
-        if roots:
-            return roots[0]
-        # 兜底新建
-        root = PlanModule(
-            plan_id=plan_id,
-            title="全部用例",
-            parent_id=None,
-            order=0,
-            creator=user.id,
-            creatorName=user.username,
-        )
-        session.add(root)
-        await session.flush()
-        log.warning(
-            f"M2 plan commit: plan_id={plan_id} 没有根分组, 兜底新建 '全部用例' (id={root.id})"
-        )
-        return root
