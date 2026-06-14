@@ -300,6 +300,7 @@ class M2ImportService:
         new_case: Dict[str, Any],
         user: User,
         session: AsyncSession,
+        plan_id: Optional[int] = None,
     ) -> Optional[str]:
         """
         单条 known case 的 UPDATE 流程:
@@ -310,6 +311,9 @@ class M2ImportService:
         5) 写 1 条 case_dynamic (总是写; new_diff 为空时 description
            用 "更新了用例步骤" 兜底, 保证步骤变化也留痕)
 
+        :param plan_id: 计划 ID. M2 library 路径传 None (用例自身变更);
+                        M2 plan 路径传 plan_id (case_dynamic.plan_id 非空
+                        标记 "计划关联变更", 跟 CaseStepDynamic.plan_id 注释对齐)
         :return: 渲染好的 diff 描述 (没变更返回 None, 仅用于日志/测试断言)
         """
         case_id = int(new_case["case_id"])
@@ -367,10 +371,13 @@ class M2ImportService:
         # 5) 写动态 (总是写, 步骤变化也要留痕)
         # new_diff 为空时 (用户只改步骤 / 步骤 + 字段都没变) 用 "更新了用例步骤"
         # 兜底, 保证 commit known 每次都至少落 1 条 case_dynamic
+        # plan_id: M2 library 传 None (自身变更); M2 plan 透传 plan_id (计划关联变更).
+        # CaseStepDynamic.plan_id 模型字段明确语义: 空=自身变更, 非空=计划关联变更.
         await M2CaseDynamicWriter.write_case_dynamic(
             cr=user, case_id=case_id,
             description=new_diff or "更新了用例步骤",
             session=session,
+            plan_id=plan_id,
         )
         return new_diff
 

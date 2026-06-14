@@ -317,6 +317,20 @@ class MoveCaseToCasePlan(BaseModel):
     plan_id: int = Field(..., description="计划ID")
     plan_case_module_id: int = Field(..., description="计划分组ID")
 
+class M2PlanImportCommitSchema(BaseModel):
+    """M2 协议计划导入 commit 模型.
+
+    跟 UploadCommitSchema (M1) 区别:
+    - 无 is_review / first_status / second_status / skip_duplicate / plan_module_id
+      这些都是 M1 路径专属, M2 走 case_id 同步不需要
+    - 无 on_duplicate (M2 协议硬编码走 case_id, 无视此字段)
+    - 只保留 file_md5 + plan_id (M2 路径 plan_module 来自 Excel group_path 自动
+      find-or-create, 不需要前端传)
+    """
+    file_md5: str = Field(..., description="文件唯一标识")
+    plan_id: int = Field(..., description="目标计划ID")
+
+
 class RemovePlanCaseSchema(BaseModel):
     """移除计划用例关联模型"""
     case_ids: List[int] = Field(..., description="用例ID列表")

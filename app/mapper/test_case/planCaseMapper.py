@@ -2795,7 +2795,23 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         plan_id: int,
         plan_module_ids: list,
     ) -> dict:
-        """plan_module_id -> 'root/.../leaf' 路径. 复用调用方 session, 一次拉全内存回溯."""
+        """plan_module_id -> 'A|B|C' 路径. **plan 虚拟根 '全部用例' 不出现在路径里**.
+
+        业务约定: 计划创建时默认建一个 parent_id IS NULL 的 root '全部用例',
+        子目录都挂在这个 root 下. 导出时 root 是虚拟容器, 不参与路径展示
+        (用户要求: '只带子目录', 跟 library 'root 即顶层模块' 行为不同).
+
+        实现: 把 root 行从 id_to_node 排除, _walk_paths 在 parent 链遇到
+        root.id 时 id_to_node lookup 返回 None 触发 break, 路径自然停在
+        root 子树, root 自身永远不进 group_path 字符串.
+
+        边界:
+        - root 下的 case: group_path_map 无该 id, ExportCaseService 走
+          group_path_map.get(key, '') 兜底为空串, 不会被 root 字符串污染
+        - 多级目录 root -> A -> B -> C, 导出 C 时路径 = 'A|B|C' (无 root)
+        - plan 没有 root (数据异常): 所有 case 路径都按'实际链路'展示, 不会
+          因找不到 root 而误剥 (代码: 只排除 parent_id IS NULL 的行)
+        """
         from app.service.exportCaseService import _walk_paths
         if not plan_module_ids:
             return {}
@@ -2803,7 +2819,11 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             select(PlanModule.id, PlanModule.title, PlanModule.parent_id)
             .where(PlanModule.plan_id == plan_id)
         )).all()
-        id_to_node = {r.id: (r.title, r.parent_id) for r in rows}
+        # 排除 plan 虚拟根 (parent_id IS NULL 的行), _walk_paths 走到 root
+        # 节点时 id_to_node lookup 返 None 自然 break, root 不会进路径.
+        id_to_node = {
+            r.id: (r.title, r.parent_id) for r in rows if r.parent_id is not None
+        }
         return _walk_paths(id_to_node, list(plan_module_ids))
 
     @staticmethod

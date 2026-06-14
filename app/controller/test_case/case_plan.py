@@ -23,6 +23,7 @@ from app.schema.hub.planSchema import (
     UpdatePlanCaseStepResultSchema,AssociatePlanCaseSchema,
     RemovePlanCaseSchema, CopyCaseToCasePlan,
     UpdatePlanPhaseSchema,UpdateCaseToCasePlan,UploadCommitSchema,
+    M2PlanImportCommitSchema,
     ReorderPlanCaseSchema,BulkReorderPlanCaseSchema
 )
 from app.schema.hub.testCaseSchema import AddPlanCaseSchema
@@ -31,6 +32,7 @@ from app.mapper.test_case.planModuleMapper import PlanModuleMapper
 from app.mapper.test_case.planCaseMapper import PlanCaseMapper
 from utils import log
 from app.service.uploadCacheService import UploadCacheService
+from app.service.m2PlanImportService import M2PlanImportService
 from common import rc
 
 router = APIRouter(prefix="/hub/plan", tags=['测试计划'])
@@ -555,6 +557,47 @@ async def upload_commit(
     except Exception as e:
         log.exception(f"入库失败: {e}")
         return Response.error(msg=f"入库失败: {str(e)}")
+
+
+@router.post("/import/commit", description="M2 协议 commit: 按 case_id 同步更新 / 新增 library 用例 + 写 plan 关联")
+async def m2_import_commit(
+        data: M2PlanImportCommitSchema,
+        user: User = Depends(Authentication())
+):
+    """M2 协议下, 测试计划的导入 (导回) 入口.
+
+    业务流程:
+    1) 加载 Redis 预览缓存, 校验 template_type == M2
+    2) 拆 known / new:
+       - known (有 case_id): 复用 M2ImportService._apply_known_case 改 library 用例字段 + 步骤
+         + 写 case_dynamic. PlanCaseAssociation 不动, 跟 M2 library 行为一致.
+       - new (无 case_id): 校验 group_path 在 library 存在 -> find-or-create plan_module
+         (写 source_module_id, 跟 M1 走同一套 _resolve_source_to_plan_module_map) -> 写
+         library TestCase + Step + PlanCaseAssociation + case_dynamic.
+    3) 标记 Redis committed
+
+    跟 /upload/commit (M1) 区别:
+    - M1 走 M1 老 import 路径 (insert_upload_case), 无 case_id 概念, 走 plan 内同名去重
+    - M2 走 case_id 同步, 已知改, 未知增, 跨 plan 不冲突
+
+    :param data: {file_md5, plan_id}
+    :param user: 认证用户
+    :return: {inserted, updated, dynamic_count}
+    """
+    _m2_service = M2PlanImportService()
+    try:
+        result = await _m2_service.commit(
+            file_md5=data.file_md5,
+            plan_id=data.plan_id,
+            user=user,
+        )
+        return Response.success(result)
+    except CommonError as e:
+        log.warning(f"plan M2 commit 业务校验失败: {e}")
+        return Response.error(msg=str(e))
+    except Exception as e:
+        log.exception(f"plan M2 commit 失败: {e}")
+        return Response.error(msg=f"M2 导入失败: {str(e)}")
 
 
 
