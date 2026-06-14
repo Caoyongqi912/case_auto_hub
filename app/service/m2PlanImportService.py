@@ -229,22 +229,12 @@ class M2PlanImportService:
                 inserted_count = 0
                 if new_cases:
                     # 2.4.1) 解析 group_path -> library module_id (整批校验)
-                    case_library_module_map, invalid_paths = await self._resolve_new_case_library_modules(
-                        new_cases=new_cases, project_id=project_id, session=session,
+                    # 复用 M2ImportService._resolve_module_ids (R2 合并):
+                    # 解析失败 -> 整批 raise CommonError, 文案跟 library 端
+                    # 导入完全一致 ("用例库分组校验失败, 以下目录不存在").
+                    case_library_module_map = await M2ImportService._resolve_module_ids(
+                        cases=new_cases, project_id=project_id,
                     )
-                    if invalid_paths:
-                        unique_invalid = sorted(set(invalid_paths))
-                        preview_list = unique_invalid[:5]
-                        more = "" if len(unique_invalid) <= 5 else (
-                            f" (还有 {len(unique_invalid) - 5} 个...)"
-                        )
-                        raise CommonError(
-                            message=(
-                                f"用例库分组校验失败, 以下目录不存在: {preview_list}{more}. "
-                                f"请先在用例库中创建对应目录后再导入."
-                            ),
-                            data={"invalid_paths": unique_invalid},
-                        )
 
                     # 2.4.2) plan_root 已在 2.2 提前拿, 跳过
 
@@ -392,44 +382,6 @@ class M2PlanImportService:
         }
 
     # ---------- private helpers ----------
-
-    @staticmethod
-    async def _resolve_new_case_library_modules(
-        new_cases: List[Dict[str, Any]],
-        project_id: int,
-        session: AsyncSession,
-    ) -> Tuple[Dict[int, int], List[str]]:
-        """
-        解析 new_cases 里的 group_path -> library module.id.
-
-        跟 M2 library _resolve_module_ids 逻辑一致:
-        - 缺失 / 空字符串: 不校验, 落到 plan root + library 未分组 (module_id=None)
-        - 非空且在 library 找不到: 整批拒 (invalid_paths)
-        - 命中: 返回 {case_index: module_id}
-
-        :return: (case_index -> module_id, invalid_paths)
-        """
-        from utils.caseEnumResolver import find_group_path, _split_group_path
-
-        case_module_map: Dict[int, int] = {}
-        unique_path_resolved: Dict[str, Optional[int]] = {}
-        invalid_paths: List[str] = []
-        for idx, c in enumerate(new_cases):
-            raw_path = c.get("group_path")
-            if not raw_path:
-                continue
-            titles = _split_group_path(raw_path)
-            cache_key = "\x1f".join(titles)
-            if cache_key not in unique_path_resolved:
-                unique_path_resolved[cache_key] = await find_group_path(
-                    project_id=project_id, raw_group_path=raw_path,
-                )
-            resolved = unique_path_resolved[cache_key]
-            if resolved is None:
-                invalid_paths.append(raw_path)
-            else:
-                case_module_map[idx] = resolved
-        return case_module_map, invalid_paths
 
     @staticmethod
     async def _get_or_create_plan_root(
