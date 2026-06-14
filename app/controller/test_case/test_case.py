@@ -310,6 +310,13 @@ async def export_cases(
         embed=True,
         description="case_id 列表; 空=范围内全量. library 走白名单语义, plan 走全量关联.",
     ),
+    # plan 下可选: 限制到某个 plan_module 子树 (recursive=True 默认拉子 plan_module).
+    # library 下忽略. 跟 case_ids 互斥 (mapper 内部 case_ids 优先).
+    plan_module_id: Optional[int] = Query(
+        None,
+        description="plan_module_id; 非空时限制到该 plan_module 子树 (recursive=True). "
+                    "library 忽略. 跟 case_ids 互斥.",
+    ),
     _: User = Depends(Authentication()),
 ):
     """
@@ -345,6 +352,7 @@ async def export_cases(
                 case_dicts = await PlanCaseMapper.query_plan_cases_for_export(
                     plan_id=scope_id,
                     case_ids=case_ids,
+                    plan_module_id=plan_module_id,
                 )
                 if not case_dicts:
                     raise CommonError(message="计划下没有用例, 无需导出")
