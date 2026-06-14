@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exception import CommonError
 from app.mapper.test_case.caseDynamicMapper import CaseDynamicMapper
 from app.mapper.test_case.planCaseMapper import PlanCaseMapper
+from app.mapper.test_case.planModuleMapper import PlanModuleMapper
 from app.model.base import User
 from app.model.caseHub.association import PlanCaseAssociation
 from app.model.caseHub.test_case import TestCase
@@ -114,9 +115,9 @@ class M2PlanImportService:
                 project_id = plan.project_id
 
                 # 2.2) plan_root 提前拿: known 路径 auto-associate 跟 new 路径
-                # 兜底都需要. _get_or_create_plan_root 内部会兜底新建
-                # (init_module 理论上已在 plan 创建时建好, 但防御性兜底).
-                plan_root = await self._get_or_create_plan_root(
+                # 兜底都需要. 委托 PlanModuleMapper.get_or_create_root (R3 抽取,
+                # 跟 init_module / find_or_create_path 共享 root 兜底逻辑).
+                plan_root = await PlanModuleMapper.get_or_create_root(
                     plan_id=plan_id, user=user, session=session,
                 )
 
