@@ -244,10 +244,13 @@ class PlanModuleMapper(Mapper[PlanModule]):
         """
         构建计划分组的完整树形结构
         :param plan_id: 计划ID
-        :return: 树形结构
+        :return: 树形结构. 每个节点的 case_nums 都是子树总和
+                 (自身直接关联 + 所有后代 plan_module 关联的 case 去重数),
+                 这样前端展示父目录的 case 数 = 子目录 case 数之和.
         """
         try:
             async with cls.transaction() as session:
+                # 每个 plan_module 自身直接关联的 case 数
                 count_subq = (
                     select(
                         PlanCaseAssociation.plan_module_id,
@@ -257,18 +260,11 @@ class PlanModuleMapper(Mapper[PlanModule]):
                     .group_by(PlanCaseAssociation.plan_module_id)
                     .subquery()
                 )
-                
-                total_count_subq = (
-                    select(func.count(PlanCaseAssociation.case_id))
-                    .where(PlanCaseAssociation.plan_id == plan_id)
-                    .scalar_subquery()
-                )
-                
+
                 stmt = (
                     select(
                         PlanModule,
                         func.coalesce(count_subq.c.case_nums, 0).label("case_nums"),
-                        total_count_subq.label("total_case_nums")
                     )
                     .outerjoin(count_subq, PlanModule.id == count_subq.c.plan_module_id)
                     .where(PlanModule.plan_id == plan_id)
@@ -276,17 +272,17 @@ class PlanModuleMapper(Mapper[PlanModule]):
                 )
                 result = await session.execute(stmt)
                 rows = result.all()
-                
+
                 module_dict = {}
                 for row in rows:
                     module_map = row.PlanModule.map.copy()
-                    if module_map.get("parent_id") is None:
-                        module_map["case_nums"] = row.total_case_nums
-                    else:
-                        module_map["case_nums"] = row.case_nums
+                    # 第一步: case_nums 存的是"自身直接 case 数",
+                    # 后面会通过后序遍历把后代数累加进来.
+                    module_map["case_nums"] = int(row.case_nums or 0)
                     module_map["children"] = []
                     module_dict[module_map["id"]] = module_map
-                
+
+                # 第二步: 组装 children 树
                 root_modules = []
                 for module in module_dict.values():
                     parent_id = module.get("parent_id")
@@ -294,7 +290,22 @@ class PlanModuleMapper(Mapper[PlanModule]):
                         root_modules.append(module)
                     elif parent_id in module_dict:
                         module_dict[parent_id]["children"].append(module)
-                
+
+                # 第三步: 后序遍历, 把每个节点的 case_nums 改成
+                # "自身 + 所有后代 case_nums 总和". 这样树根 (全部用例) 的
+                # case_nums 自然就是整个 plan 的 case 总数, 中间目录的
+                # case_nums 就是该子树下的 case 总数, 叶子目录的 case_nums
+                # 就是它自身直接的 case 数 (没有后代可加).
+                def _aggregate_subtree_counts(node: dict) -> int:
+                    total = int(node.get("case_nums", 0) or 0)
+                    for child in node.get("children", []) or []:
+                        total += _aggregate_subtree_counts(child)
+                    node["case_nums"] = total
+                    return total
+
+                for root in root_modules:
+                    _aggregate_subtree_counts(root)
+
                 return root_modules
         except Exception as e:
             log.error(f"build_tree error: {e}")

@@ -125,7 +125,7 @@ class ExportCaseService:
         group_key = (
             case.get("plan_module_id") if self.scope_type == "plan" else case.get("module_id")
         )
-        group_path = self.group_path_map.get(group_key or -1, "")
+        group_path = self.group_path_map.get(group_key, "") if group_key is not None else ""
 
         steps = case.get("case_sub_steps") or []
         action_cell = format_steps_cell(steps, "action")

@@ -43,7 +43,7 @@ class UploadCacheService:
             scope_check: Optional[Dict[str, Any]] = None,
             warnings: Optional[List[Dict[str, Any]]] = None,
             # PR-3 新增: 模板类型. 走 /upload 时 controller 显式传 M1/M2, 老调用方
-            # (如 /import/preview) 不传, 缓存里缺省 None, M2 commit 阶段会拒绝.
+            # (如 /upload 老版本) 不传, 缓存里缺省 None, M2 commit 阶段会拒绝.
             template_type: Optional[TemplateTypeLiteral] = None,
     ) -> bool:
         key = self._get_key(file_md5, user_id)

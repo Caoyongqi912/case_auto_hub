@@ -8,7 +8,7 @@
 from datetime import datetime
 from io import BytesIO
 from urllib.parse import quote
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Body, Depends, Query, UploadFile, Form, File
 from fastapi.responses import FileResponse, StreamingResponse
@@ -19,7 +19,7 @@ from app.schema.hub.testCaseSchema import (
     AddTestCaseSchema, PageTestCaseSchema, AddDefaultCaseSchema,
     UpdateTestCaseSchema, QueryTestCaseSchemaByField, RemoveCaseSchema, RemoveCaseStep,
     CopyCase, CopyCaseStep, AddDefaultCaseStep, UpdateTestCaseStep, ReorderCaseStep,
-    UpdateTestCaseStatusSchema, SetCasesCommonSchema, UploadPreviewResult,
+     SetCasesCommonSchema, UploadPreviewResult,
     UploadCommitSchema, UploadCancelSchema,UpdateTestCasesSchema,DeleteTestCasesSchema, ImportCommitSchema, ImportCancelSchema
 )
 from app.service.uploadCacheService import UploadCacheService
@@ -35,6 +35,10 @@ from utils import  log
 router = APIRouter(prefix="/hub/cases", tags=['用例'])
 
 _cache_service = UploadCacheService(rc)
+
+# 上传文件大小上限 (50MB). 超大 Excel 一次性读入内存有 OOM 风险,
+# 先通过 file.size 拦截; 客户端未传 Content-Length 时, 读完后二次兜底.
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
 @router.get("/info", description="用例信息")
@@ -268,17 +272,6 @@ async def query_case_dynamic(caseId: int, plan_id: Optional[int] = None, _: User
     result = await CaseDynamicMapper.query_dynamic(caseId, plan_id)
     return Response.success(result)
 
-
-@router.post("/setTestCaseResult", description="更新用例测试结果")
-async def set_test_case_result(data: UpdateTestCaseStatusSchema, user: User = Depends(Authentication())):
-    """
-    更新指定用例的测试执行状态
-    :param data: 用例ID及状态
-    :param user: 认证用户
-    :return: 操作结果
-    """
-    await TestCaseMapper.update_case(user=user, **data.model_dump(exclude_unset=True, exclude_none=True))
-    return Response.success()
 
 
 
@@ -562,13 +555,18 @@ async def upload_cases(
     响应里多 template_type 字段, 前端根据它决定 commit 走 /upload/commit (M1) 还是
     /import/commit (M2, 待 PR-3 后续). 老调用方不感知, 默认 template_type=M1.
     """
-    from utils.aioFileReader import AsyncFilesReader
-    from utils.caseEnumResolver import load_case_enum_config
     from utils.roundtripReader import RoundtripReader
-    from app.mapper.test_case.testcaseMapper import TestCaseMapper
 
     # 1) 一次性读 bytes, 探测模板类型 + 后续解析共用 (避免传 UploadFile 让下游重读时空读)
+    if file.size is not None and file.size > _MAX_UPLOAD_BYTES:
+        return Response.error(
+            msg=f"文件大小超过限制 {_MAX_UPLOAD_BYTES / 1024 / 1024:.0f}MB"
+        )
     content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        return Response.error(
+            msg=f"文件大小超过限制 {_MAX_UPLOAD_BYTES / 1024 / 1024:.0f}MB"
+        )
     template_type = RoundtripReader.detect_template_type(content)
     log.info(f"/upload 探测模板: template_type={template_type}, project_id={project_id}")
 
@@ -581,11 +579,99 @@ async def upload_cases(
     )
 
 
+async def _filter_group_path_errors(
+    valid_cases: List[Dict[str, Any]],
+    errors: List[Dict[str, Any]],
+    project_id: int,
+) -> List[Dict[str, Any]]:
+    """
+    对 valid_cases 执行用例库分组校验，把目录不存在的行从 valid_cases 移到 errors。
+    返回过滤后的 valid_cases（已去掉 _row）。
+    """
+    if not valid_cases:
+        return []
+    from app.mapper.test_case.testcaseMapper import TestCaseMapper
+
+    log.info(f"upload preview: valid_count={len(valid_cases)}")
+    group_path_errors = await TestCaseMapper.validate_group_paths(
+        cases=valid_cases,
+        project_id=project_id,
+    )
+    if not group_path_errors:
+        for case in valid_cases:
+            case.pop("_row", None)
+        return valid_cases
+
+    row_to_err: Dict[int, Dict[str, str]] = {}
+    for err in group_path_errors:
+        for row in err["rows"]:
+            row_to_err[row] = {
+                "field": "所属分组",
+                "message": f"用例库目录不存在: {err['path']} (请先在用例库中创建)",
+            }
+    new_valid: List[Dict[str, Any]] = []
+    for case in valid_cases:
+        row = case.pop("_row", None)
+        if row in row_to_err:
+            errors.append({
+                "row": row,
+                "errors": [row_to_err[row]],
+            })
+        else:
+            new_valid.append(case)
+    log.info(
+        f"upload preview: project_id={project_id}, "
+        f"group_path_invalid_count={len(row_to_err)}, "
+        f"invalid_paths={[e['path'] for e in group_path_errors]}"
+    )
+    return new_valid
+
+
+def _preview_error_response(
+    template_type: str,
+    errors: List[Dict[str, Any]],
+    total_count: int = 0,
+) -> Response:
+    """构造解析/校验失败时的 preview 响应。"""
+    return Response.success(UploadPreviewResult(
+        file_md5=None,
+        total_count=total_count,
+        valid_count=0,
+        invalid_count=len(errors),
+        errors=errors,
+        can_commit=False,
+        template_type=template_type,
+    ).model_dump())
+
+
+def _preview_success_response(
+    template_type: str,
+    result: Any,
+    file_md5: str,
+    can_commit: bool = True,
+    preview_data: Optional[List[Dict[str, Any]]] = None,
+) -> Response:
+    """构造 preview 响应. can_commit 透传 caller (不再硬编码 True).
+
+    - M1 caller: 已经 if not result.errors 拦过, 传 True
+    - M2 caller: 传 can_commit (校验后算出, errors 非空时为 False)
+    """
+    return Response.success(UploadPreviewResult(
+        file_md5=file_md5,
+        total_count=result.total_count,
+        valid_count=result.valid_count,
+        invalid_count=result.invalid_count,
+        errors=result.errors,
+        preview_data=preview_data,
+        can_commit=can_commit,
+        template_type=template_type,
+    ).model_dump())
+
+
 async def _upload_m1_path(content: bytes, project_id: int, user) -> Response:
     """M1 老路径: 9 列 aioFileReader + 用例库分组校验 + on_duplicate 老 commit."""
     from utils.aioFileReader import AsyncFilesReader
     from utils.caseEnumResolver import load_case_enum_config
-    from app.mapper.test_case.testcaseMapper import TestCaseMapper
 
     enum_config = await load_case_enum_config()
     try:
@@ -597,38 +683,11 @@ async def _upload_m1_path(content: bytes, project_id: int, user) -> Response:
     # 用例库分组校验 (预览阶段的硬门禁). project_id 已在签名层强制必填,
     # 命中校验失败的行从 valid_cases 移到 errors, 前端 preview 就能立刻看到
     # "目录不存在"提示, 不需要走到 commit 才发现.
-    log.info(f"upload preview (M1): valid_count={result.valid_count}")
-    if result.valid_cases:
-        group_path_errors = await TestCaseMapper.validate_group_paths(
-            cases=result.valid_cases,
-            project_id=project_id,
-        )
-        if group_path_errors:
-            # row -> error 索引, 一次扫描建映射
-            row_to_err: Dict[int, Dict[str, str]] = {}
-            for err in group_path_errors:
-                for row in err["rows"]:
-                    row_to_err[row] = {
-                        "field": "所属分组",
-                        "message": f"用例库目录不存在: {err['path']} (请先在用例库中创建)",
-                    }
-            new_valid: List[Dict[str, Any]] = []
-            for case in result.valid_cases:
-                row = case.pop("_row", None)
-                if row in row_to_err:
-                    result.errors.append({
-                        "row": row,
-                        "errors": [row_to_err[row]],
-                    })
-                else:
-                    new_valid.append(case)
-            result.valid_cases = new_valid
-            log.info(
-                f"upload preview (M1): project_id={project_id}, "
-                f"file_md5={result.file_md5}, "
-                f"group_path_invalid_count={len(row_to_err)}, "
-                f"invalid_paths={[e['path'] for e in group_path_errors]}"
-            )
+    result.valid_cases = await _filter_group_path_errors(
+        valid_cases=result.valid_cases,
+        errors=result.errors,
+        project_id=project_id,
+    )
 
     # 严格策略: 任意行存在错误 (aioFileReader 字段校验 / 用例库目录校验) 都不写 Redis,
     # 前端只能看到 errors, 不允许走 commit. 用户必须修正 Excel 后整批重传,
@@ -640,15 +699,12 @@ async def _upload_m1_path(content: bytes, project_id: int, user) -> Response:
             f"total_count={result.total_count}, "
             f"error_count={len(result.errors)}"
         )
-        return Response.success(UploadPreviewResult(
-            file_md5=None,
-            total_count=result.total_count,
-            valid_count=result.valid_count,
-            invalid_count=result.invalid_count,
-            errors=result.errors,
-            can_commit=False,
+        return _preview_error_response(
             template_type="M1",
-        ).model_dump())
+            errors=result.errors,
+            total_count=result.total_count,
+        )
+
     log.debug(f"case =  {result.valid_cases}")
     await _cache_service.save_preview(
         file_md5=result.file_md5,
@@ -661,15 +717,11 @@ async def _upload_m1_path(content: bytes, project_id: int, user) -> Response:
         template_type="M1",
     )
 
-    return Response.success(UploadPreviewResult(
-        file_md5=result.file_md5,
-        total_count=result.total_count,
-        valid_count=result.valid_count,
-        invalid_count=result.invalid_count,
-        errors=result.errors,
-        can_commit=True,
+    return _preview_success_response(
         template_type="M1",
-    ).model_dump())
+        result=result,
+        file_md5=result.file_md5,
+    )
 
 
 async def _upload_m2_path(content: bytes, project_id: int, user) -> Response:
@@ -694,18 +746,29 @@ async def _upload_m2_path(content: bytes, project_id: int, user) -> Response:
         m2_result = await reader.async_read_from_bytes(content)
     except ValueError as ve:
         # 文件超限 / 解析异常, 跟 /import/preview 一致: 返 errors 不写 Redis
-        return Response.success(UploadPreviewResult(
-            file_md5=None,
-            total_count=0,
-            valid_count=0,
-            invalid_count=0,
-            errors=[{"row": 0, "errors": [{"field": "file", "message": str(ve)}]}],
-            can_commit=False,
+        return _preview_error_response(
             template_type="M2",
-        ).model_dump())
+            errors=[{"row": 0, "errors": [{"field": "file", "message": str(ve)}]}],
+        )
     except Exception as e:
         log.exception(f"/upload M2 解析失败: scope={scope_type}:{scope_id}, error={e}")
         return Response.error(msg=f"文件解析失败: {str(e)}")
+
+    # 用例库分组校验 (跟 M1 路径一致). 业务约定: M2 协议不动 module_id
+    # (group_path 不在 M2 允许修改的字段里, 跟 _extract_case_update_payload
+    # 剔除 group_path 保持一致). 用户在 Excel 改了 group_path 视为无效,
+    # 跟 M1 一样 errors -> can_commit=false, 强制用户改回原目录或先在用例库创建.
+    # 只在 reader 没报 scope 错时校验, 避免叠加错误导致 Excel 行号错位.
+    if m2_result.valid_cases and not m2_result.errors:
+        m2_result.valid_cases = await _filter_group_path_errors(
+            valid_cases=m2_result.valid_cases,
+            errors=m2_result.errors,
+            project_id=project_id,
+        )
+        # dataclass 字段不跟 valid_cases / errors 自动同步, 手动更新
+        # (M1 ParseResult 是 @property 自动同步, 这里必须显式写)
+        m2_result.valid_count = len(m2_result.valid_cases)
+        m2_result.invalid_count = len(m2_result.errors)
 
     # 任意错误都不写缓存, can_commit=false
     can_commit = len(m2_result.errors) == 0
@@ -735,26 +798,17 @@ async def _upload_m2_path(content: bytes, project_id: int, user) -> Response:
     )
 
     # 响应 valid_cases 预览取前 10 条 (跟 M1 一致), 不暴露 _row / case_id 给 FE preview
-    preview_data = []
-    for c in m2_result.valid_cases[:10]:
-        c.pop("_row", None)
-        preview_data.append(c)
+    preview_data = [{**c} for c in m2_result.valid_cases[:10]]
 
-    return Response.success(UploadPreviewResult(
-        file_md5=file_md5,
-        total_count=m2_result.total_count,
-        valid_count=m2_result.valid_count,
-        invalid_count=m2_result.invalid_count,
-        errors=m2_result.errors,
-        preview_data=preview_data,
-        can_commit=can_commit,
+    return _preview_success_response(
         template_type="M2",
-    ).model_dump())
+        result=m2_result,
+        file_md5=file_md5,
+        can_commit=can_commit,  # 透传, errors 非空时为 False
+        preview_data=preview_data,
+    )
 
 
-# ============================================================
-# PR-3 Step 3 新增 (见 PLAN.md Step 3 段)
-# ============================================================
 
 @router.post("/import/commit", description="M2 导回 commit: 按 用例ID 同步 UPDATE/INSERT + 写 case_dynamic 审计")
 async def import_commit(

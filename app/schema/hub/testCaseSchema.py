@@ -111,10 +111,6 @@ class QueryMindCaseSchema(BaseModel):
     requirement_id: Optional[int] = Field(None, description="需求ID")
 
 
-class UpdateTestCaseStatusSchema(BaseModel):
-    """更新测试用例状态模型"""
-    id: int = Field(..., description="用例ID")
-    case_status: int = Field(..., description="用例状态")
 
 
 class PageTestCaseSchema(PageSchema, TestCaseField):

@@ -24,6 +24,9 @@ from app.model.caseHub.case_step_dynamic import CaseStepDynamic
 from utils import log
 import re
 
+# 预编译步骤序号清洗正则，避免每次解析都重新编译
+_STEP_NUMBER_RE = re.compile(r"【\d+】")
+
 
 async def get_last_index(session: AsyncSession, requirement_id: int) -> int:
     """
@@ -100,7 +103,7 @@ def _parse_steps(action: Optional[str], expected_result: Optional[str]) -> List[
 
     def _clean_line(line: str) -> str:
         """移除行中的【xx】序号标记"""
-        return re.sub(r"【\d+】", "", line).strip()
+        return _STEP_NUMBER_RE.sub("", line).strip()
 
     act_lines = [_clean_line(l) for l in action.strip().split("\n")] if action else None
     exp_lines = [_clean_line(l) for l in expected_result.strip().split("\n")] if expected_result else None
@@ -344,7 +347,7 @@ class TestCaseMapper(Mapper[TestCase]):
         if not cases:
             return []
         from utils.caseEnumResolver import find_group_path, _split_group_path
-
+        log.debug(f"validate_group_paths cases={cases}")
         # path -> [row, ...]
         invalid: Dict[str, List[int]] = {}
         cache: Dict[str, Optional[int]] = {}
@@ -560,8 +563,8 @@ class TestCaseMapper(Mapper[TestCase]):
         if on_duplicate == "skip" and cases:
             # 先按 (module_id, case_name) 聚合要查的 key, dedupe
             dup_lookup_keys: set = set()
-            for case_data in cases:
-                mid = case_module_map.get(cases.index(case_data), module_id)
+            for idx, case_data in enumerate(cases):
+                mid = case_module_map.get(idx, module_id)
                 name = (case_data.get("case_name") or "").strip()
                 if mid is not None and name:
                     dup_lookup_keys.add((mid, name))
@@ -654,6 +657,23 @@ class TestCaseMapper(Mapper[TestCase]):
 
                 req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
                 req.case_number += len(case_objects)
+
+            # 写创建动态 (跟 save_case / M1 plan insert_plan_case / M2 路径走
+            # new_dynamic 一致). 之前漏写导致 M1 批量导入的用例在 case_dynamic
+            # 留不下审计, 现在补回来. 跟 insert_plan_case 一样, 这里传 plan_id=None
+            # 标记"用例自身创建", 跟 update_dynamic / update_plan_case_dynamic
+            # 的 plan_id IS NULL vs NOT NULL 二分语义保持一致.
+            # 批量构造后 add_all, 避免 N 条用例产生 N 次 flush.
+            dynamic_records = [
+                CaseStepDynamic(
+                    description=f"{user.username} 创建了测试用例。 {case_obj.case_name}",
+                    test_case_id=case_obj.id,
+                    creator=user.id,
+                    creatorName=user.username,
+                )
+                for case_obj in case_objects
+            ]
+            session.add_all(dynamic_records)
 
             log.info(f"成功导入用例 {len(case_objects)} 条")
             return len(case_objects), len(skipped_dup_indices)
