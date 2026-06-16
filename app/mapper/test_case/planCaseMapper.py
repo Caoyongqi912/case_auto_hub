@@ -1266,7 +1266,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             #     )
             if second_status is not None:
                 await cls._sync_step_result_status(
-                    session, plan_id, case_id_list, second_status, "second_status"
+                    session, plan_id, case_id_list, second_status, "second_status", user
                 )
 
             # ---- 6. 收集 dynamic 记录（循环外统一 flush） ----
@@ -1626,7 +1626,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         case_id_list: List[int],
         status: str,
         status_field: str,
-    ) -> int:
+        user: User,
+           ) -> int:
         """同步 upsert 计划下用例的子步骤结果状态。
 
         行为：把 ``case_id_list`` 下所有步骤对应的 ``(plan_id, step_id)`` 行
