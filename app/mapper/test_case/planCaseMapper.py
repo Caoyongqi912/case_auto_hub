@@ -7,6 +7,7 @@
 # @Desc: 计划用例关联数据访问层
 from collections import defaultdict
 from typing import List,Tuple, Optional, Dict, Any
+from datetime import datetime
 
 from sqlalchemy import insert, update, delete, select, and_, or_, func, case
 from sqlalchemy.dialects.mysql import insert as mysql_insert
@@ -941,6 +942,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
 
             # 2. 执行 upsert：基于 (plan_id, step_id) 唯一约束，
             #    已存在则更新，不存在则插入
+            # 写 updater / creator: 此路径走底层 mysql_insert 绕开 ORM set_updater,
+            # 必须手写 audit 字段. creator/creatorName 仅 INSERT 段生效 (首次插入),
+            # updater/updaterName 在 ON DUPLICATE 段也写, 保证更新后也能查到"最后改的人".
             await session.execute(
                 mysql_insert(TestCaseStepResult).values(
                     plan_id=plan_id,
@@ -949,11 +953,19 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     bug_url=bug_url,
                     first_status=first_status,
                     second_status=second_status,
+                    creator=user.id,
+                    creatorName=user.username,
+                    updater=user.id,
+                    updaterName=user.username,
                 ).on_duplicate_key_update(
                     actual_result=actual_result,
                     bug_url=bug_url,
                     first_status=first_status,
                     second_status=second_status,
+                    updater=user.id,
+                    updaterName=user.username,
+                    # raw upsert 不会触发 BaseModel.onupdate=datetime.now, 手动写.
+                    update_time=datetime.now(),
                 )
             )
 
@@ -976,6 +988,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             for status_field in status_changes.keys():
                 await cls._sync_single_step_status(
                     session=session,
+                    user=user,
                     plan_id=plan_id,
                     case_id=test_case_id,
                     status_field=status_field,
@@ -1100,6 +1113,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
     async def _sync_single_step_status(
         cls,
         session: AsyncSession,
+        user: User,
         plan_id: int,
         case_id: int,
         status_field: str
@@ -1114,6 +1128,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
 
         Args:
             session: 数据库会话
+            user: 触发该同步的操作人, 写入 TestCaseStepResult.updater 留痕
             plan_id: 计划ID
             case_id: 用例ID
             status_field: 要同步的状态字段名 ('first_status', 'second_status')
@@ -1659,12 +1674,22 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 "plan_id": plan_id,
                 "step_id": step_id,
                 target_column.key: status,
+                "creator": user.id,
+                "creatorName": user.username,
+                "updater": user.id,
+                "updaterName": user.username,
             }
             for step_id in step_ids
         ]
         upsert_stmt = mysql_insert(TestCaseStepResult).values(insert_values)
+        # 父级状态同步的 updater 仍记为触发该同步的操作人 (即外层 user),
+        # 不另造"系统"audit, 保持 "谁操作谁负责" 链路可追溯.
         upsert_stmt = upsert_stmt.on_duplicate_key_update(
-            **{target_column.key: status}
+            **{target_column.key: status},
+            updater=user.id,
+            updaterName=user.username,
+            # raw upsert 不会触发 BaseModel.onupdate=datetime.now, 手动写.
+            update_time=datetime.now(),
         )
         await session.execute(upsert_stmt)
 
