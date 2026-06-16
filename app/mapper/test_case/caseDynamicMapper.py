@@ -152,6 +152,10 @@ class CaseDynamicRenderer:
         """
         比较两个字典的差异，生成变更描述（用例自身字段）。
 
+        比较走 display form (transform_value) 而非 raw，避免 raw != raw 但
+        display == display 的假阳性 (典型场景: M2 导回时 DB 历史值是枚举
+        code 如 'GN'，Excel 解析回 label '功能测试'，二者实际未变).
+
         :param old_case: 变更前的用例数据
         :param new_case: 变更后的用例数据
         :return: 变更描述字符串，如果无变更则返回 None
@@ -164,12 +168,17 @@ class CaseDynamicRenderer:
             old_value = old_case.get(key)
             new_value = new_case.get(key)
 
-            if old_value == new_value:
+            # 两侧都为空: 无变更
+            if old_value is None and new_value is None:
                 continue
 
             field_name = self.KEY_MAP.get(key, key)
             old_display = self.transform_value(key, old_value)
             new_display = self.transform_value(key, new_value)
+
+            # display form 一致: 无变更 (覆盖 raw 不等但 label 相同的枚举场景)
+            if old_display == new_display:
+                continue
 
             if old_value is None:
                 diff_args.append(f"{field_name} 新增 {new_display}")
@@ -184,6 +193,8 @@ class CaseDynamicRenderer:
         """
         比较计划关联用例的变更，生成变更描述。
 
+        比较走 display form (transform_value) 而非 raw，理由同 diff_dict。
+
         :param old_data: 变更前的数据（仅变更字段）
         :param new_data: 变更后的数据（仅变更字段）
         :return: 变更描述字符串，如果无变更则返回 None
@@ -195,14 +206,22 @@ class CaseDynamicRenderer:
             old_value = old_data.get(key)
             new_value = new_data.get(key)
 
-            if old_value == new_value:
+            if old_value is None and new_value is None:
                 continue
 
             field_name = self.PLAN_ASSOCIATION_KEY_MAP.get(key, key)
             old_display = self.transform_value(key, old_value)
             new_display = self.transform_value(key, new_value)
 
-            diff_args.append(f"{field_name} 从 {old_display} 变更为 {new_display}")
+            if old_display == new_display:
+                continue
+
+            if old_value is None:
+                diff_args.append(f"{field_name} 新增 {new_display}")
+            elif new_value is None:
+                diff_args.append(f"{field_name} 从 {old_display} 变更为 空")
+            else:
+                diff_args.append(f"{field_name} 从 {old_display} 变更为 {new_display}")
 
         return "\n".join(diff_args) if diff_args else None
 
