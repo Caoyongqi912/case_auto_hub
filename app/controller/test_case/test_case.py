@@ -77,7 +77,6 @@ async def page_cases(data: PageTestCaseSchema, _: User = Depends(Authentication(
         payload.pop("module_id", None)
         payload["module_id__is_null"] = True
     # 用例库默认排序: 用例名 A→Z 主排, 创建时间最新→最旧次排.
-    # 原因: FE ProTable (CaseDataTable.tsx) 的 onChange 第二参 sort 是单字段对象,
     # 传不进去双字段. 后端在无 sort 时塞默认, FE 点列表头仍可临时切单字段排序.
     if not payload.get("sort"):
         payload["sort"] = {
