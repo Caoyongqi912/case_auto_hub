@@ -32,6 +32,8 @@ from common.worker_pool.models import Job, JobStatus, JOB
 from common.worker_pool.pool import RedisWorkerPool
 from common.worker_pool.tasks import (
     r_pool,
+    interface_pool,
+    ui_pool,
     register_interface_task_RoBot,
     register_interface_task_Handle,
     register_play_task_robot,
@@ -40,6 +42,8 @@ from common.worker_pool.tasks import (
 
 __all__ = [
     "r_pool",
+    "interface_pool",
+    "ui_pool",
     "RedisWorkerPool",
     "Job",
     "JobStatus",

@@ -43,20 +43,20 @@ def celery_submit_interface_task(self: Task, job_data: Dict[str, Any]) -> Dict[s
         Dict[str, Any]: 执行结果
     """
     async def _execute():
-        from common.worker_pool import r_pool, register_interface_task_RoBot
-        
-        if not r_pool.is_running:
-            raise RuntimeError("任务池未启动")
-        
+        from common.worker_pool import interface_pool, register_interface_task_RoBot
+
+        if not interface_pool.check_pool_ready():
+            raise RuntimeError("interface 队列未就绪")
+
         task_id_list = job_data.get("job_task_id_list", [])
         job_name = job_data.get("job_name", "未命名任务")
-        
+
         log.info(f"[CeleryTask] 开始执行接口任务: {job_name}, 任务数: {len(task_id_list)}")
-        
+
         results = []
         for task_id in task_id_list:
             try:
-                await r_pool.submit_to_redis(
+                await interface_pool.submit_to_redis(
                     func=register_interface_task_RoBot,
                     job_id=str(task_id),
                     job_name=job_name,
@@ -73,7 +73,7 @@ def celery_submit_interface_task(self: Task, job_data: Dict[str, Any]) -> Dict[s
             except Exception as e:
                 log.error(f"[CeleryTask] 提交接口任务失败: {task_id}, 错误: {e}")
                 results.append({"task_id": task_id, "status": "failed", "error": str(e)})
-        
+
         return {"job_name": job_name, "results": results}
     
     try:
@@ -114,21 +114,21 @@ def celery_submit_play_task(self: Task, job_data: Dict[str, Any]) -> Dict[str, A
         Dict[str, Any]: 执行结果
     """
     async def _execute():
-        from common.worker_pool import r_pool, register_play_task_robot
-        
-        if not r_pool.is_running:
-            raise RuntimeError("任务池未启动")
-        
+        from common.worker_pool import ui_pool, register_play_task_robot
+
+        if not ui_pool.check_pool_ready():
+            raise RuntimeError("ui 队列未就绪")
+
         task_id_list = job_data.get("job_task_id_list", [])
         job_name = job_data.get("job_name", "未命名任务")
-        
+
         log.info(f"[CeleryTask] 开始执行UI任务: {job_name}, 任务数: {len(task_id_list)}")
-        
+
         results = []
         for task_id in task_id_list:
             try:
                 unique_job_id = f"{task_id}_{int(time.time() * 1000000)}"
-                await r_pool.submit_to_redis(
+                await ui_pool.submit_to_redis(
                     func=register_play_task_robot,
                     job_id=unique_job_id,
                     job_name=job_name,
@@ -144,7 +144,7 @@ def celery_submit_play_task(self: Task, job_data: Dict[str, Any]) -> Dict[str, A
             except Exception as e:
                 log.error(f"[CeleryTask] 提交UI任务失败: {task_id}, 错误: {e}")
                 results.append({"task_id": task_id, "status": "failed", "error": str(e)})
-        
+
         return {"job_name": job_name, "results": results}
     
     try:

@@ -206,11 +206,11 @@ async def execute_task(task: ExecuteTask, starter: User = Depends(Authentication
     - **task**: 包含任务ID和环境ID
     """
 
-    from common.worker_pool import r_pool, register_interface_task_Handle
+    from common.worker_pool import interface_pool, register_interface_task_Handle
 
     task_job = await InterfaceTaskMapper.get_by_id(task.task_id)
 
-    await r_pool.submit_to_redis(
+    await interface_pool.submit_to_redis(
         func=register_interface_task_Handle,
         job_id=task_job.uid,
         job_name=task_job.interface_task_title,
@@ -238,11 +238,11 @@ async def execute_task_by_jenkins(task: ExecuteTask):
 
     - **task**: 包含任务ID和环境ID
     """
-    from common.worker_pool import r_pool, register_interface_task_RoBot
+    from common.worker_pool import interface_pool, register_interface_task_RoBot
 
     task_job = await InterfaceTaskMapper.get_by_id(task.task_id)
 
-    await r_pool.submit_to_redis(
+    await interface_pool.submit_to_redis(
         func=register_interface_task_RoBot,
         job_id=task_job.uid,
         job_name=task_job.interface_task_title,

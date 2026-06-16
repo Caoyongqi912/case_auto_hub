@@ -108,6 +108,7 @@ class RedisWorkerPool:
         self.workers: List[asyncio.Task] = []
         self.is_running = False
         self._monitor_task: Optional[asyncio.Task] = None
+        self._current_jobs: Dict[int, Optional[Job]] = {i: None for i in range(worker_count)}
 
         log.info(
             f"RedisWorkerPool init: Queue={queue_name}, "
@@ -136,12 +137,13 @@ class RedisWorkerPool:
     def check_pool_ready(self) -> bool:
         """
         检查任务池是否就绪
-        
+
+        在独立进程部署模式下，Web 进程只负责提交任务，不启动本地 Worker。
+        因此只需确保 Redis 连接可用即可提交。
+
         Returns:
             是否就绪
         """
-        if not self.is_running:
-            return False
         if not self._connection.is_connected:
             return False
         if self._connection.redis_client is None:
@@ -178,11 +180,15 @@ class RedisWorkerPool:
             f"{self.worker_count} workers, server={self.server_id} ====================== "
         )
 
-    async def stop(self) -> None:
+    async def stop(self, graceful_timeout: float = 60.0) -> None:
         """
         停止工作池
-        
-        取消所有 Worker 和监控任务，断开连接。
+
+        先停止接收新任务，等待当前运行中的任务完成（带超时），
+        最后取消所有 Worker 和监控任务，断开连接。
+
+        Args:
+            graceful_timeout: 优雅退出等待超时时间（秒）
         """
         if not self.is_running:
             return
@@ -190,6 +196,7 @@ class RedisWorkerPool:
         log.info("正在停止 Redis 工作池...")
         self.is_running = False
 
+        # 取消监控任务
         if self._monitor_task and not self._monitor_task.done():
             self._monitor_task.cancel()
             try:
@@ -197,6 +204,22 @@ class RedisWorkerPool:
             except asyncio.CancelledError:
                 pass
 
+        # 等待当前运行中的任务完成
+        running_jobs = [
+            job for job in self._current_jobs.values()
+            if job is not None
+        ]
+        if running_jobs:
+            job_ids = ", ".join(job.id for job in running_jobs)
+            log.info(f"等待运行中的任务完成: {job_ids}，超时 {graceful_timeout}s")
+            try:
+                async with asyncio.timeout(graceful_timeout):
+                    while any(job is not None for job in self._current_jobs.values()):
+                        await asyncio.sleep(0.5)
+            except asyncio.TimeoutError:
+                log.warning(f"优雅退出超时，剩余任务将被强制取消")
+
+        # 取消所有 Worker 任务
         for worker in self.workers:
             if not worker.done():
                 worker.cancel()
@@ -407,14 +430,17 @@ class RedisWorkerPool:
                     job = Job.from_dict(job_data)
 
                     log.info(f"{worker_name} 开始处理任务 {job.id}: {job.name}")
-                    
+
+                    self._current_jobs[worker_id] = job
+
                     await self._executor.mark_job_running(
                         job, worker_name, self.redis, self._queue.job_data_key
                     )
-                    
+
                     await self._executor.execute_job(
                         job,
                         self.redis,
+                        self._queue.job_data_key,
                         self._queue.results_key,
                         self._queue.dead_letter_key,
                         processing_key
@@ -429,6 +455,8 @@ class RedisWorkerPool:
             except Exception as e:
                 log.exception(f"{worker_name} 异常: {e}")
                 await asyncio.sleep(1)
+            finally:
+                self._current_jobs[worker_id] = None
 
     async def _run_monitor(self) -> None:
         """

@@ -98,41 +98,49 @@ class RedisConnectionManager:
     async def connect(self, external_client=None) -> None:
         """
         建立 Redis 连接
-        
+
         Args:
             external_client: 外部注入的 RedisClient 实例（可选）
-        
+
         Note:
             如果提供了 external_client，将使用其作为主客户端；
             同时会创建一个独立的原始连接用于二进制操作。
         """
-        if self._is_connected and self._raw_redis:
-            return
-
-        self._raw_redis = AsyncRedis(
-            host=Config.REDIS_SERVER,
-            port=Config.REDIS_PORT,
-            db=Config.REDIS_DB,
-            decode_responses=False,
-            max_connections=20
-        )
-
         if external_client:
             self.redis_client = external_client
 
-        self._is_connected = True
-        await self._load_scripts()
+        if self._is_connected and self._raw_redis:
+            return
+
+        try:
+            self._raw_redis = AsyncRedis(
+                host=Config.REDIS_SERVER,
+                port=Config.REDIS_PORT,
+                db=Config.REDIS_DB,
+                decode_responses=False,
+                max_connections=20
+            )
+            self._is_connected = True
+            await self._load_scripts()
+        except Exception as e:
+            self._is_connected = False
+            log.error(f"Redis 连接建立失败: {e}")
+            raise
 
     async def disconnect(self) -> None:
         """
         断开所有 Redis 连接
-        
+
         关闭原始连接并清理状态。
         """
         self._is_connected = False
         if self._raw_redis:
-            await self._raw_redis.aclose()
-            self._raw_redis = None
+            try:
+                await self._raw_redis.aclose()
+            except Exception as e:
+                log.warning(f"关闭 Redis 连接异常: {e}")
+            finally:
+                self._raw_redis = None
         self.redis_client = None
         log.info("Redis 连接已关闭")
 
@@ -153,9 +161,8 @@ class RedisConnectionManager:
     def set_client(self, client) -> None:
         """
         设置外部 Redis 客户端
-        
+
         Args:
             client: RedisClient 实例
         """
         self.redis_client = client
-        self._is_connected = True

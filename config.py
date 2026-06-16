@@ -32,6 +32,20 @@ class BaseConfig:
 
     WeChatBaseUrl = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
 
+    # WorkPool 配置
+    # 总开关：是否启用 Redis Worker Pool
+    WORKER_POOL = False
+    # Web 进程中是否启动 WorkPool（False 表示使用独立进程消费队列）
+    RUN_WORKER_POOL_IN_WEB = True
+    # 各队列默认 Worker 数量
+    INTERFACE_WORKER_COUNT = 10
+    UI_WORKER_COUNT = 2
+    DEFAULT_WORKER_COUNT = 5
+    # 死信队列最大长度
+    MAX_DEAD_LETTER_LENGTH = 10000
+    # 优雅退出等待超时（秒）
+    WORKER_POOL_GRACEFUL_TIMEOUT = 60.0
+
     Banner = """
          ██████╗ █████╗ ███████╗███████╗    ██╗  ██╗██╗   ██╗████████╗ 
         ██╔════╝██╔══██╗██═════╝██═════╝    ██║  ██║██║   ██║██     ██╗
@@ -46,9 +60,7 @@ class LocalConfig(BaseConfig):
     SERVER_HOST: str = "127.0.0.1"
     SERVER_PORT: int = 5050
     DOMAIN = f"http://{SERVER_HOST}:{SERVER_PORT}"
-    TASK_WORKER_POOL_SIZE = 10
     FILE_AVATAR_PATH = DOMAIN + "/file/avatar/uid="
-    WORKER_POOL = False
     Record_Proxy = False
     # 硬编码MySQL配置
     MYSQL_SERVER = "127.0.0.1"
@@ -124,7 +136,6 @@ class DockerConfig(BaseConfig):
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = 5050
     DOMAIN = f"http://{SERVER_HOST}:{SERVER_PORT}"
-    TASK_WORKER_POOL_SIZE = 10
     FILE_AVATAR_PATH = DOMAIN + "/file/avatar/uid="
 
     Record_Proxy = False
