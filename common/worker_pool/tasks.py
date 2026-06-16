@@ -17,10 +17,38 @@ from utils import MyLoguru
 
 log = MyLoguru().get_logger()
 
-r_pool = RedisWorkerPool.get_instance()
+# 按任务类型划分队列实例，便于独立进程分别消费
+interface_pool = RedisWorkerPool.get_instance(
+    queue_name="interface",
+    worker_count=getattr(Config, 'INTERFACE_WORKER_COUNT', 10)
+)
+ui_pool = RedisWorkerPool.get_instance(
+    queue_name="ui",
+    worker_count=getattr(Config, 'UI_WORKER_COUNT', 2)
+)
+
+# 默认队列实例，保持向后兼容
+r_pool = RedisWorkerPool.get_instance(
+    queue_name="default",
+    worker_count=getattr(Config, 'DEFAULT_WORKER_COUNT', 5)
+)
 
 
-@r_pool.register_function
+def register_interface(func):
+    """接口任务函数注册到 interface 队列和 default 队列"""
+    interface_pool.register_function(func)
+    r_pool.register_function(func)
+    return func
+
+
+def register_ui(func):
+    """UI 任务函数注册到 ui 队列和 default 队列"""
+    ui_pool.register_function(func)
+    r_pool.register_function(func)
+    return func
+
+
+@register_interface
 async def register_interface_task_RoBot(**kwargs):
     """
     接口任务注册执行（定时执行）
@@ -37,7 +65,7 @@ async def register_interface_task_RoBot(**kwargs):
         log.error(f"register_interface_task_RoBot 执行失败: {e}")
 
 
-@r_pool.register_function
+@register_interface
 async def register_interface_task_Handle(user: User, **kwargs):
     """
     接口任务注册执行（手动触发）
@@ -55,7 +83,7 @@ async def register_interface_task_Handle(user: User, **kwargs):
         log.error(f"register_interface_task_Handle 执行失败: {e}")
 
 
-@r_pool.register_function
+@register_ui
 async def register_play_task_handle(user: User, **kwargs):
     """
     UI 自动化任务注册执行（手动触发）
@@ -73,7 +101,7 @@ async def register_play_task_handle(user: User, **kwargs):
         log.error(f"register_play_task_handle 执行失败: {e}")
 
 
-@r_pool.register_function
+@register_ui
 async def register_play_task_robot(**kwargs):
     """
     UI 自动化任务注册执行（定时执行）
@@ -92,6 +120,8 @@ async def register_play_task_robot(**kwargs):
 
 __all__ = [
     "r_pool",
+    "interface_pool",
+    "ui_pool",
     "register_interface_task_RoBot",
     "register_interface_task_Handle",
     "register_play_task_robot",

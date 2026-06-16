@@ -9,7 +9,12 @@
 from app.model.base.job import AutoJob
 from utils import log
 import time
-from common.worker_pool import r_pool, register_interface_task_RoBot, register_play_task_robot
+from common.worker_pool import (
+    interface_pool,
+    ui_pool,
+    register_interface_task_RoBot,
+    register_play_task_robot,
+)
 from common import rc
 
 
@@ -18,13 +23,13 @@ async def aps_submit_interface_task(job: AutoJob):
     调度任务执行
     :param job: AutoJob 任务
     """
-    if not r_pool.is_running:
-        raise RuntimeError("任务池未启动")
+    if not interface_pool.check_pool_ready():
+        raise RuntimeError("interface 队列未就绪")
     ## 添加到多个任务
     ##
     log.debug(f"aps_submit_interface_task {job}")
     for task_id in job.job_task_id_list:
-        await r_pool.submit_to_redis(
+        await interface_pool.submit_to_redis(
             func=register_interface_task_RoBot,
             job_id=task_id,
             job_name=job.job_name,
@@ -44,14 +49,14 @@ async def aps_submit_play_task(job: AutoJob):
     调度任务执行
     :param job: AutoJob 任务
     """
-    if not r_pool.is_running:
-        raise RuntimeError("任务池未启动")
+    if not ui_pool.check_pool_ready():
+        raise RuntimeError("ui 队列未就绪")
     ## 添加到多个任务
     ##
     for task_id in job.job_task_id_list:
         unique_job_id = f"{task_id}_{int(time.time() * 1000000)}"  # 添加时间戳后缀
 
-        await r_pool.submit_to_redis(
+        await ui_pool.submit_to_redis(
             func=register_play_task_robot,
             job_id=unique_job_id,
             job_name=job.job_name,

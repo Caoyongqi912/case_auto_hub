@@ -80,7 +80,7 @@ async def lifespanApp(app: FastAPI):
 
     关闭顺序：
     1. 关闭 APScheduler
-    2. 关闭 Worker Pool
+    2. 关闭 Worker Pool（如果 Web 进程中启动了）
     3. 关闭 Redis 连接
     """
     click.echo(Config.Banner)
@@ -203,10 +203,11 @@ async def init_proxy():
 
 async def init_worker_pool(rc):
     from common.worker_pool import r_pool
-    if  Config.WORKER_POOL:
+    if Config.WORKER_POOL and Config.RUN_WORKER_POOL_IN_WEB:
         await r_pool.set_redis_client(rc)
         await r_pool.start()
         return r_pool
+    return None
 
 
 

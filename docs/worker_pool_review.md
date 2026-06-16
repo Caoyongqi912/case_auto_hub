@@ -790,3 +790,87 @@ systemctl start casehub-worker-interface casehub-worker-ui
 ### 12.7 一句话总结
 
 > **将 WorkPool 从 Gunicorn Web 进程拆分为独立进程，是当前架构最合理的演进方向。它能解决 Web 重启丢任务、并发数失控、接口/UI 任务资源竞争等核心问题，代价只是多维护一个进程。**
+
+---
+
+## 十三、代码改造记录
+
+> 以下改造已在分支 `feat/worker-pool-standalone` 中完成。
+
+### 13.1 新增文件
+
+| 文件 | 说明 |
+|------|------|
+| `run_worker_pool.py` | 独立 WorkPool 进程启动入口，支持 `--queue` / `--workers` / `--graceful-timeout` 参数 |
+| `deploy/systemd/casehub-web.service` | Web 服务 systemd 配置示例 |
+| `deploy/systemd/casehub-worker-interface.service` | 接口任务 Worker systemd 配置示例 |
+| `deploy/systemd/casehub-worker-ui.service` | UI 任务 Worker systemd 配置示例 |
+| `deploy/docker-compose.yml` | Docker Compose 部署示例 |
+| `deploy/README.md` | 独立进程部署说明文档 |
+
+### 13.2 修改文件
+
+| 文件 | 主要变更 |
+|------|---------|
+| `config.py` | 新增 `RUN_WORKER_POOL_IN_WEB`、`INTERFACE_WORKER_COUNT`、`UI_WORKER_COUNT`、`DEFAULT_WORKER_COUNT`、`MAX_DEAD_LETTER_LENGTH`、`WORKER_POOL_GRACEFUL_TIMEOUT` 配置；移除冗余的 `TASK_WORKER_POOL_SIZE` |
+| `main.py` | `init_worker_pool()` 根据 `RUN_WORKER_POOL_IN_WEB` 决定是否启动；`lifespanApp` 关闭时仅停止 Web 中启动的 pool |
+| `common/worker_pool/__init__.py` | 导出 `interface_pool` / `ui_pool` |
+| `common/worker_pool/tasks.py` | 定义 `interface_pool` / `ui_pool` / `r_pool`；接口函数注册到 `interface_pool`+`r_pool`，UI 函数注册到 `ui_pool`+`r_pool` |
+| `common/worker_pool/pool.py` | `check_pool_ready()` 不再要求本地 pool 运行（支持独立进程提交）；新增 `_current_jobs` 跟踪；`stop()` 支持优雅退出 |
+| `common/worker_pool/executor.py` | `_cleanup_job()` 直接传入 `job_data_key`，修复字符串 split 风险；新增死信队列长度限制 `_trim_dead_letter()`；修复 `mark_job_running()` 的 `hset` 参数名错误 |
+| `common/worker_pool/connection.py` | `connect()` 增强异常处理；`set_client()` 不再盲目设置 `_is_connected` |
+| `app/controller/interface/interfaceTaskController.py` | 手动/Jenkins 接口任务提交到 `interface_pool` |
+| `app/controller/play/play_task.py` | 手动/Jenkins UI 任务提交到 `ui_pool` |
+| `app/scheduler/aps/jobs.py` | 定时接口/UI 任务分别提交到 `interface_pool` / `ui_pool`， readiness 检查改为 `check_pool_ready()` |
+| `app/scheduler/celer9/tasks.py` | Celery task（未启用）同步改用 `interface_pool` / `ui_pool` |
+| `docs/worker_pool_review.md` | 补充设计评价与独立进程部署方案 |
+
+### 13.3 已修复的潜在问题
+
+1. **`_cleanup_job` key 处理脆弱** ✅  
+   改为直接传入 `job_data_key`，不再依赖字符串 split。
+
+2. **死信队列无上限** ✅  
+   每次任务失败后调用 `_trim_dead_letter()`，限制队列长度（默认 10000）。
+
+3. **Worker 优雅退出** ✅  
+   `pool.stop()` 会等待当前运行中的任务完成，超时后才强制取消。
+
+4. **`mark_job_running` 参数名错误** ✅  
+   `hset(key=..., name=...)` 修正为 `hset(name=..., key=...)`。
+
+5. **连接生命周期瑕疵** ✅  
+   `connect()` 增加异常处理；`set_client()` 不再直接设置 `_is_connected`。
+
+### 13.4 尚未处理的问题
+
+以下问题在本次改造中未涉及，可后续按需处理：
+
+- pickle 序列化改为 JSON/msgpack（涉及 `User` 对象传递，改动面较大）；
+- 任务优先级支持；
+- 重试时保留原 job_id 血缘；
+- 监控心跳改为可配置并增加队列堆积告警；
+- Celery 代码仍未启用，建议评估是否删除。
+
+### 13.5 部署验证清单
+
+切换到独立进程模式前，建议按以下清单验证：
+
+- [ ] `config.py` 中 `RUN_WORKER_POOL_IN_WEB = False`
+- [ ] Web 服务可正常启动，HTTP API 可正常提交任务
+- [ ] 启动 `python run_worker_pool.py --queue interface --workers N` 能消费接口任务
+- [ ] 启动 `python run_worker_pool.py --queue ui --workers N` 能消费 UI 任务
+- [ ] Web 重启后，已入队任务仍能继续执行
+- [ ] 停止 WorkPool 进程时，当前任务能优雅完成（在 `--graceful-timeout` 内）
+- [ ] 失败任务进入死信队列，数量不超过 `MAX_DEAD_LETTER_LENGTH`
+
+### 13.6 回滚方式
+
+如需回滚到旧模式，只需修改配置并重启：
+
+```python
+# config.py
+RUN_WORKER_POOL_IN_WEB = True
+```
+
+然后停止所有独立 WorkPool 进程，重启 Web 服务即可。

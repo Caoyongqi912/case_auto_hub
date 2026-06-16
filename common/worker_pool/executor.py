@@ -17,6 +17,7 @@ from utils import MyLoguru
 log = MyLoguru().get_logger()
 
 DEFAULT_JOB_TIMEOUT = 3600
+MAX_DEAD_LETTER_LENGTH = 10000
 
 
 class TaskExecutor:
@@ -78,18 +79,20 @@ class TaskExecutor:
         self,
         job: Job,
         redis_client,
+        job_data_key: str,
         results_key: str,
         dead_letter_key: str,
         processing_key: str
     ) -> None:
         """
         执行任务
-        
+
         执行任务的完整流程：运行中状态 -> 执行 -> 完成/失败 -> 清理。
-        
+
         Args:
             job: 任务对象
             redis_client: Redis 客户端
+            job_data_key: 任务数据键
             results_key: 结果存储键
             dead_letter_key: 死信队列键
             processing_key: 处理中任务键
@@ -120,7 +123,8 @@ class TaskExecutor:
             log.error(f"任务执行失败: {e}")
 
         finally:
-            await self._cleanup_job(job, redis_client, processing_key)
+            await self._cleanup_job(job, redis_client, job_data_key, processing_key)
+            await self._trim_dead_letter(redis_client, dead_letter_key)
 
     async def mark_job_running(
         self,
@@ -144,8 +148,8 @@ class TaskExecutor:
 
         updated_job_data = job.to_dict()
         await redis_client.hset(
-            key=job_data_key,
-            name=job.id,
+            name=job_data_key,
+            key=job.id,
             value=pickle.dumps(updated_job_data)
         )
 
@@ -190,7 +194,7 @@ class TaskExecutor:
     ) -> None:
         """
         标记任务失败
-        
+
         Args:
             job: 任务对象
             error: 错误对象
@@ -216,20 +220,44 @@ class TaskExecutor:
         self,
         job: Job,
         redis_client,
+        job_data_key: str,
         processing_key: str
     ) -> None:
         """
         清理任务执行后的数据
-        
+
         Args:
             job: 任务对象
             redis_client: Redis 客户端
+            job_data_key: 任务数据键
             processing_key: 处理中任务键
         """
         final_job_data = job.to_dict()
         await redis_client.hset(
-            name=processing_key.split(':')[0] + ':' + ':'.join(processing_key.split(':')[1:2]),
+            name=job_data_key,
             key=job.id,
             value=pickle.dumps(final_job_data)
         )
         await redis_client.hdel(processing_key, job.id)
+
+    async def _trim_dead_letter(
+        self,
+        redis_client,
+        dead_letter_key: str,
+        max_length: int = MAX_DEAD_LETTER_LENGTH
+    ) -> None:
+        """
+        限制死信队列长度，超出部分从左侧淘汰
+
+        Args:
+            redis_client: Redis 客户端
+            dead_letter_key: 死信队列键
+            max_length: 最大长度
+        """
+        try:
+            current_length = await redis_client.llen(dead_letter_key)
+            if current_length > max_length:
+                await redis_client.ltrim(dead_letter_key, current_length - max_length, -1)
+                log.warning(f"死信队列 {dead_letter_key} 超出 {max_length} 条，已清理旧记录")
+        except Exception as e:
+            log.error(f"清理死信队列失败: {e}")
