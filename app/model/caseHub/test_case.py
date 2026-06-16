@@ -28,7 +28,7 @@ class TestCase(BaseModel):
 
     
     from app.model.caseHub.test_case_step import TestCaseStep
-    case_sub_steps = relationship(TestCaseStep, back_populates="case", lazy="select", order_by=TestCaseStep.order)
+    case_sub_steps = relationship(TestCaseStep, back_populates="case", lazy="select", order_by=TestCaseStep.order, cascade="all, delete-orphan")
 
     @classmethod
     def new_default(cls, user: User) -> "TestCase":

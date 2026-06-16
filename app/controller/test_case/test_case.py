@@ -715,11 +715,13 @@ async def _upload_m1_path(content: bytes, project_id: int, user) -> Response:
         # 防止 M1 缓存误走 /import/commit.
         template_type="M1",
     )
+    preview_data = [{**c} for c in result.valid_cases[:10]]
 
     return _preview_success_response(
         template_type="M1",
         result=result,
         file_md5=result.file_md5,
+        preview_data=preview_data,
     )
 
 

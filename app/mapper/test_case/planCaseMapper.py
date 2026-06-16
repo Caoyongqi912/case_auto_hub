@@ -6,6 +6,7 @@
 # @Software: PyCharm
 # @Desc: 计划用例关联数据访问层
 from collections import defaultdict
+from tkinter import N
 from typing import List,Tuple, Optional, Dict, Any
 from datetime import datetime
 
@@ -37,19 +38,16 @@ def _step_to_dict(
     step: TestCaseStep,
     step_result: Optional[TestCaseStepResult],
 ) -> Dict[str, Any]:
-    """把 (step, step_result) 拍平成返回 dict；未执行步骤默认值 0。
-
-    提取为 module-level 纯函数，便于：
-    - 单测覆盖（不需要 class 实例）
-    - 其它查询步骤的逻辑复用
+    """把 (step, step_result) 拍平成返回 dict
+    未执行步骤默认值 None。
     """
     if step_result is None:
         return {
             **step.to_dict(),
             "actual_result": None,
             "bug_url": None,
-            "first_status": 0,
-            "second_status": 0,
+            "first_status": None,
+            "second_status": None,
         }
     return {
         **step.to_dict(),

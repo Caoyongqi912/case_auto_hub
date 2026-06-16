@@ -44,4 +44,4 @@ class TestCaseStepResult(BaseModel):
     )
 
     def __repr__(self):
-        return f"<TestCaseStepResult(plan_id={self.plan_id},step_id={self.step_id},actual_result={self.actual_result},bug_url={self.bug_url}) >"
+        return f"<TestCaseStepResult(plan_id={self.plan_id},step_id={self.step_id},actual_result={self.actual_result}, bug_url={self.bug_url},first_status={self.first_status},second_status={self.second_status}) >"

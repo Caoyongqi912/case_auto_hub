@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  web:
+    build: ..
+    ports:
+      - "5050:5050"
+    environment:
+      - CONFIG_NAME=DockerConfig
+      - RUN_WORKER_POOL_IN_WEB=false
+    command: >
+      gunicorn main:caseHub
+      -k uvicorn.workers.UvicornWorker
+      -w 2
+      -b 0.0.0.0:5050
+    depends_on:
+      - redis
+      - mysql
+
+  worker-interface:
+    build: ..
+    environment:
+      - CONFIG_NAME=DockerConfig
+    command: python run_worker_pool.py --queue interface --workers 10
+    depends_on:
+      - redis
+      - mysql
+
+  worker-ui:
+    build: ..
+    environment:
+      - CONFIG_NAME=DockerConfig
+    command: python run_worker_pool.py --queue ui --workers 2
+    depends_on:
+      - redis
+      - mysql
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: sdkjfhsdkjhfsdkhfksd
+      MYSQL_DATABASE: caseHub
+    ports:
+      - "3306:3306"

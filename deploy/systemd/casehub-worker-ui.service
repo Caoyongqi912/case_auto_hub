@@ -1,0 +1,17 @@
+[Unit]
+Description=CaseAutoHub UI WorkPool Worker
+After=network.target redis.service mysql.service
+
+[Service]
+Type=simple
+User=casehub
+Group=casehub
+WorkingDirectory=/opt/case_auto_hub
+Environment=PYTHONPATH=/opt/case_auto_hub
+Environment=CONFIG_NAME=ProConfig
+ExecStart=/opt/case_auto_hub/venv/bin/python run_worker_pool.py --queue ui --workers 2
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
