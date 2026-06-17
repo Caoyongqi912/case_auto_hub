@@ -18,21 +18,37 @@ from utils import log
 
 from utils.threadPool import ThreadPoolHelper
 
+# openpyxl 5.x 兼容性补丁
+# 现象: 部分 Excel 文件 (例如旧版 WPS 导出 / 业务侧手工改过样式) 反序列化到样式
+#       阶段时, 会用位置参数调用基类 openpyxl.styles.fills.Fill.__init__,
+#       但 Fill 是 Serialisable 子类, 没有自定义 __init__, type 默认 __init__
+#       不接受位置参数, 抛 `TypeError: Fill() takes no arguments`.
+# 影响: aioFileReader 整条 pd.read_excel 链路直接挂掉, 用户无法导入.
+# 修复: 给 Fill.__init__ 包一层, 吃掉位置参数, 走默认 Serialisable __init__.
+#       业务侧只关心数据, 不读 fill 字段, 这个 fallback 不影响功能.
+import openpyxl.styles.fills as _openpyxl_fills
+if not getattr(_openpyxl_fills.Fill, "_ch_safe_init_patched", False):
+    _orig_fill_init = _openpyxl_fills.Fill.__init__
+
+    def _safe_fill_init(self, *args, **kwargs):
+        if args and not kwargs:
+            # 仅忽略纯位置参数, 保留关键字参数 (例如 PatternFill 派生的 from_tree 路径)
+            args = ()
+        return _orig_fill_init(self, *args, **kwargs)
+
+    _openpyxl_fills.Fill.__init__ = _safe_fill_init
+    _openpyxl_fills.Fill._ch_safe_init_patched = True
+
 FIELD_MAPPING = {
     "标题*": "case_name",
     "前置条件": "case_setup",
     "步骤描述": "action",
     "预期结果": "expected_result",
-    "标签": "case_tag",
     "用例等级*": "case_level",
     "用例类型": "case_type",
+    "适用端": "case_platform",
     "备注": "case_mark",
-    # "所属分组" 仅在解析阶段捕获原始字符串, 提交时由 UploadModuleResolver
-    # 按 project_id 解析为 module_id. 列缺失或为空时, 该行直接判无效, 不做兜底.
     "所属分组": "group_path",
-    # PR-3 M2 协议: 用例ID 列 (M1 老模板没有, M2 导出独有). 解析后塞到 case dict
-    # 的 "case_id" 字段. 老 M1 调用方传的文件没这列, _match_column 会返回 None,
-    # 不会报错, case_id 字段也不写进 valid_cases.
     "用例ID": "case_id",
 }
 
@@ -55,15 +71,19 @@ class CaseEnumConfig:
     """
     用例枚举配置 (由调用方从 case_config 表加载后注入)
 
-    :param level_map: 用例等级 label -> value, 例如 {"P1":"P1", "P2":"P2", ...}
-    :param type_map:  用例类型 label -> value, 例如 {"功能":"GN", "冒烟":"MY", ...}
-    :param default_level: 用例等级空值时的默认 value
-    :param default_type:  用例类型空值时的默认 value (None=不填, 留空入库)
+    :param level_map:    用例等级 label -> value, 例如 {"P1":"P1", "P2":"P2", ...}
+    :param type_map:     用例类型 label -> value, 例如 {"功能":"GN", "冒烟":"MY", ...}
+    :param platform_map: 适用端 label -> value, 例如 {"PC":"PC", "H5":"H5", ...}
+    :param default_level:    用例等级空值时的默认 value
+    :param default_type:     用例类型空值时的默认 value (None=不填, 留空入库)
+    :param default_platform: 适用端空值时的默认 value (None=不填, 留空入库)
     """
     level_map: Dict[str, str] = field(default_factory=dict)
     type_map: Dict[str, str] = field(default_factory=dict)
+    platform_map: Dict[str, str] = field(default_factory=dict)
     default_level: str = DEFAULT_LEVEL_VALUE
     default_type: Optional[str] = None
+    default_platform: Optional[str] = None
 
 
 @dataclass
@@ -332,6 +352,26 @@ class AsyncFilesReader:
                     v = mapped_case.get("case_type")
                     mapped_case["case_type"] = (str(v).strip() if v is not None and not pd.isna(v) else None) or enum_config.default_type
 
+                # 适用端 (PLATFORM 枚举): 旧模板无此列, mapped_case["case_platform"] 默认 None,
+                # 走不到 _resolve_enum, 留空入库 (DB case_platform 允许 NULL).
+                platform_map = enum_config.platform_map
+                if platform_map and mapped_case.get("case_platform") is not None:
+                    mapped_case["case_platform"], platform_err = _resolve_enum(
+                        raw=mapped_case.get("case_platform"),
+                        enum_map=platform_map,
+                        default=enum_config.default_platform,
+                        display_name=_display_field_name("适用端"),
+                    )
+                    if platform_err:
+                        is_valid = False
+                        errors.append(platform_err)
+                else:
+                    v = mapped_case.get("case_platform")
+                    if v is not None and not pd.isna(v):
+                        mapped_case["case_platform"] = str(v).strip() or None
+                    else:
+                        mapped_case["case_platform"] = None
+
                 if is_valid:
                     # _row: 仅做预览阶段"行号级"错误提示用, 提交入库前由 controller 剥掉,
                     # 避免作为字段传到 TestCase 模型. 前端不需要这个字段.
@@ -344,7 +384,7 @@ class AsyncFilesReader:
                     })
 
         except Exception as e:
-            log.error(f"读取Excel时发生错误: {e}")
+            log.exception(f"读取Excel时发生错误: {e}")
             raise ValueError(f"读取Excel时发生错误")
 
         return result

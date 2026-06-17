@@ -15,6 +15,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from app.exception import CommonError
 from app.mapper.test_case import TestCaseMapper, TestCaseStepMapper, CaseDynamicMapper, PlanCaseMapper
+from sqlalchemy import select
+
 from app.schema.hub.testCaseSchema import (
     AddTestCaseSchema, PageTestCaseSchema, AddDefaultCaseSchema,
     UpdateTestCaseSchema, QueryTestCaseSchemaByField, RemoveCaseSchema, RemoveCaseStep,
@@ -29,6 +31,8 @@ from common import rc
 from enums import ModuleEnum
 from app.controller import Authentication
 from app.model.base import User
+from app.model.base.module import Module
+from app.model.caseHub.plan_module import PlanModule
 from app.response import Response
 from utils import  log
 
@@ -276,18 +280,100 @@ async def query_case_dynamic(caseId: int, plan_id: Optional[int] = None, _: User
 
 
 
-@router.get("/downloadCaseDemo", description="下载用例导入模板")
-async def download_case_template(_: User = Depends(Authentication())):
+@router.get("/downloadCaseDemo", description="下载用例导入模板 (含 B/F/G/H 列下拉)")
+async def download_case_template(
+    _: User = Depends(Authentication()),
+    project_id: Optional[int] = Query(None, description="项目 ID (library 模板): 传了则 B 列下拉带该项目全量目录路径"),
+    plan_id: Optional[int] = Query(None, description="计划 ID (plan 模板): 传了则 B 列下拉带该计划全量目录路径"),
+):
     """
-    下载用例导入的Excel模板文件
-    :param _: 认证用户
-    :return: 模板文件
+    下载用例导入的 Excel 模板文件. 三种模式:
+    - 不传参: 通用模板, 只 F/G/H 列有下拉 (用例等级/类型/适用端)
+    - ?project_id=N: 用例库模板, B 列额外带项目 N 的全量目录路径下拉
+    - ?plan_id=N: 测试计划模板, B 列额外带计划 N 的全量目录路径下拉 (不含虚拟根)
     """
+    from io import BytesIO
     from file import TestCaseDemoFile
-    return FileResponse(
-        path=TestCaseDemoFile,
-        filename="用例模版.xlsx",
+    from app.service.exportCaseService import add_dropdowns_to_workbook
+    from app.model.base.module import Module as _Module  # noqa: F401
+    from app.model.caseHub.plan_module import PlanModule as _PlanModule  # noqa: F401
+    from sqlalchemy import select as _select  # noqa: F401
+
+    # 模板里 G/H/I 列的下拉 (用例等级/类型/适用端) 走 case_enum_config 配置,
+    # admin 在配置中心增删枚举后, 下载的模板自动同步. 拉取失败时回退到空列表
+    # (对应列不挂下拉, 用户继续手填, 不阻塞下载).
+    try:
+        from utils.caseEnumResolver import load_case_enum_label_lists
+        label_lists = await load_case_enum_label_lists()
+        level_labels = label_lists.get("CASE_LEVEL", [])
+        type_labels = label_lists.get("CASE_TYPE", [])
+        platform_labels = label_lists.get("PLATFORM", [])
+    except Exception as e:
+        log.exception(f"downloadCaseDemo 拉枚举 label 失败: error={e}")
+        level_labels, type_labels, platform_labels = [], [], []
+
+    all_group_paths: Optional[List[str]] = None
+    try:
+        if project_id is not None:
+            async with TestCaseMapper.session_scope() as session:
+                all_module_ids = (await session.execute(
+                    _select(_Module.id).where(
+                        _Module.project_id == project_id,
+                        _Module.module_type == ModuleEnum.CASE,
+                    )
+                )).scalars().all()
+                all_path_map = await TestCaseMapper.build_module_path_map(
+                    session=session,
+                    module_ids=list(all_module_ids),
+                    project_id=project_id,
+                    module_type=ModuleEnum.CASE,
+                )
+                all_group_paths = list(all_path_map.values())
+        elif plan_id is not None:
+            async with PlanCaseMapper.session_scope() as session:
+                all_plan_module_ids = (await session.execute(
+                    _select(_PlanModule.id).where(
+                        _PlanModule.plan_id == plan_id,
+                        _PlanModule.parent_id.is_not(None),
+                    )
+                )).scalars().all()
+                all_path_map = await PlanCaseMapper.build_plan_module_path_map(
+                    session=session,
+                    plan_id=plan_id,
+                    plan_module_ids=list(all_plan_module_ids),
+                )
+                all_group_paths = list(all_path_map.values())
+    except Exception as e:
+        log.exception(f"downloadCaseDemo 拉全量目录路径失败: project_id={project_id}, plan_id={plan_id}, error={e}")
+        # 拉路径失败不阻断下载, 退回通用模板 (B 列没下拉)
+        all_group_paths = None
+
+    import openpyxl
+    wb = openpyxl.load_workbook(TestCaseDemoFile)
+    # 模板主表 sheet 名固定 "template" (file/用例模版.xlsx 里就是这个名)
+    add_dropdowns_to_workbook(
+        wb,
+        sheet_name="template",
+        all_group_paths=all_group_paths,
+        level_labels=level_labels,
+        type_labels=type_labels,
+        platform_labels=platform_labels,
+        max_row=10000,
+    )
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    suffix = ""
+    if project_id is not None:
+        suffix = f"-library{project_id}"
+    elif plan_id is not None:
+        suffix = f"-plan{plan_id}"
+    filename = f"用例模版{suffix}.xlsx"
+    return StreamingResponse(
+        buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
 
 
@@ -333,12 +419,28 @@ async def export_cases(
                 )
                 if not case_dicts:
                     raise CommonError(message="范围内没有用例, 无需导出")
+                # 涉及用例的 module 路径 (按需, 用于行内 B 列写入)
                 group_path_map = await TestCaseMapper.build_module_path_map(
                     session=session,
                     module_ids=[c.get("module_id") for c in case_dicts if c.get("module_id") is not None],
                     project_id=project_id,
                     module_type=ModuleEnum.CASE,
                 )
+                # 全量 module 路径 (给 B 列 "所属分组" 下拉用). 复用同一 session, 内存
+                # _walk_paths 不增加 DB 查询, 只是遍历 id_to_node 的 keys.
+                all_module_ids = (await session.execute(
+                    select(Module.id).where(
+                        Module.project_id == project_id,
+                        Module.module_type == ModuleEnum.CASE,
+                    )
+                )).scalars().all()
+                all_path_map = await TestCaseMapper.build_module_path_map(
+                    session=session,
+                    module_ids=list(all_module_ids),
+                    project_id=project_id,
+                    module_type=ModuleEnum.CASE,
+                )
+                all_group_paths: List[str] = list(all_path_map.values())
         else:  # plan
             async with PlanCaseMapper.session_scope() as session:
                 case_dicts = await PlanCaseMapper.query_plan_cases_for_export(
@@ -353,11 +455,30 @@ async def export_cases(
                     plan_id=scope_id,
                     plan_module_ids=[c.get("plan_module_id") for c in case_dicts if c.get("plan_module_id") is not None],
                 )
+                # 全量 plan module 路径 (给 B 列下拉用, 不含虚拟根, 与行内写入语义一致)
+                all_plan_module_ids = (await session.execute(
+                    select(PlanModule.id).where(
+                        PlanModule.plan_id == scope_id,
+                        PlanModule.parent_id.is_not(None),  # 排除虚拟根
+                    )
+                )).scalars().all()
+                all_plan_path_map = await PlanCaseMapper.build_plan_module_path_map(
+                    session=session,
+                    plan_id=scope_id,
+                    plan_module_ids=list(all_plan_module_ids),
+                )
+                all_group_paths: List[str] = list(all_plan_path_map.values())
 
         # 枚举 value -> label, 导出时把 DB 存的 code 翻成给用户看的文字.
         # 缺 key 时 ExportCaseService 自动回退到原 value, 这里失败不阻断导出.
-        from utils.caseEnumResolver import load_case_enum_label_map
+        # 同时拉取 label 列表, 给 Excel 下拉 (DataValidation) 用;
+        # 业务枚举**不**写死在 service, admin 在配置中心增删, 下拉自动同步.
+        from utils.caseEnumResolver import (
+            load_case_enum_label_map,
+            load_case_enum_label_lists,
+        )
         label_map = await load_case_enum_label_map()
+        label_lists = await load_case_enum_label_lists()
     except CommonError:
         raise
     except ValueError as ve:
@@ -372,6 +493,11 @@ async def export_cases(
         case_dicts=case_dicts,
         group_path_map=group_path_map,
         label_map=label_map,
+        all_group_paths=all_group_paths,
+        # 下拉项数据源: 优先用本次拉的, 拉取失败/缺 key 时回退到空列表 (该列不挂 dv)
+        level_labels=label_lists.get("CASE_LEVEL", []),
+        type_labels=label_lists.get("CASE_TYPE", []),
+        platform_labels=label_lists.get("PLATFORM", []),
     )
     buf: BytesIO = service.build_workbook()
     filename = f"用例导出-{scope_type}{scope_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.xlsx"

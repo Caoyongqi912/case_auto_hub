@@ -7,27 +7,29 @@
 # @Desc: 用例枚举配置 (case_config) → 解析器注入数据 的轻量加载器
 
 import asyncio
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, List
 
 from app.mapper.test_case.caseConfigMapper import CaseConfigMapper
 from utils.aioFileReader import CaseEnumConfig, DEFAULT_LEVEL_VALUE
 
-# case_config 表中我们关心的两个分组
 LEVEL_CONFIG_KEY = "CASE_LEVEL"
 TYPE_CONFIG_KEY = "CASE_TYPE"
+PLATFORM_CONFIG_KEY = "PLATFORM"
 
 
 async def load_case_enum_config() -> CaseEnumConfig:
     """
-    并行加载 CASE_LEVEL / CASE_TYPE 配置, 构造 CaseEnumConfig.
+    并行加载 CASE_LEVEL / CASE_TYPE / PLATFORM 配置, 构造 CaseEnumConfig.
 
-    - level_map / type_map 为空时仍返回 (让解析器按"非空校验"放行, 不强依赖枚举配置存在)
+    - level_map / type_map / platform_map 为空时仍返回 (让解析器按"非空校验"放行, 不强依赖枚举配置存在)
     - default_type 取 type 配置中 sort 最小且 enabled 的 value
+    - default_platform 同上 (None 表示不填, 留空入库)
     """
     try:
-        level_configs, type_configs = await asyncio.gather(
+        level_configs, type_configs, platform_configs = await asyncio.gather(
             CaseConfigMapper.query_by_key(LEVEL_CONFIG_KEY),
             CaseConfigMapper.query_by_key(TYPE_CONFIG_KEY),
+            CaseConfigMapper.query_by_key(PLATFORM_CONFIG_KEY),
         )
     except Exception as err:
         # 配置加载失败不阻塞整条上传路径; 解析器拿到空 map 会按行报错
@@ -37,17 +39,24 @@ async def load_case_enum_config() -> CaseEnumConfig:
 
     level_map = {c.label: c.value for c in level_configs if c.label}
     type_map = {c.label: c.value for c in type_configs if c.label}
+    platform_map = {c.label: c.value for c in platform_configs if c.label}
 
     default_type: Optional[str] = None
     if type_configs:
         # query_by_key 已按 sort asc, id asc 排好序
         default_type = type_configs[0].value
 
+    default_platform: Optional[str] = None
+    if platform_configs:
+        default_platform = platform_configs[0].value
+
     return CaseEnumConfig(
         level_map=level_map,
         type_map=type_map,
+        platform_map=platform_map,
         default_level=DEFAULT_LEVEL_VALUE,
         default_type=default_type,
+        default_platform=default_platform,
     )
 
 
@@ -76,6 +85,50 @@ async def load_case_enum_label_map() -> Dict[str, str]:
         if cfg.value and cfg.label:
             label_map[cfg.value] = cfg.label
     return label_map
+
+
+async def load_case_enum_label_lists() -> Dict[str, List[str]]:
+    """
+    返回每个 config_key 对应的有序 label 列表 (按 sort 升序, 过滤 disabled=0).
+
+    给导出 Excel 的下拉框 DataValidation 用. 之所以不与 load_case_enum_label_map
+    合并返回, 是因为 DataValidation 需要**完整有序**的选项列表 (用户下拉看到的文字),
+    而 label_map 是 value->label 的反向映射 (写回 Excel 时把 DB 存的 value 翻成 label),
+    两者用途不一样, 分两个函数让调用方按需取, 不强制每次都拉全量.
+
+    返回结构示例:
+        {
+            "CASE_LEVEL": ["P0-最高", "P1-高", "P2-中", "P3-低"],
+            "CASE_TYPE":  ["功能测试", "冒烟", "回归", "其他"],
+            "PLATFORM":   ["PC", "H5", "Android", "iOS"],
+        }
+
+    失败/无数据时返回空 dict, 调用方按 config_key 取, 缺 key 时用空列表 (DataValidation
+    拿空列表就直接跳过该列下拉, 不报错).
+    """
+    try:
+        level_configs, type_configs, platform_configs = await asyncio.gather(
+            CaseConfigMapper.query_by_key(LEVEL_CONFIG_KEY),
+            CaseConfigMapper.query_by_key(TYPE_CONFIG_KEY),
+            CaseConfigMapper.query_by_key(PLATFORM_CONFIG_KEY),
+        )
+    except Exception as err:
+        from utils import log
+        log.error(f"load_case_enum_label_lists error: {err}")
+        return {}
+
+    def _labels(configs) -> List[str]:
+        # mapper.query_by_key 已按 sort asc, id asc 排好序.
+        # 过滤 enabled=0 (停用) 与空 label.
+        return [c.label for c in configs if c.label and getattr(c, 'enabled', 1) != 0]
+
+    return {
+        LEVEL_CONFIG_KEY: _labels(level_configs),
+        TYPE_CONFIG_KEY: _labels(type_configs),
+        PLATFORM_CONFIG_KEY: _labels(platform_configs),
+    }
+    return result
+
 
 # ----------------------------------------------------------------------------
 # UploadModuleResolver: Excel "所属分组" 字符串 → module_id

@@ -1,10 +1,11 @@
-from typing import List,Optional
+from typing import Dict, List, Optional
 
-from sqlalchemy import delete, select, and_
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
 from app.model.base.module import Module
+from enums import ModuleEnum
 from utils import log
 
 
@@ -67,10 +68,16 @@ class ModuleMapper(Mapper[Module]):
     @classmethod
     async def query_tree_by(cls, project_id: int, module_type: int, no_group: bool = False):
         """
-        查询模块树，包含未分组数据汇总
-        :param project_id:
-        :param module_type:
-        :return:
+        查询模块树，包含未分组数据汇总。
+
+        用例库 (module_type=CASE) 会为每个模块挂上 `count` 字段:
+        父目录的 count = 自身直接关联的用例数 + 全部后代模块的用例数之和。
+        其它 module_type 暂不统计, count 默认为 0 (前端 `count>0` 才显示徽标)。
+
+        :param project_id: 项目 ID
+        :param module_type: 模块类型 (ModuleEnum)
+        :param no_group: True 时不附加 "未分组数据" 虚拟节点
+        :return: 嵌套的模块树, 每个节点可能携带 `count` 字段
         """
         try:
             query_modules: List[Module] = await cls.query_by(project_id=project_id, module_type=module_type)
@@ -78,9 +85,62 @@ class ModuleMapper(Mapper[Module]):
                 return []
 
             tree = await list2Tree(query_modules)
+
+            # 用例库才统计 count; 其它 module_type 暂未实现, 直接跳过统计步骤
+            # (count 保持缺省, 不会在前端渲染徽标)
+            case_counts: Dict[int, int] = {}
+            ungrouped_count: int = 0
+            if module_type == ModuleEnum.CASE:
+                from app.model.caseHub.test_case import TestCase
+                async with cls.session_scope() as session:
+                    # 每个 module_id 直接关联的用例数 (is_common=True 即 "用例库")
+                    direct_count_stmt = (
+                        select(TestCase.module_id, func.count(TestCase.id))
+                        .where(
+                            TestCase.project_id == project_id,
+                            TestCase.is_common.is_(True),
+                            TestCase.module_id.is_not(None),
+                        )
+                        .group_by(TestCase.module_id)
+                    )
+                    rows = (await session.execute(direct_count_stmt)).all()
+                    case_counts = {int(mid): int(cnt) for mid, cnt in rows if mid is not None}
+
+                    # 未分组 (module_id IS NULL) 的用例数
+                    ungrouped_stmt = (
+                        select(func.count(TestCase.id))
+                        .where(
+                            TestCase.project_id == project_id,
+                            TestCase.is_common.is_(True),
+                            TestCase.module_id.is_(None),
+                        )
+                    )
+                    ungrouped_count = int((await session.execute(ungrouped_stmt)).scalar() or 0)
+
+            # 第一步: 把每个节点的 count 初始化为自身直接关联的用例数
+            def _init_counts(node: dict) -> None:
+                node["count"] = int(case_counts.get(node["key"], 0))
+                for child in node.get("children") or []:
+                    _init_counts(child)
+
+            for root in tree:
+                _init_counts(root)
+
+            # 第二步: 后序遍历把后代 count 累加到父节点
+            # 父.count = 父.count + Σ child.count
+            def _aggregate(node: dict) -> int:
+                total = int(node.get("count", 0))
+                for child in node.get("children") or []:
+                    total += _aggregate(child)
+                node["count"] = total
+                return total
+
+            for root in tree:
+                _aggregate(root)
+
             if no_group:
                 return tree
-            
+
             ungrouped_modules = [m for m in query_modules if m.parent_id is None and m.title != "未分组"]
             if ungrouped_modules:
                 ungrouped_node = {
@@ -88,7 +148,8 @@ class ModuleMapper(Mapper[Module]):
                     "title": "未分组数据",
                     "parent_id": None,
                     "project_id": project_id,
-                    "module_type": module_type
+                    "module_type": module_type,
+                    "count": ungrouped_count,
                 }
                 tree.append(ungrouped_node)
 

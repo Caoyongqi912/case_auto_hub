@@ -5,21 +5,7 @@
 # @File : m2ImportService
 # @Software: PyCharm
 # @Desc: PR-3 Step 3 - M2 导回 commit service.
-#
-# 业务约定 (跟用户拍板):
-# - 输入: file_md5 (preview 阶段写入 Redis 的指纹) + project_id + module_id (可选)
-# - 流程:
-#     1) 加载 Redis 预览缓存, 校验 template_type=M2
-#     2) 拆 valid_cases -> known (有 case_id) / new (无 case_id)
-#     3) known 逐 case: SELECT 拿 old_data -> diff_dict 渲染 -> UPDATE 字段
-#        + 步骤全量覆盖 (DELETE+INSERT) + 总是写 1 条 case_dynamic
-#        (new_diff 为空时 description 兜底 "更新了用例步骤")
-#     4) new 逐 case: 跟老 insert_upload_case 走同一条 prepare 路径 (group_path
-#        解析 -> _prepare_case_data -> _prepare_steps), 不走 on_duplicate
-#     5) 删行: 无操作 (DB 中对应 case 不删, 这是 M2 协议约定)
-#     6) 标记 Redis committed
-# - 单事务, 失败整批回滚
-# - 返回: (inserted_count, updated_count, dynamic_count)
+
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -27,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 _STEP_BRACKET_RE = re.compile(r"【\d+】")
 _STEP_PREFIX_RE = re.compile(r"^\s*\d+[\.、)）]\s*")
 
-from sqlalchemy import delete, select
+from sqlalchemy import  select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exception import CommonError
