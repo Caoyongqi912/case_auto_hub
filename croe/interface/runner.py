@@ -22,7 +22,7 @@ from croe.interface.executor.context import CaseStepContext, ExecutionContext
 from croe.interface.executor.interface_executor import InterfaceExecutor
 from croe.interface.executor.step_content import get_step_strategy
 from croe.a_manager import VariableManager
-from croe.interface.writer import result_writer
+from croe.interface.writer import ResultWriter  # BUG-D1:模块级单例已废弃,改用 self.result_writer
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.starter import APIStarter
 from croe.play.starter import UIStarter
@@ -32,7 +32,7 @@ from utils import log
 class InterfaceRunner:
     """接口执行入口类"""
 
-    __slots__ = ("starter", "variable_manager", "interface_executor", "global_headers")
+    __slots__ = ("starter", "variable_manager", "interface_executor", "global_headers", "result_writer")
 
     def __init__(self, starter: Union[UIStarter, APIStarter]) -> None:
         """
@@ -44,6 +44,9 @@ class InterfaceRunner:
         self.starter = starter
         self.variable_manager = VariableManager()
         self.global_headers: List[InterfaceGlobalHeader] = []
+        # 每个 runner 独立的 result_writer,避免并发时缓存互相污染 (BUG-D1)
+        from croe.interface.writer import ResultWriter
+        self.result_writer = ResultWriter()
         self.interface_executor = InterfaceExecutor(
             starter=self.starter,
             variable_manager=self.variable_manager,
@@ -160,13 +163,13 @@ class InterfaceRunner:
         target_env = await self._get_running_env(env=env)
         case_success = True
 
-        case_result = await result_writer.init_case_result(
+        case_result = await self.result_writer.init_case_result(
             interface_case=interface_case,
             starter=self.starter,
             env=target_env,
             task_result=task_result
         )
-        log.debug(f"result_writer.init_case_result ={case_result}")
+        log.debug(f"self.result_writer.init_case_result ={case_result}")
 
         try:
             execution_context = ExecutionContext(
@@ -189,7 +192,7 @@ class InterfaceRunner:
                         f"✍️✍️  EXECUTE_STEP {index} ： 调试禁用 跳过执行"
                     )
                     case_result.progress = (index * 100) // total_steps
-                    await result_writer.update_case_progress(case_result)
+                    await self.result_writer.update_case_progress(case_result)
                     continue
 
                 # 执行步骤  
@@ -217,7 +220,7 @@ class InterfaceRunner:
                         f"⏭️⏭️  SKIP_STEP {index} ： 遇到错误已停止"
                     )
                     case_result.progress = 100
-                    await result_writer.update_case_progress(case_result)
+                    await self.result_writer.update_case_progress(case_result)
                     break
 
                 await self.starter.send(
@@ -231,7 +234,7 @@ class InterfaceRunner:
             # 日志通过 finalize_case_result(logs=...) 写入 interface_log 列;
             # 不要在这里给 case_result.interfaceLog (camelCase) 赋值 ——
             # 那个名字不是列,只会在实例上挂一个不会被 flush 的野属性。
-            await result_writer.finalize_case_result(
+            await self.result_writer.finalize_case_result(
                 case_result=case_result,
                 logs="".join(self.starter.logs)
             )
@@ -244,7 +247,12 @@ class InterfaceRunner:
 
         finally:
             await self.variable_manager.clear()
-            await self.starter.over(case_result.id)
+            # BUG-D1 修复:清空本 runner 的缓存,避免后续 runner 误用
+            self.result_writer.clear_cache()
+            if case_result is not None:
+                await self.starter.over(case_result.id)
+            else:
+                await self.starter.over()
 
     async def run_interface_by_task(
             self,
@@ -274,14 +282,14 @@ class InterfaceRunner:
             )
 
             if success:
-                await result_writer.write_interface_result(
+                await self.result_writer.write_interface_result(
                     interface_result=InterfaceResult(**result,
                                                      task_result_id=task_result_id)
                 )
                 return True
 
             if attempt == retry:
-                await result_writer.write_interface_result(
+                await self.result_writer.write_interface_result(
                     interface_result=InterfaceResult(**result,
                                                      task_result_id=task_result_id)
                 )

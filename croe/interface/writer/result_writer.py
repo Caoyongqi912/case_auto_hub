@@ -55,6 +55,18 @@ class ResultWriter:
         self.content_result_cache: List[Dict[str, Any]] = []
         self._progress_update_cache: Dict[int, Dict[str, Any]] = {}
 
+    def clear_cache(self) -> None:
+        """
+        清空所有缓存,run_interface_case 在 finally 调用以释放内存。
+
+        之前用的是模块级单例 result_writer,缓存不会自动清,
+        长跑 / 并发 case 会让 api_result_cache 越来越大、还会
+        把别人的数据 flush 走(BUG-D1)。
+        """
+        self.api_result_cache.clear()
+        self.content_result_cache.clear()
+        self._progress_update_cache.clear()
+
     async def init_task_result(
             self,
             task:InterfaceTask,
