@@ -131,7 +131,12 @@ class InterfaceRunner:
             await self.starter.send(
                 f"未通过{interface_case_id} 找到 相关业务流用例"
             )
-            return await self.starter.over()
+            # 不要直接 return await self.starter.over() —
+            # starter.over() 当前返回 None,task 模式调用方
+            # `success, _ = await runner.run_interface_case(...)` 会 TypeError。
+            # 显式返回 (False, None) 让调用方可以安全 unpack。
+            await self.starter.over()
+            return False, None
 
         case_content_steps = await InterfaceCaseMapper.query_steps(
             case_id=interface_case.id
@@ -146,7 +151,8 @@ class InterfaceRunner:
 
         if not case_content_steps:
             await self.starter.send("无可执行业务流步骤，结束执行")
-            return await self.starter.over()
+            await self.starter.over()
+            return False, None
 
         await self.init_interface_case_vars(interface_case_id)
         await self.init_global_headers()
