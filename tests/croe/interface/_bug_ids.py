@@ -29,3 +29,6 @@ BUG_S3 = "S3"  # SCRIPT_TIMEOUT 未生效
 
 # 变量
 BUG_V1 = "V1"  # name mangling
+
+# M11 后续追加
+BUG_M11 = "M11"  # *_uid 长度截断

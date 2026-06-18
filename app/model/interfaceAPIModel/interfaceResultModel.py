@@ -30,7 +30,7 @@ class InterfaceResult(BaseModel):
 
 
     interface_name = Column(String(50), comment="用例名称")
-    interface_uid = Column(String(20), comment="用例Uid")
+    interface_uid = Column(String(50), comment="用例Uid")
     interface_desc = Column(String(250), comment="用例描述")
 
     running_env_id = Column(INTEGER, nullable=True, comment="运行环境")
@@ -93,7 +93,7 @@ class InterfaceCaseResult(BaseModel):
         INTEGER, ForeignKey("interface_case.id", ondelete="CASCADE"), comment="所属用例"
     )
     interface_case_name = Column(String(64), comment="用例名称")
-    interface_case_uid = Column(String(20), comment="用例Uid")
+    interface_case_uid = Column(String(50), comment="用例Uid")
     interface_case_desc = Column(String(255), comment="用例描述")
 
     project_id = Column(INTEGER, comment="所属项目")
@@ -151,7 +151,7 @@ class InterfaceTaskResult(BaseModel):
     task_id = Column(
         INTEGER, ForeignKey("interface_task.id", ondelete="CASCADE"), nullable=True
     )
-    task_uid = Column(String(10), nullable=False, comment="task索引")
+    task_uid = Column(String(50), nullable=False, comment="task索引")
     task_name = Column(String(20), nullable=True, comment="任务名称")
 
     run_day = Column(DATE, default=date.today(), comment="运行日期")
