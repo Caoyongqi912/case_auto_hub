@@ -222,7 +222,9 @@ class InterfaceRunner:
                 f"用例 {interface_case.case_title} 执行结束"
             )
             await self.starter.send(f"{'====' * 20}")
-            case_result.interfaceLog = "".join(self.starter.logs)
+            # 日志通过 finalize_case_result(logs=...) 写入 interface_log 列;
+            # 不要在这里给 case_result.interfaceLog (camelCase) 赋值 ——
+            # 那个名字不是列,只会在实例上挂一个不会被 flush 的野属性。
             await result_writer.finalize_case_result(
                 case_result=case_result,
                 logs="".join(self.starter.logs)
