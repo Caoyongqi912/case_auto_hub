@@ -29,6 +29,7 @@ from app.mapper.test_case.planModuleMapper import PlanModuleMapper
 from utils import log
 from utils.caseEnumResolver import find_group_path, resolve_plan_group_path, _split_group_path
 from app.mapper.test_case.testcaseMapper import _parse_steps
+from app.constant.caseStatus import BUILTIN_CASE_STATUS_LABEL_MAP, CASE_STATUS_KEY
 
 
 
@@ -926,14 +927,17 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         second_status: Optional[int],
     ) -> dict:
         """
-        实际执行 upsert + 状态同步 + dynamic 记录的核心方法
+        实际执行 upsert + 步骤→用例 状态聚合 + dynamic 记录的核心方法
 
         执行流程：
         1. 查询旧记录（用于变更对比和 dynamic 记录）
         2. 执行 MySQL INSERT ... ON DUPLICATE KEY UPDATE（upsert）
         3. 查询步骤所属用例ID
-        4. 收集状态变更，逐个同步到父级用例
-        5. 构建变更前后数据，记录操作动态
+        4. 步骤→用例 状态聚合 (新规): first/second_status 任一被显式更新时触发.
+           规则: 该 (plan_id, case_id) 下所有 step_result 全部 "pass" -> case "pass",
+           否则 case "fail". 仅当结果与现状不同才 UPDATE + 记 dynamic.
+        5. 构建变更前后数据, 记录步骤结果变更的 dynamic
+        6. 用例状态聚合若有变化, 单独再记一条 dynamic (与步骤结果分两条)
         """
         async with cls.transaction() as session:
             # 1. 查询旧数据（用于 dynamic 记录和变更对比）
@@ -978,10 +982,18 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 log.warning(f"步骤不存在: step_id={step_id}")
                 return {"test_case_id": None}
 
-            # 4. (新规) step 状态变更不再反向同步到 case 状态.
-            #    原 step→case 聚合逻辑已删除, 见 _sync_single_step_status 的删除说明.
-            #    case 状态由调用方在 update_case / 批量入口主动设置, 一旦设置
-            #    会通过 _sync_step_result_status 推到所有子步骤.
+            # 4. (新规) 步骤→用例 状态聚合.
+            #    规则: 该 (plan_id, case_id) 下所有 step_result 行的 status
+            #    全部 = "pass" -> case 对应 status = "pass"; 否则 = "fail".
+            #    仅当 first_status / second_status 任一被显式更新时触发, 因为
+            #    只改 actual_result / bug_url 不影响聚合结果.
+            case_status_changes: Optional[Dict[str, tuple]] = None
+            if first_status is not None or second_status is not None:
+                case_status_changes = await cls._aggregate_case_status_from_steps(
+                    session=session,
+                    plan_id=plan_id,
+                    case_id=test_case_id,
+                )
 
             # 5. 构建变更前后数据字典，记录操作动态
             old_data, new_data = cls._build_diff_data(
@@ -1000,6 +1012,18 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     test_case_id=test_case_id,
                     old_data=old_data,
                     new_data=new_data,
+                )
+
+            # 6. 步骤聚合导致用例状态变化时, 单独记一条 dynamic
+            #    用例的 first/second_status 变更属于"计划关联"维度, 跟步骤结果的
+            #    字段含义不同, 分两条记录, 用户看 dynamic 时不混淆.
+            if case_status_changes:
+                await cls._record_case_status_dynamic(
+                    session=session,
+                    user=user,
+                    plan_id=plan_id,
+                    test_case_id=test_case_id,
+                    changes=case_status_changes,
                 )
 
             return {"test_case_id": test_case_id}
@@ -1031,6 +1055,104 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         stmt = select(TestCaseStep.test_case_id).where(TestCaseStep.id == step_id)
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
+
+    @classmethod
+    async def _aggregate_case_status_from_steps(
+        cls,
+        session: AsyncSession,
+        plan_id: int,
+        case_id: int,
+    ) -> Optional[Dict[str, str]]:
+        """
+        聚合子步骤结果状态 -> 用例 first_status / second_status.
+
+        业务规则:
+          - 该 (plan_id, case_id) 下所有 step_result 行的 status 全部 = "pass"
+            -> 用例对应 status = "pass"
+          - 任意一行 != "pass" (含 NULL / fail / block / skip / ready 等)
+            -> 用例对应 status = "fail"
+          - 没有 step_result 行 (用例下没步骤或没结果) -> 不动 case 状态
+
+        触发时机: 子步骤 status 变更后立即调用, 同一事务内 UPDATE PlanCaseAssociation.
+        - 仅当聚合结果与 case 现状不同才写, 减少无谓 IO
+        - 与 case->step 单向同步 (update_case / _sync_step_result_status) 是独立方向,
+          互不依赖, 互不循环
+
+        :returns: 发生变化的字段 -> (旧值, 新值), 用于记 dynamic; 无变化返回 None
+        """
+        # 1) 拿该 case 下所有 step_result 行 (仅取 status 列, 走覆盖索引)
+        stmt = (
+            select(
+                TestCaseStepResult.first_status,
+                TestCaseStepResult.second_status,
+            )
+            .join(TestCaseStep, TestCaseStep.id == TestCaseStepResult.step_id)
+            .where(
+                TestCaseStep.test_case_id == case_id,
+                TestCaseStepResult.plan_id == plan_id,
+            )
+        )
+        rows = (await session.execute(stmt)).all()
+        if not rows:
+            # 无 step_result 时不动 case 状态, 避免误判
+            return None
+
+        # 2) 聚合: 只看"已设置"的 step, NULL / 空值视为"未测试", 不参与判定.
+        #    业务规则 (跟前端 aggregateStepStatuses 完全一致):
+        #      a) 没有任何已设置 step -> 保持原状 (return None), 用户没开始测就不动 case
+        #      b) 所有已设置 step = "pass" -> case "pass"
+        #      c) 任意已设置 step 是 "fail" / "block" / "skip" / "ready" 等非 pass -> case "fail"
+        #    旧版本: 把未设置 step 也算"非 pass", 用户改第一个 step 时 case 直接 fail,
+        #    体验差 (还没测完就让用例挂掉). 现版本对齐用户预期.
+        def _aggregate(rows, col) -> Optional[str]:
+            set_values = [getattr(r, col) for r in rows if getattr(r, col)]
+            if not set_values:
+                return None
+            return "pass" if all(v == "pass" for v in set_values) else "fail"
+
+        new_first = _aggregate(rows, "first_status")
+        new_second = _aggregate(rows, "second_status")
+        if new_first is None and new_second is None:
+            # 两轮都没有任何已设置 step, 不动 case
+            return None
+
+        # 3) 查 case 旧值, 仅当变化才 UPDATE
+        current_stmt = select(
+            PlanCaseAssociation.first_status,
+            PlanCaseAssociation.second_status,
+        ).where(
+            PlanCaseAssociation.plan_id == plan_id,
+            PlanCaseAssociation.case_id == case_id,
+        )
+        current = (await session.execute(current_stmt)).first()
+        if current is None:
+            # case 不在该 plan 下 (理论上 _do_update_case_step_result 不会走到这里)
+            return None
+
+        # 仅保留有变化的字段, 值为 (旧值, 新值) 供记 dynamic 用
+        changes: Dict[str, tuple] = {}
+        if current.first_status != new_first:
+            changes["first_status"] = (current.first_status, new_first)
+        if current.second_status != new_second:
+            changes["second_status"] = (current.second_status, new_second)
+        if not changes:
+            return None
+
+        # UPDATE 只写新值
+        new_values = {field: pair[1] for field, pair in changes.items()}
+        await session.execute(
+            update(PlanCaseAssociation)
+            .where(
+                PlanCaseAssociation.plan_id == plan_id,
+                PlanCaseAssociation.case_id == case_id,
+            )
+            .values(new_values)
+        )
+        log.info(
+            f"聚合步骤->用例状态: plan_id={plan_id}, case_id={case_id}, "
+            f"changes={ {f: pair[1] for f, pair in changes.items()} }"
+        )
+        return changes
 
     @staticmethod
     def _build_diff_data(
@@ -1096,6 +1218,43 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         )
         log.info(
             f"记录步骤结果动态成功: plan_id={plan_id}, case_id={test_case_id}, changes={list(new_data.keys())}"
+        )
+
+    @classmethod
+    async def _record_case_status_dynamic(
+        cls,
+        session: AsyncSession,
+        user: User,
+        plan_id: int,
+        test_case_id: int,
+        changes: Dict[str, tuple],
+    ) -> None:
+        """
+        记录步骤聚合导致的用例状态变更 dynamic.
+
+        与 _record_step_result_dynamic 的差异:
+        - 入参 changes 是 Dict[field, (old, new)], 直接复用
+          CaseDynamicRenderer.diff_plan_case_dict 走完整渲染, 描述格式统一
+        - 单独走一个方法而不是合并到 _record_step_result_dynamic,
+          是为了"步骤结果变更"和"用例状态聚合变更"在 dynamic 上分两条记录,
+          用户看动态时一眼能区分来源
+        """
+        plan_name = await cls._get_plan_name(session=session, plan_id=plan_id)
+        old_data = {field: pair[0] for field, pair in changes.items()}
+        new_data = {field: pair[1] for field, pair in changes.items()}
+
+        await CaseDynamicMapper.update_plan_case_dynamic(
+            cr=user,
+            plan_id=plan_id,
+            plan_name=plan_name,
+            case_id=test_case_id,
+            old_data=old_data,
+            new_data=new_data,
+            session=session,
+        )
+        log.info(
+            f"记录用例状态聚合动态: plan_id={plan_id}, case_id={test_case_id}, "
+            f"changes={list(new_data.keys())}"
         )
 
     # ------------------------------------------------------------------
@@ -2575,8 +2734,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         按用例等级和多轮测试状态两个维度进行分组统计。
         通过 JOIN TestCase 获取 case_level（PlanCaseAssociation 无此字段）。
 
-        状态文案从配置中心 (CaseConfig.config_key = 'CASE_STATUS') 动态加载,
-        与前端 useCaseEnumConfig('CASE_STATUS') 共用同一份数据源, 配置变更即生效.
+        状态文案从 hardcode 常量 (app/constant/caseStatus.py) 取, 不再读 case_config 表.
+        历史 DB 里残留的 CASE_STATUS 行会被无视, 业务上一致性由代码保证.
 
         Args:
             plan_id: 计划ID
@@ -2585,19 +2744,8 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             dict: 统计数据，包含 case_by_level、case_by_first_status、case_by_second_status、daily_trend
         """
         async with cls.transaction() as session:
-            # 从 CaseConfig 加载 CASE_STATUS 状态值 -> 标签 映射
-            # 失败时降级为 str(value) —— 与 CaseDynamicRenderer 的 fallback 策略一致
-            from app.mapper.test_case.caseConfigMapper import CaseConfigMapper
-            try:
-                cfg_rows = await CaseConfigMapper.query_by_key(
-                    config_key="CASE_STATUS",
-                    enabled_only=True,
-                    session=session,
-                )
-                status_label_map: Dict[str, str] = {row.value: row.label for row in cfg_rows}
-            except Exception as err:
-                log.warning(f"get_statistics 加载 CASE_STATUS 配置失败, 降级为原始值: {err}")
-                status_label_map = {}
+            # CASE_STATUS 已 hardcode (见 app/constant/caseStatus.py), 不再读 case_config 表
+            status_label_map: Dict[str, str] = dict(BUILTIN_CASE_STATUS_LABEL_MAP)
 
             stmt = (
                 select(
@@ -2627,7 +2775,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 # 按等级统计
                 case_by_level[row.case_level] = case_by_level.get(row.case_level, 0) + row.count
 
-                # 按一轮状态统计（文案走配置中心）
+                # 按一轮状态统计（文案走 hardcode 常量）
                 first_key = _label_of(row.first_status)
                 case_by_first_status[first_key] = case_by_first_status.get(first_key, 0) + row.count
 

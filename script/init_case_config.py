@@ -10,51 +10,9 @@ from utils import log
 # ========== 默认用例配置数据 ==========
 case_config_defaults = [
     # ---------- 用例状态 CASE_STATUS ----------
-    {
-        "config_key": "CASE_STATUS",
-        "label": "待测试",
-        "value": "0",
-        "color": "#918f8f",
-        "description": "待测试",
-        "sort": 0,
-        "enabled": True,
-    },
-    {
-        "config_key": "CASE_STATUS",
-        "label": "成功",
-        "value": "1",
-        "color": "#52c41a",
-        "description": "用例通过",
-        "sort": 1,
-        "enabled": True,
-    },
-    {
-        "config_key": "CASE_STATUS",
-        "label": "失败",
-        "value": "2",
-        "color": "#ff0000",
-        "description": "用例失败",
-        "sort": 2,
-        "enabled": True,
-    },
-    {
-        "config_key": "CASE_STATUS",
-        "label": "跳过",
-        "value": "3",
-        "color": "#faad14",
-        "description": "用例跳过",
-        "sort": 3,
-        "enabled": True,
-    },
-    {
-        "config_key": "CASE_STATUS",
-        "label": "阻塞",
-        "value": "4",
-        "color": "#722ed1",
-        "description": "用例阻塞",
-        "sort": 4,
-        "enabled": True,
-    },
+    # 已迁移到 hardcode, 见 app/constant/caseStatus.py
+    # query_case_config 接口对 CASE_STATUS 短路返回, 不再依赖 case_config 表.
+    # 历史 DB 中残留的 5 行 CASE_STATUS 数据可手动 DELETE WHERE config_key='CASE_STATUS'.
 
     # ---------- 评审状态 REVIEW_STATUS ----------
     {

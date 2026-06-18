@@ -9,6 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
+from app.constant.caseStatus import BUILTIN_CASE_STATUS, CASE_STATUS_KEY
 from app.controller import Authentication
 from app.mapper.test_case.caseConfigMapper import CaseConfigMapper
 from app.model.base import User
@@ -101,8 +102,29 @@ async def query_case_config(
     """
     根据 config_key 全量查询启用中的枚举配置（按 sort 升序）
 
+    CASE_STATUS 已 hardcode, 不走 case_config 表. 走 BUILTIN_CASE_STATUS
+    直接返回, 字段形态与 CaseConfig.to_dict() 对齐, 前端 useCaseEnumConfig
+    无感切换. 其余 config_key 仍然走 DB.
+
     :return: { code, data: [...] }
     """
+    if config_key == CASE_STATUS_KEY:
+        items = [
+            {
+                "config_key": CASE_STATUS_KEY,
+                "value": item.value,
+                "label": item.label,
+                "color": item.color,
+                "description": None,
+                "sort": item.sort,
+                "enabled": True,
+            }
+            for item in BUILTIN_CASE_STATUS
+        ]
+        if enabled_only:
+            items = [i for i in items if i["enabled"]]
+        return Response.success(items)
+
     rows = await CaseConfigMapper.query_by_key(
         config_key=config_key,
         enabled_only=enabled_only,

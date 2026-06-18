@@ -6,6 +6,7 @@
 # @Software: PyCharm
 # @Desc: 测试用例动态记录数据访问层
 from typing import Dict, Any, Optional
+from app.constant.caseStatus import BUILTIN_CASE_STATUS_LABEL_MAP, CASE_STATUS_KEY
 
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,6 +71,8 @@ class CaseDynamicRenderer:
     }
 
     # 字段名 → CaseConfig.config_key 的映射
+    # CASE_STATUS 已被 hardcode (见 BUILTIN_CASE_STATUS_LABEL_MAP), 不再从 case_config 加载.
+    # 这里保留字段映射, 让 _resolve_config_key 仍能识别 first/second/case_status 是枚举字段.
     FIELD_CONFIG_KEY_MAP: Dict[str, str] = {
         "case_type": "CASE_TYPE",
         "case_level": "CASE_LEVEL",
@@ -86,31 +89,46 @@ class CaseDynamicRenderer:
         """
         self._value_mappings = value_mappings or {}
 
+    # 不走 case_config 表的 config_key. 这些枚举 hardcode 在代码层.
+    # 见 app/constant/caseStatus.py.
+    _HARDCODED_CONFIG_KEYS = frozenset({CASE_STATUS_KEY})
+
     @classmethod
     async def from_db(cls, session: AsyncSession) -> "CaseDynamicRenderer":
         """
-        从 CaseConfig 表加载所有枚举配置，构建渲染器实例。
+        从 CaseConfig 表加载枚举配置, 构建渲染器实例.
 
-        :param session: 数据库会话；为 None 时创建临时会话
+        CASE_STATUS 走 hardcode 常量 (BUILTIN_CASE_STATUS_LABEL_MAP), 不查 DB.
+        其余 config_key 仍走 case_config 表, 允许 admin 改 label / color.
+
+        :param session: 数据库会话; 为 None 时创建临时会话
         :return: 持有最新配置的渲染器实例
         """
         from app.mapper.test_case.caseConfigMapper import CaseConfigMapper
 
         mappings: Dict[str, Dict[Any, str]] = {}
-        config_keys = list(cls.FIELD_CONFIG_KEY_MAP.values())
+        # CASE_STATUS 不走 DB, 提前注入 hardcode 映射
+        mappings[CASE_STATUS_KEY] = dict(BUILTIN_CASE_STATUS_LABEL_MAP)
 
-        try:
-            rows = []
-            for key in config_keys:
-                try:
-                    rows.extend(await CaseConfigMapper.query_by_key(key, session=session))
-                except Exception as err:
-                    log.warning("CaseDynamicRenderer 加载 config_key=%s 失败: %s", key, err)
-            for row in rows:
-                config_key = row.config_key
-                mappings.setdefault(config_key, {})[row.value] = row.label
-        except Exception as err:
-            log.error("CaseDynamicRenderer.from_db 加载失败，将使用空映射: %s", err)
+        # 过滤掉 hardcode 的 key, 只查 DB 里的
+        config_keys = [
+            k for k in cls.FIELD_CONFIG_KEY_MAP.values()
+            if k not in cls._HARDCODED_CONFIG_KEYS
+        ]
+
+        if config_keys:
+            try:
+                rows = []
+                for key in config_keys:
+                    try:
+                        rows.extend(await CaseConfigMapper.query_by_key(key, session=session))
+                    except Exception as err:
+                        log.warning("CaseDynamicRenderer 加载 config_key=%s 失败: %s", key, err)
+                for row in rows:
+                    config_key = row.config_key
+                    mappings.setdefault(config_key, {})[row.value] = row.label
+            except Exception as err:
+                log.error("CaseDynamicRenderer.from_db 加载失败, 将使用 hardcode + 空映射: %s", err)
 
         return cls(mappings)
 

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exception import CommonError, ParamsError
 from app.mapper import Mapper, set_updater
 from app.model.base import User
+from app.constant.caseStatus import CASE_STATUS_KEY
 from app.model.caseHub.case_config import CaseConfig
 from utils import log
 
@@ -138,6 +139,9 @@ class CaseConfigMapper(Mapper[CaseConfig]):
         value = kwargs.get("value")
         if not config_key or not value:
             raise ParamsError("config_key 和 value 不能为空")
+        # CASE_STATUS 已 hardcode, 不允许通过配置中心新增/修改/删除
+        if config_key == CASE_STATUS_KEY:
+            raise ParamsError("CASE_STATUS 已 hardcode, 不支持新增; 如需调整请修改 app/constant/caseStatus.py")
 
         try:
             async with cls.transaction() as session:
@@ -189,6 +193,14 @@ class CaseConfigMapper(Mapper[CaseConfig]):
                     uid=uid, session=session, raise_error=True,
                 )
 
+                # CASE_STATUS 已 hardcode, 不允许通过配置中心修改
+                if target.config_key == CASE_STATUS_KEY:
+                    raise ParamsError("CASE_STATUS 已 hardcode, 不支持修改; 如需调整请修改 app/constant/caseStatus.py")
+                # 防御: 阻止把其他 config_key 改成 CASE_STATUS
+                new_key = kwargs.get("config_key", target.config_key)
+                if new_key == CASE_STATUS_KEY:
+                    raise ParamsError("CASE_STATUS 已 hardcode, 不支持通过 update 切到该 key")
+
                 # 合并新旧值：未传入则沿用旧值
                 new_key = kwargs.get("config_key", target.config_key)
                 new_value = kwargs.get("value", target.value)
@@ -218,7 +230,18 @@ class CaseConfigMapper(Mapper[CaseConfig]):
         通过 uid 删除枚举配置
 
         :param uid: 配置项唯一标识
+        :raises ParamsError: 当 uid 对应记录的 config_key 为 CASE_STATUS (已 hardcode)
         """
+        # CASE_STATUS 已 hardcode, 删除前先查 target. config_key 命中则拒绝.
+        try:
+            target = await cls.get_by_uid(uid=uid, raise_error=True)
+        except (CommonError, ParamsError):
+            raise
+        except Exception as err:
+            log.error("remove_config 预查失败: uid=%s, error=%s", uid, err)
+            raise
+        if target.config_key == CASE_STATUS_KEY:
+            raise ParamsError("CASE_STATUS 已 hardcode, 不支持删除; 如需调整请修改 app/constant/caseStatus.py")
         try:
             await cls.delete_by_uid(uid=uid)
         except Exception as err:
