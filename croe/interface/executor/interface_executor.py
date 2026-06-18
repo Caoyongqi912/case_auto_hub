@@ -498,3 +498,12 @@ class InterfaceExecutor:
         if isinstance(temp_var, list):
             return temp_var
         return [temp_var]
+
+    async def aclose(self) -> None:
+        """
+        释放底层 httpx 客户端连接 (BUG-E1 修复)。
+        应在每个 InterfaceRunner run_interface_case 的 finally 中调用,
+        否则多次执行 / 并发会泄漏 httpx 连接。
+        """
+        if getattr(self, "http", None) is not None:
+            await self.http.close()

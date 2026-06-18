@@ -249,6 +249,11 @@ class InterfaceRunner:
             await self.variable_manager.clear()
             # BUG-D1 修复:清空本 runner 的缓存,避免后续 runner 误用
             self.result_writer.clear_cache()
+            # BUG-E1 修复:释放 httpx 连接,避免长跑 / 多次执行时连接泄漏
+            try:
+                await self.interface_executor.aclose()
+            except Exception:
+                pass
             if case_result is not None:
                 await self.starter.over(case_result.id)
             else:
