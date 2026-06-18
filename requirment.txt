@@ -85,6 +85,7 @@ pyOpenSSL==25.3.0
 pyparsing==3.2.5
 pyperclip==1.11.0
 pytest==9.0.1
+pytest-asyncio==1.4.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
 python-engineio==4.12.3
