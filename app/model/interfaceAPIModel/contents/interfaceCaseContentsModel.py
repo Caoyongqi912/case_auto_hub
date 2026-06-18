@@ -7,7 +7,7 @@
 # @Desc: 用例步骤内容基类
 
 from datetime import datetime
-from typing import ClassVar, Optional, Set
+from typing import Optional, Set
 
 from sqlalchemy import Column, INTEGER, String
 
@@ -40,7 +40,6 @@ class InterfaceCaseContents(BaseModel):
     enable = Column(INTEGER, default=1, nullable=False, comment="是否启用")
     content_name = Column(String(100), nullable=True, comment="自定义名称")
 
-    target_id: ClassVar[int | None] = None
 
     __mapper_args__ = {
         'polymorphic_on': content_type,
@@ -76,7 +75,6 @@ class InterfaceCaseContents(BaseModel):
         """
         result = {
             'content_type': self.content_type,
-            'target_id': self.target_id,
             'content_name': self.resolved_content_name,
             'content_desc': self.content_desc,
             "enable": self.enable,
@@ -89,14 +87,15 @@ class InterfaceCaseContents(BaseModel):
         }
 
         for mapper in self.__class__.__mapper__.self_and_descendants:
-            if mapper.local_table.name != self.__tablename__:
-                for col in mapper.local_table.columns:
-                    if hasattr(self, col.name):
-                        value = getattr(self, col.name)
-                        if isinstance(value, datetime):
-                            result[col.name] = value.strftime("%Y-%m-%d %H:%M:%S")
-                        else:
-                            result[col.name] = value
+            if mapper is self.__class__.__mapper__.base_mapper:
+                continue
+            for col in mapper.local_table.columns:
+                if hasattr(self, col.name):
+                    value = getattr(self, col.name)
+                    if isinstance(value, datetime):
+                        result[col.name] = value.strftime("%Y-%m-%d %H:%M:%S")
+                    else:
+                        result[col.name] = value
 
         if exclude:
             for key in exclude:
