@@ -240,14 +240,15 @@ class InterfaceCaseContentResult(BaseModel):
         }
 
         for mapper in self.__class__.__mapper__.self_and_descendants:
-            if mapper.local_table.name != self.__tablename__:
-                for col in mapper.local_table.columns:
-                    if hasattr(self, col.name):
-                        value = getattr(self, col.name)
-                        if isinstance(value, datetime):
-                            result[col.name] = value.strftime("%Y-%m-%d %H:%M:%S")
-                        else:
-                            result[col.name] = value
+            if mapper is self.__class__.__mapper__.base_mapper:
+                continue
+            for col in mapper.local_table.columns:
+                if hasattr(self, col.name):
+                    value = getattr(self, col.name)
+                    if isinstance(value, datetime):
+                        result[col.name] = value.strftime("%Y-%m-%d %H:%M:%S")
+                    else:
+                        result[col.name] = value
 
         if exclude:
             for key in exclude:
