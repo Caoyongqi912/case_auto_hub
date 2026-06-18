@@ -7,6 +7,8 @@
 # @Desc:
 import ast
 import hashlib
+import multiprocessing
+import pickle
 import random
 import time
 from datetime import datetime, timedelta
@@ -23,7 +25,7 @@ from utils import log, GenerateTools
 
 # ==================== 安全配置 ====================
 MAX_SCRIPT_LENGTH = 10000  # 最大脚本长度
-SCRIPT_TIMEOUT = 5  # 脚本执行超时时间（秒）
+SCRIPT_TIMEOUT = 5  # 脚本执行超时时间（秒）— 必须有真超时机制,否则死循环会阻塞 worker (BUG-S3)
 
 # 允许的 AST 节点类型
 ALLOWED_NODE_TYPES = {
@@ -83,6 +85,23 @@ class ScriptSecurityError(Exception):
     pass
 
 
+def _exec_in_subprocess(script_content: str, exec_globals: Dict[str, Any], q) -> None:
+    """
+    子进程入口:解析并执行脚本,把结果放进队列。
+    必须放在模块顶层(可 pickle),不能用 lambda / 闭包。
+    """
+    try:
+        tree = ast.parse(script_content)
+        local_vars: Dict[str, Any] = {}
+        exec(compile(tree, "<string>", "exec"), exec_globals, local_vars)
+        q.put(("ok", local_vars))
+    except BaseException as e:  # noqa: BLE001  - 任何异常都序列化带回去
+        try:
+            q.put(("err", e))
+        except Exception:
+            pass
+
+
 def _validate_ast(node: ast.AST) -> None:
     """
     验证 AST 安全性
@@ -126,6 +145,8 @@ class ScriptManager:
     """
     脚本管理器
     """
+
+    SCRIPT_TIMEOUT: int = SCRIPT_TIMEOUT  # 暴露给测试,便于断言
 
     def __init__(self):
         self._variables: Dict[str, Any] = {}
@@ -174,15 +195,45 @@ class ScriptManager:
         # 3. 安全验证 AST
         _validate_ast(tree)
 
-        # 4. 执行脚本
+        # 4. 在子进程跑脚本,真超时 (BUG-S3)
+        # 用 multiprocessing.Process 隔离:
+        # - 即使脚本里写死循环 / 阻塞 syscall,主进程能在 SCRIPT_TIMEOUT
+        #   秒后用 proc.terminate()/kill() 强杀
+        # - 比 signal.alarm 更稳,signal 在某些环境(子线程/Windows)不可靠
         exec_globals = {**SAFE_BUILTINS, **self._allowed_functions}
-        local_vars: Dict[str, Any] = {}
-        
-        try:
-            exec(compile(tree, '<string>', 'exec'), exec_globals, local_vars)
-        except Exception as e:
-            log.exception(f"执行脚本失败: {e}")
-            raise
+        ctx = multiprocessing.get_context("spawn")  # macOS/Linux/Windows 行为一致
+        q = ctx.Queue()
+        proc = ctx.Process(
+            target=_exec_in_subprocess,
+            args=(script_content, exec_globals, q),
+        )
+        proc.start()
+        proc.join(timeout=self.SCRIPT_TIMEOUT)
+
+        if proc.is_alive():
+            log.warning(f"脚本执行超时 ({self.SCRIPT_TIMEOUT}s),强杀子进程")
+            proc.terminate()
+            proc.join(timeout=2)
+            if proc.is_alive():
+                proc.kill()
+                proc.join(timeout=1)
+            raise ScriptSecurityError(
+                f"脚本执行超时 ({self.SCRIPT_TIMEOUT}s),已强制终止"
+            )
+
+        if proc.exitcode != 0:
+            # 子进程非 0 退出往往是 unhandled exception
+            raise ScriptSecurityError(
+                f"脚本执行异常,exitcode={proc.exitcode}"
+            )
+
+        if q.empty():
+            raise ScriptSecurityError("脚本未产生结果")
+
+        status, payload = q.get_nowait()
+        if status == "err":
+            raise payload
+        local_vars = payload
 
         # 5. 收集结果
         return self._collect_results(local_vars)
