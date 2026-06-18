@@ -44,11 +44,13 @@ ALLOWED_NODE_TYPES = {
     ast.Starred, ast.ListComp, ast.DictComp, ast.SetComp, ast.GeneratorExp,
 }
 
-# 不允许的属性访问
+# 不允许的属性访问 / 函数调用名
+# getattr/setattr 单看像无害内置,但配合 "__class__" 等字符串就成沙箱逃逸 (BUG-S1)
 DISALLOWED_ATTRS = {
     '__import__', '__globals__', '__locals__', '__builtins__',
     '__class__', '__bases__', '__subclasses__', '__mro__',
     'eval', 'exec', 'compile', '__loader__', '__spec__',
+    'getattr', 'setattr', 'delattr', 'vars', 'dir',
 }
 
 # 安全的内置函数
@@ -105,7 +107,8 @@ def _validate_ast(node: ast.AST) -> None:
 
         # 检查属性访问
         if isinstance(child, ast.Attribute):
-            if child.attr in DISALLOWED_ATTRS:
+            # 任意双下划线属性都拒绝,防 dunder 链逃逸 (BUG-S1)
+            if child.attr in DISALLOWED_ATTRS or child.attr.startswith("__"):
                 raise ScriptSecurityError(f"不允许的属性访问: {child.attr}")
 
         # 检查函数调用
@@ -113,6 +116,10 @@ def _validate_ast(node: ast.AST) -> None:
             if isinstance(child.func, ast.Name):
                 if child.func.id in DISALLOWED_ATTRS:
                     raise ScriptSecurityError(f"不允许的函数调用: {child.func.id}")
+            elif isinstance(child.func, ast.Attribute):
+                # 链式调用,如 os.system 或 getattr(obj, ...).__bases__
+                if child.func.attr in DISALLOWED_ATTRS:
+                    raise ScriptSecurityError(f"不允许的链式调用: {child.func.attr}")
 
 
 class ScriptManager:
