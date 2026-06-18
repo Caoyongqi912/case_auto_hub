@@ -92,9 +92,9 @@ class InterfaceCaseResult(BaseModel):
     interface_case_id = Column(
         INTEGER, ForeignKey("interface_case.id", ondelete="CASCADE"), comment="所属用例"
     )
-    interface_case_name = Column(String(20), comment="用例名称")
+    interface_case_name = Column(String(64), comment="用例名称")
     interface_case_uid = Column(String(20), comment="用例Uid")
-    interface_case_desc = Column(String(50), comment="用例描述")
+    interface_case_desc = Column(String(255), comment="用例描述")
 
     project_id = Column(INTEGER, comment="所属项目")
     module_id = Column(INTEGER, comment="所属模块")
