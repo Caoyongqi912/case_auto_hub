@@ -40,7 +40,7 @@ ALLOWED_NODE_TYPES = {
     ast.Return, ast.Assign, ast.AugAssign,
     ast.AnnAssign, ast.Subscript, ast.Attribute,
     ast.Call, ast.keyword,
-    ast.Import, ast.ImportFrom, ast.alias,
+    # BUG-S2: 禁止 import 节点,杜绝通过 __import__('os') / from os import system 逃逸
     ast.Starred, ast.ListComp, ast.DictComp, ast.SetComp, ast.GeneratorExp,
 }
 
