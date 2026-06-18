@@ -323,20 +323,25 @@ class InterfaceRunner:
         except Exception as e:
             log.error(f"初始化业务流用例变量失败: {e}")
 
-    async def init_global_headers(self) -> Optional[List[InterfaceGlobalHeader]]:
+    async def init_global_headers(self) -> List[InterfaceGlobalHeader]:
         """
-        初始化g headers
+        加载全局请求头并应用到 executor。
+
+        Returns:
+            加载到的全局 header 列表(可能为空)
         """
-        # 添加全局请求头
         global_headers = await InterfaceGlobalHeaderMapper.query_all()
         if not global_headers:
-            log.info(f"use global_headers {global_headers}")
-            return None
-        if global_headers:
-            await self.starter.send(
-                f"🫳🫳 全局Headers已加载: {len(self.global_headers)} 条"
-            )
-            self.interface_executor.g_headers = global_headers or []
+            log.info("未配置全局 header")
+            return []
+
+        await self.starter.send(
+            f"🫳🫳 全局Headers已加载: {len(global_headers)} 条"
+        )
+        # 真正生效:注入到 executor.g_headers
+        # (旧版读 self.global_headers 实例字段做日志,恒为 0,造成显示与实际不一致)
+        self.interface_executor.g_headers = list(global_headers)
+        return global_headers
 
     async def _get_running_env(self, env: Union[int, EnvModel]) -> Optional[EnvModel]:
         """
