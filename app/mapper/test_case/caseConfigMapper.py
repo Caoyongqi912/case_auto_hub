@@ -172,6 +172,17 @@ class CaseConfigMapper(Mapper[CaseConfig]):
         if not uid:
             raise ParamsError("uid 不能为空")
 
+        # 防御层：value 字段在业务上一旦创建不可修改
+        # - UpdateCaseConfigSchema 不会再带出 value
+        # - 即便调用方手动塞入（直接调用 mapper / 旧调用方未升级），
+        #   此处也忽略并记录告警，避免 value 被静默修改
+        if "value" in kwargs:
+            log.warning(
+                "CaseConfig value 字段在更新时被忽略: uid=%s, value=%s",
+                uid, kwargs["value"],
+            )
+            kwargs.pop("value", None)
+
         try:
             async with cls.transaction() as session:
                 target = await cls.get_by_uid(

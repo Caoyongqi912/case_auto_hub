@@ -263,9 +263,6 @@ class UpdateCaseToCasePlan(BaseModel):
     - 状态字段使用 ``Literal`` 限定可选值，避免错别字静默写入
     """
 
-    # 状态枚举（与 CaseConfig 表 CASE_STATUS / IS_REVIEW 保持一致）
-    _REVIEW_VALUES = ("0", "1")
-    _STATUS_VALUES = ("0", "1", "2", "3", "4")
 
     case_id_list: List[int] = Field(
         ...,
@@ -273,16 +270,16 @@ class UpdateCaseToCasePlan(BaseModel):
         description="用例ID列表（去重后单批最多 2000 条；超出请分批调用）",
     )
     plan_id: int = Field(..., description="计划ID")
-    is_review: Optional[Literal["0", "1"]] = Field(
-        None, description="审核状态 0:未审核 1:已审核"
+    is_review: Optional[str] = Field(
+        None, description="审核状态"
     )
-    first_status: Optional[Literal["0", "1", "2", "3", "4"]] = Field(
+    first_status: Optional[str] = Field(
         None,
-        description="一轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过",
+        description="一轮测试状态 ",
     )
-    second_status: Optional[Literal["0", "1", "2", "3", "4"]] = Field(
+    second_status: Optional[str] = Field(
         None,
-        description="二轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过",
+        description="二轮测试状态 ",
     )
 
 class UploadCommitSchema(BaseModel):
@@ -291,13 +288,13 @@ class UploadCommitSchema(BaseModel):
     plan_id: int = Field(..., description="计划ID")
     plan_module_id: Optional[int] = Field(None, description="计划分组ID")
     is_review: Optional[str] = Field(None, description="审核状态")
-    first_status: Optional[Literal["0", "1", "2", "3", "4"]] = Field(
+    first_status: Optional[str] = Field(
         None,
-        description="一轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过",
+        description="一轮测试状态 ",
     )
-    second_status: Optional[Literal["0", "1", "2", "3", "4"]] = Field(
+    second_status: Optional[str] = Field(   
         None,
-        description="二轮测试状态 0:未开始 1:通过 2:失败 3:阻塞 4:跳过",
+        description="二轮测试状态 ",
     )
     skip_duplicate: bool = Field(
         False,

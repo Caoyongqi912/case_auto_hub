@@ -27,7 +27,13 @@ class TestCaseStep(BaseModel):
 
 
 class TestCaseStepResult(BaseModel):
-    """用例步骤结果模型"""
+    """ 
+    用例步骤结果模型
+    记录每个计划每个步骤的测试结果.
+    
+    case 可能被多个计划引用, 每个计划都有一个步骤结果.
+    所以每个步骤结果都有一个 plan_id, 一个 step_id.  即每个步骤结果都有一个唯一的组合键.
+    """
     __tablename__ = "case_sub_step_result"
     plan_id = Column(Integer, ForeignKey("case_plan.id", ondelete="cascade"), nullable=False,
                           comment="计划ID")

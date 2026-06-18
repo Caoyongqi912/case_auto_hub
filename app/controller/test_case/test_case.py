@@ -11,7 +11,7 @@ from urllib.parse import quote
 from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Body, Depends, Query, UploadFile, Form, File
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import  StreamingResponse
 
 from app.exception import CommonError
 from app.mapper.test_case import TestCaseMapper, TestCaseStepMapper, CaseDynamicMapper, PlanCaseMapper
@@ -76,6 +76,12 @@ async def page_cases(data: PageTestCaseSchema, _: User = Depends(Authentication(
     :return: 用例分页数据
     """
     payload = data.model_dump(exclude_none=True, exclude_unset=True)
+    # 兜底: current / module_type 是 Mapper.page_by_module 的必填位置参数,
+    # 但 schema 给的是 Optional 默认值, exclude_unset 会把客户端没传的默认值剥掉,
+    # 直接 **payload 进去会报 TypeError. 这里显式回填, 让漏传也能跑.
+    payload.setdefault("current", data.current)
+    payload.setdefault("pageSize", data.pageSize)
+    payload.setdefault("module_type", data.module_type)
     # module_id 为空 / 不传 -> 代表查询未分类用例(module_id IS NULL)
     if data.module_id is None and data.module_ids is None:
         payload.pop("module_id", None)
@@ -280,28 +286,25 @@ async def query_case_dynamic(caseId: int, plan_id: Optional[int] = None, _: User
 
 
 
-@router.get("/downloadCaseDemo", description="下载用例导入模板 (含 B/F/G/H 列下拉)")
+@router.get("/downloadCaseDemo", description="下载用例导入模板 (F/G/H 列下拉; 传 project_id 时 B 列额外带下拉)")
 async def download_case_template(
     _: User = Depends(Authentication()),
-    project_id: Optional[int] = Query(None, description="项目 ID (library 模板): 传了则 B 列下拉带该项目全量目录路径"),
-    plan_id: Optional[int] = Query(None, description="计划 ID (plan 模板): 传了则 B 列下拉带该计划全量目录路径"),
+    project_id: Optional[int] = Query(None, description="项目 ID: 传了则 B 列下拉带该项目全量目录路径; 不传则 B 列无下拉"),
 ):
     """
-    下载用例导入的 Excel 模板文件. 三种模式:
-    - 不传参: 通用模板, 只 F/G/H 列有下拉 (用例等级/类型/适用端)
-    - ?project_id=N: 用例库模板, B 列额外带项目 N 的全量目录路径下拉
-    - ?plan_id=N: 测试计划模板, B 列额外带计划 N 的全量目录路径下拉 (不含虚拟根)
+    下载用例导入的 Excel 模板文件. 两种模式:
+    - 不传参: 通用模板, 只 F/G/H 列有下拉 (适用端/用例等级/用例类型, 走 case_enum_config)
+    - ?project_id=N: 用例库模板, B 列额外带项目 N 的全量目录路径下拉 (纯层级)
+
+    失败 / 空场景 (不阻塞下载, 对应列不挂下拉, 用户手填):
+    - 枚举配置拉取失败 -> F/G/H 列不挂下拉
+    - 库里没有任何 case module -> B 列不挂下拉
     """
-    from io import BytesIO
     from file import TestCaseDemoFile
     from app.service.exportCaseService import add_dropdowns_to_workbook
-    from app.model.base.module import Module as _Module  # noqa: F401
-    from app.model.caseHub.plan_module import PlanModule as _PlanModule  # noqa: F401
-    from sqlalchemy import select as _select  # noqa: F401
 
-    # 模板里 G/H/I 列的下拉 (用例等级/类型/适用端) 走 case_enum_config 配置,
-    # admin 在配置中心增删枚举后, 下载的模板自动同步. 拉取失败时回退到空列表
-    # (对应列不挂下拉, 用户继续手填, 不阻塞下载).
+    # F (适用端) / G (用例等级) / H (用例类型) 的下拉走 case_enum_config 配置,
+    # admin 在配置中心增删枚举后, 下载的模板自动同步. 拉取失败时回退到空列表.
     try:
         from utils.caseEnumResolver import load_case_enum_label_lists
         label_lists = await load_case_enum_label_lists()
@@ -312,14 +315,15 @@ async def download_case_template(
         log.exception(f"downloadCaseDemo 拉枚举 label 失败: error={e}")
         level_labels, type_labels, platform_labels = [], [], []
 
+    # B (所属分组) 的下拉: 只有传 project_id 时才挂. 不传时 B 列无下拉, 用户手填.
     all_group_paths: Optional[List[str]] = None
-    try:
-        if project_id is not None:
+    if project_id is not None:
+        try:
             async with TestCaseMapper.session_scope() as session:
                 all_module_ids = (await session.execute(
-                    _select(_Module.id).where(
-                        _Module.project_id == project_id,
-                        _Module.module_type == ModuleEnum.CASE,
+                    select(Module.id).where(
+                        Module.project_id == project_id,
+                        Module.module_type == ModuleEnum.CASE,
                     )
                 )).scalars().all()
                 all_path_map = await TestCaseMapper.build_module_path_map(
@@ -328,25 +332,11 @@ async def download_case_template(
                     project_id=project_id,
                     module_type=ModuleEnum.CASE,
                 )
-                all_group_paths = list(all_path_map.values())
-        elif plan_id is not None:
-            async with PlanCaseMapper.session_scope() as session:
-                all_plan_module_ids = (await session.execute(
-                    _select(_PlanModule.id).where(
-                        _PlanModule.plan_id == plan_id,
-                        _PlanModule.parent_id.is_not(None),
-                    )
-                )).scalars().all()
-                all_path_map = await PlanCaseMapper.build_plan_module_path_map(
-                    session=session,
-                    plan_id=plan_id,
-                    plan_module_ids=list(all_plan_module_ids),
-                )
-                all_group_paths = list(all_path_map.values())
-    except Exception as e:
-        log.exception(f"downloadCaseDemo 拉全量目录路径失败: project_id={project_id}, plan_id={plan_id}, error={e}")
-        # 拉路径失败不阻断下载, 退回通用模板 (B 列没下拉)
-        all_group_paths = None
+                all_group_paths = list(all_path_map.values()) or None
+        except Exception as e:
+            log.exception(f"downloadCaseDemo 拉目录路径失败: project_id={project_id}, error={e}")
+            # 拉路径失败不阻断下载, B 列不挂下拉, 用户继续手填
+            all_group_paths = None
 
     import openpyxl
     wb = openpyxl.load_workbook(TestCaseDemoFile)
@@ -360,20 +350,24 @@ async def download_case_template(
         platform_labels=platform_labels,
         max_row=10000,
     )
+    # 新规: 用例等级* 是必填列, 模板里 example 行 (row 3, G 列) 不能留空.
+    # 用配置里第一个 level label 预填, 让示例行展示"完整的有效行"长什么样;
+    # 行 4+ 仍留空, 强制用户主动选, 走 import 必填校验. enum 未配置时不动, 行为不变.
+    if level_labels:
+        template_ws = wb["template"]
+        template_ws.cell(row=3, column=7, value=level_labels[0])
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
 
-    suffix = ""
-    if project_id is not None:
-        suffix = f"-library{project_id}"
-    elif plan_id is not None:
-        suffix = f"-plan{plan_id}"
+    suffix = f"-library{project_id}" if project_id is not None else ""
     filename = f"用例模版{suffix}.xlsx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+        # filename 含中文 (用例模版), Starlette 会强制 latin-1 编码挂掉 (UnicodeEncodeError).
+        # 走 RFC 6266/5987 的 filename*=UTF-8'' 形式 URL-encode 整个文件名, 现代浏览器都吃这个.
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}"},
     )
 
 

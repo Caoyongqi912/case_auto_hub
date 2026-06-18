@@ -43,24 +43,20 @@ class AddCaseConfigSchema(ICaseEnumConfig):
 
 
 class UpdateCaseConfigSchema(BaseModel):
-    """更新用例枚举配置模型（必传 uid + 任意可修改字段）"""
+    """更新用例枚举配置模型（必传 uid + 任意可修改字段）
+
+    业务约束：``value`` 字段一旦创建不可修改。
+    - 字段在 schema 中直接不定义，model_dump 不会再带出 value
+    - 即便调用方手动塞入 value，mapper 层会做防御性剔除并记录日志
+    - 这样既保证业务上 value 不可变，又避免对前端做破坏性改动
+    """
     uid: str = Field(..., description="唯一标识")
     config_key: Optional[str] = Field(None, min_length=1, max_length=255, description="配置键")
     label: Optional[str] = Field(None, min_length=1, max_length=255, description="配置标签")
-    value: Optional[str] = Field(None, min_length=1, max_length=255, description="配置值")
     color: Optional[str] = Field(None, max_length=50, description="配置颜色")
     description: Optional[str] = Field(None, max_length=500, description="配置描述")
     sort: Optional[int] = Field(None, ge=0, description="排序")
     enabled: Optional[bool] = Field(None, description="是否启用")
-
-    @field_validator("value", mode="before")
-    @classmethod
-    def _coerce_value_to_str(cls, v) -> Optional[str]:
-        if v is None:
-            return None
-        if isinstance(v, bool):
-            return "true" if v else "false"
-        return str(v)
 
 
 class RemoveCaseConfigSchema(BaseModel):

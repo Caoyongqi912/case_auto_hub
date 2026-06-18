@@ -879,9 +879,12 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         新增或更新计划用例步骤执行结果（upsert）
 
         基于 (plan_id, step_id) 唯一约束，若记录已存在则更新，否则插入新记录。
-        任意字段变更都会触发：
-        1. 状态字段变更 → 自动同步父级用例的对应状态
-        2. 任意字段变更 → 记录操作动态
+
+        新规 (单向同步):
+        - step 状态变更 → **不再**反向同步到 case 状态
+        - case 状态由 update_case / 批量入口主动设置, 设置后由 _sync_step_result_status
+          单向推到该 case 下所有 step_result
+        - 任意字段变更 → 记录操作动态 (CaseStepDynamic)
 
         Args:
             plan_id: 计划ID
@@ -889,7 +892,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             user: 操作用户
             actual_result: 实际结果
             bug_url: 缺陷链接
-            first_status: 一轮测试状态 
+            first_status: 一轮测试状态
             second_status: 二轮测试状态
 
         Returns:
@@ -975,22 +978,10 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 log.warning(f"步骤不存在: step_id={step_id}")
                 return {"test_case_id": None}
 
-            # 4. 收集状态变更并同步到父级用例
-            #    仅当状态字段被显式传入（非 None）时才触发同步
-            status_changes: Dict[str, str] = {}
-            if first_status is not None:
-                status_changes["first_status"] = first_status
-            if second_status is not None:
-                status_changes["second_status"] = second_status
-
-            for status_field in status_changes.keys():
-                await cls._sync_single_step_status(
-                    session=session,
-                    user=user,
-                    plan_id=plan_id,
-                    case_id=test_case_id,
-                    status_field=status_field,
-                )
+            # 4. (新规) step 状态变更不再反向同步到 case 状态.
+            #    原 step→case 聚合逻辑已删除, 见 _sync_single_step_status 的删除说明.
+            #    case 状态由调用方在 update_case / 批量入口主动设置, 一旦设置
+            #    会通过 _sync_step_result_status 推到所有子步骤.
 
             # 5. 构建变更前后数据字典，记录操作动态
             old_data, new_data = cls._build_diff_data(
@@ -1107,67 +1098,6 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             f"记录步骤结果动态成功: plan_id={plan_id}, case_id={test_case_id}, changes={list(new_data.keys())}"
         )
 
-    @classmethod
-    async def _sync_single_step_status(
-        cls,
-        session: AsyncSession,
-        user: User,
-        plan_id: int,
-        case_id: int,
-        status_field: str
-    ) -> None:
-        """
-        同步步骤状态到父级用例
-
-        逻辑：case 下所有 steps 的对应 status 全部相同时，
-        把这个值同步到 PlanCaseAssociation；否则不修改。
-
-        不硬编码任何 status value，所有值通过 caseConfig 控制。
-
-        Args:
-            session: 数据库会话
-            user: 触发该同步的操作人, 写入 TestCaseStepResult.updater 留痕
-            plan_id: 计划ID
-            case_id: 用例ID
-            status_field: 要同步的状态字段名 ('first_status', 'second_status')
-        """
-        target_column = cls._resolve_status_column(status_field)
-        if target_column is None:
-            return
-
-        # 单条 SQL 查：总 step 数 / 有结果数 / status 最小值 / 最大值
-        # 全部有结果 + 全部相同(非NULL) 才同步
-        check_stmt = (
-            select(
-                func.count(TestCaseStep.id).label("total"),
-                func.count(TestCaseStepResult.id).label("has_result"),
-                func.min(target_column).label("min_status"),
-                func.max(target_column).label("max_status"),
-            )
-            .select_from(TestCaseStep)
-            .outerjoin(
-                TestCaseStepResult,
-                and_(
-                    TestCaseStepResult.step_id == TestCaseStep.id,
-                    TestCaseStepResult.plan_id == plan_id,
-                ),
-            )
-            .where(TestCaseStep.test_case_id == case_id)
-        )
-
-        result = await session.execute(check_stmt)
-        row = result.one()
-        total, has_result, min_status, max_status = row
-
-        if total > 0 and has_result == total and min_status is not None and min_status == max_status:
-            update_assoc_stmt = update(PlanCaseAssociation).where(
-                and_(
-                    PlanCaseAssociation.plan_id == plan_id,
-                    PlanCaseAssociation.case_id == case_id,
-                )
-            ).values(**{status_field: min_status})
-            await session.execute(update_assoc_stmt)
-
     # ------------------------------------------------------------------
     #  用例批量更新
     # ------------------------------------------------------------------
@@ -1188,7 +1118,9 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         1. 入参去重 + 校验 case_id_list 全部属于 plan_id（防越权 + 防脏数据）
         2. 一次性查询旧记录（仅 SELECT 一次）
         3. 单次 UPDATE 批量回写
-        4. 同步子步骤结果状态
+        4. first_status / second_status 任意一个被显式更新 → 单向同步到
+           该 case 下所有 (plan_id, step_id) 行 (走 _sync_step_result_status,
+           已有 step_result 更新, 缺失的新建). 不会反向触发 step→case 同步.
         5. 收集 dynamic 记录，循环结束后统一 flush 一次
            （避免每条 dynamic 触发 flush+refresh=2 次 IO）
 
@@ -1258,12 +1190,16 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             )
             update_result = await session.execute(update_stmt)
 
-            # ---- 5. 同步子步骤结果状态 ----
-            # first_status 将不处理子步骤状态 。
-            # if first_status is not None:
-            #     await cls._sync_step_result_status(
-            #         session, plan_id, case_id_list, first_status, "first_status"
-            #     )
+            # ---- 5. 同步子步骤结果状态 (新规: case 状态变更单向推到所有 step) ----
+            # 之前 first_status 同步被注释掉, 当时只让 second_status 推 step.
+            # 新规: first_status / second_status 任意一个被显式更新, 都把新值
+            # 同步到该 case 下所有 (plan_id, step_id) 行, 已有 step_result 更新,
+            # 缺失的 step_result 走 _sync_step_result_status 的 INSERT...ON DUPLICATE
+            # 新建一行, 保持 schema 完整性.
+            if first_status is not None:
+                await cls._sync_step_result_status(
+                    session, plan_id, case_id_list, first_status, "first_status", user
+                )
             if second_status is not None:
                 await cls._sync_step_result_status(
                     session, plan_id, case_id_list, second_status, "second_status", user

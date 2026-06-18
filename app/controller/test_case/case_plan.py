@@ -22,7 +22,7 @@ from app.schema.hub.planSchema import (
     RemovePlanModuleSchema, MovePlanModuleSchema,
     UpdatePlanCaseStepResultSchema,AssociatePlanCaseSchema,
     RemovePlanCaseSchema, CopyCaseToCasePlan,
-    UpdatePlanPhaseSchema,UpdateCaseToCasePlan,UploadCommitSchema,
+    UpdateCaseToCasePlan,UploadCommitSchema,
     M2PlanImportCommitSchema,
     ReorderPlanCaseSchema,BulkReorderPlanCaseSchema
 )

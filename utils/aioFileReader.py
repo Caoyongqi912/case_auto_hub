@@ -55,9 +55,6 @@ FIELD_MAPPING = {
 # 必填字段 (对应 FIELD_MAPPING 的 value)
 REQUIRED_FIELDS = {"case_name"}
 
-# 用例等级空值时的默认 value. 调用方可在 CaseEnumConfig 中覆盖.
-DEFAULT_LEVEL_VALUE = "P2"
-
 # 表头搜索范围 (行数) 与示例行判定关键字
 HEADER_SCAN_ROWS = 5
 EXAMPLE_KEYWORD = "示例"
@@ -74,14 +71,14 @@ class CaseEnumConfig:
     :param level_map:    用例等级 label -> value, 例如 {"P1":"P1", "P2":"P2", ...}
     :param type_map:     用例类型 label -> value, 例如 {"功能":"GN", "冒烟":"MY", ...}
     :param platform_map: 适用端 label -> value, 例如 {"PC":"PC", "H5":"H5", ...}
-    :param default_level:    用例等级空值时的默认 value
-    :param default_type:     用例类型空值时的默认 value (None=不填, 留空入库)
-    :param default_platform: 适用端空值时的默认 value (None=不填, 留空入库)
+    :param default_level:    保留位, 新规要求等级必填, 解析层不再走 default 兜底. 始终为 None.
+    :param default_type:     用例类型空值时的兜底 (None=不填, 留空入库). 新规不再用"第一个配置"自动填, 由调用方按需注入.
+    :param default_platform: 适用端空值时的兜底 (None=不填, 留空入库). 同上.
     """
     level_map: Dict[str, str] = field(default_factory=dict)
     type_map: Dict[str, str] = field(default_factory=dict)
     platform_map: Dict[str, str] = field(default_factory=dict)
-    default_level: str = DEFAULT_LEVEL_VALUE
+    default_level: Optional[str] = None
     default_type: Optional[str] = None
     default_platform: Optional[str] = None
 
@@ -315,19 +312,42 @@ class AsyncFilesReader:
                     actual_col = field_to_actual.get(field_name)
                     mapped_case[field_name] = row_dict.get(actual_col) if actual_col else None
 
-                # 标题
+                # === 必填字段校验 (M1/M2 模板规约: 带 * 列必须非空) ===
+                # 标题*
                 case_name = mapped_case.get("case_name")
                 if not case_name or (isinstance(case_name, str) and not case_name.strip()):
                     is_valid = False
                     errors.append({"field": _display_field_name("标题*"), "message": "用例名称不能为空"})
 
-                # 用例等级: label → value; 空值用 default; 非法值打回.
-                # enum_map 空时 (preview-only 场景) 跳过校验, 原样保留 label, commit 阶段再校.
+                # 步骤描述: 必填, 不再允许 0 步用例入库
+                action_val = mapped_case.get("action")
+                if action_val is None or (isinstance(action_val, str) and not action_val.strip()):
+                    is_valid = False
+                    errors.append({"field": _display_field_name("步骤描述"), "message": "步骤描述不能为空"})
+
+                # 预期结果: 必填, 跟步骤描述按行一一对应
+                expected_val = mapped_case.get("expected_result")
+                if expected_val is None or (isinstance(expected_val, str) and not expected_val.strip()):
+                    is_valid = False
+                    errors.append({"field": _display_field_name("预期结果"), "message": "预期结果不能为空"})
+
+                # 所属分组: 必填; 路径是否存在交给 _filter_group_path_errors 在 controller 层校验
+                group_path_val = mapped_case.get("group_path")
+                if group_path_val is None or (isinstance(group_path_val, str) and not group_path_val.strip()):
+                    is_valid = False
+                    errors.append({"field": _display_field_name("所属分组"), "message": "所属分组不能为空"})
+
+                # 用例等级: label → value; 空值/非法值均打回 (新规: 用例等级* 是必填列,
+                # 不再静默回退 default_level, 让用户主动从下拉里选).
+                # enum_map 空时 (preview-only 场景) 不做 label→value 转换, 仅做非空校验.
+                level_err: Optional[Dict[str, str]] = None
                 if level_map:
                     mapped_case["case_level"], level_err = _resolve_enum(
                         raw=mapped_case.get("case_level"),
                         enum_map=level_map,
-                        default=enum_config.default_level,
+                        # default 改 None: 空值交给下面的必填检查统一报错, 避免 _resolve_enum
+                        # 用 default_level="P2" 静默回退, 跟新规"必填"语义冲突.
+                        default=None,
                         display_name=_display_field_name("用例等级*"),
                     )
                     if level_err:
@@ -335,7 +355,17 @@ class AsyncFilesReader:
                         errors.append(level_err)
                 else:
                     v = mapped_case.get("case_level")
-                    mapped_case["case_level"] = (str(v).strip() if v is not None and not pd.isna(v) else None) or enum_config.default_level
+                    mapped_case["case_level"] = (
+                        str(v).strip() if v is not None and not pd.isna(v) else None
+                    )
+
+                # 用例等级必填. 已经被 enum 报错 (非法 label) 的行不再重复报"为空".
+                if not level_err and not mapped_case.get("case_level"):
+                    is_valid = False
+                    errors.append({
+                        "field": _display_field_name("用例等级*"),
+                        "message": "用例等级不能为空, 请从配置中选择",
+                    })
 
                 # 用例类型: 同上
                 if type_map:
