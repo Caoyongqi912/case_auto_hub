@@ -335,7 +335,12 @@ class PlanMapper(Mapper[CasePlan]):
         """
         分页查询测试计划（含完成率统计）
 
-        完成率 = 已执行用例数(case_status != 0) / 用例总数
+        完成率口径（方案 A）:
+          - 分子: 二轮测试通过的用例数 (PlanCaseAssociation.second_status == "pass")
+          - 分母: 计划关联用例总数
+          - 公式: completion_rate = case_passed * 100.0 / case_total, 2 位小数
+        一轮 (first_status) 是开发自测的过程数据, 不参与列表"完成率"统计.
+        走最新枚举 (ready/pass/fail/skip/block), 不兼容老枚举 ("0"/"1"/"2" ...).
 
         Args:
             current: 当前页码
@@ -351,6 +356,7 @@ class PlanMapper(Mapper[CasePlan]):
 
         Returns:
             dict: 分页结果，items 中包含 total_cases、executed_cases、completion_rate、charge_avatar
+                  - executed_cases 字段名保留以兼容前端, 语义为"二轮通过数"
         """
         # 时间范围参数（单独处理，使用有交集逻辑）
         plan_start_time = kwargs.pop("plan_start_time", None)
@@ -374,14 +380,17 @@ class PlanMapper(Mapper[CasePlan]):
             elif plan_end_time:
                 conditions.append(CasePlan.plan_end_time <= plan_end_time)
 
-            # 子查询：每个计划的用例统计
+            # 子查询：每个计划的用例统计 (按 second_status 算通过数)
             stats_subq = (
                 select(
                     PlanCaseAssociation.plan_id,
                     func.count().label("case_total"),
                     func.sum(
-                        case((PlanCaseAssociation.first_status != 0, 1), else_=0)
-                    ).label("case_executed")
+                        case(
+                            (PlanCaseAssociation.second_status == "pass", 1),
+                            else_=0,
+                        )
+                    ).label("case_passed"),
                 )
                 .group_by(PlanCaseAssociation.plan_id)
                 .subquery()
@@ -392,10 +401,10 @@ class PlanMapper(Mapper[CasePlan]):
                 select(
                     CasePlan,
                     func.coalesce(stats_subq.c.case_total, 0).label("case_total"),
-                    func.coalesce(stats_subq.c.case_executed, 0).label("case_executed"),
+                    func.coalesce(stats_subq.c.case_passed, 0).label("case_passed"),
                     case(
                         (stats_subq.c.case_total > 0,
-                         func.round(stats_subq.c.case_executed * 100.0 / stats_subq.c.case_total, 2)),
+                         func.round(stats_subq.c.case_passed * 100.0 / stats_subq.c.case_total, 2)),
                         else_=0
                     ).label("completion_rate"),
                     User.avatar.label("charge_avatar")
@@ -419,11 +428,12 @@ class PlanMapper(Mapper[CasePlan]):
 
             # 组装数据
             items = []
-            for plan, case_total, case_executed, completion_rate, charge_avatar in rows:
+            for plan, case_total, case_passed, completion_rate, charge_avatar in rows:
                 plan_dict = plan.map if hasattr(plan, 'map') else plan.to_dict()
                 plan_dict.update({
                     "total_cases": int(case_total),
-                    "executed_cases": int(case_executed),
+                    # 字段名保留 executed_cases 以兼容前端, 语义为"二轮通过数"
+                    "executed_cases": int(case_passed),
                     "completion_rate": float(completion_rate),
                     "charge_avatar": charge_avatar,
                 })
