@@ -78,13 +78,25 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
 
     
     @classmethod
-    async def set_result_field(cls, caseResult: InterfaceCaseResult):
+    async def set_result_field(cls, caseResult: InterfaceCaseResult) -> bool:
+        """更新 case_result 字段 (BUG-OBS-5 修复: 改返成功 bool)。
+
+        旧版只 add_flush_expunge 不返任何状态, 调用方只能靠 raise 判断。
+        改返 True=成功, 失败时异常往外冒 (跟其他 mapper 风格一致)。
+
+        Args:
+            caseResult: 已修改的 caseResult ORM 实例 (mutation)
+
+        Returns:
+            bool: True=成功落盘, 失败时抛异常
+        """
         try:
             async with cls.transaction() as session:
                 await cls.add_flush_expunge(session, caseResult)
+            return True
         except Exception as e:
-            log.error(e)
-            raise e
+            log.error(f"set_result_field case_result 失败: {e}")
+            raise
 
 
 

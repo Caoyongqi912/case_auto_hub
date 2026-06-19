@@ -70,6 +70,11 @@ class APIConditionContentStrategy(StepBaseStrategy):
             condition_key=content_condition.get("key"),
             condition_value=content_condition.get("value"),
             condition_operator=content_condition.get("operator"),
+            # BUG-E11 修复: 模型有 assert_data JSON 列, 但写库漏了。
+            # 原 condition_manager 算出的 assert_data 含 key/value/operator/
+            # condition_result 完整字典, 拆列存了部分, 整体丢了, 不利于调试。
+            # 一并存原始 dict 进去, 前端 / 排查都能拿到完整信息。
+            assert_data=content_condition,
         )
 
         case_result = step_context.execution_context.case_result

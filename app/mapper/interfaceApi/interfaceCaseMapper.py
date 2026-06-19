@@ -79,12 +79,16 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             async with cls.transaction() as session:
                 old_case = await cls.get_by_id(ident=case_id, session=session)
                 old_case_map = old_case.to_dict()
+                # BUG-D10 修复: 用 post_update_hook 在 expunge 前拿 to_dict()
+                # 快照, 避免 lazy='selectin' 关系访问 detached instance
+                new_case_map_holder = {}
                 new_case = await cls.update_by_id(
                     session=session,
                     update_user=user,
+                    post_update_hook=lambda t: new_case_map_holder.__setitem__('m', t.to_dict()) or t,
                     **kwargs
                 )
-                new_case_map = new_case.to_dict()
+                new_case_map = new_case_map_holder['m']
                 await InterfaceCaseDynamicMapper.append_dynamic(
                     entity_id=old_case.id,
                     user=user,

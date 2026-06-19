@@ -196,7 +196,13 @@ class Mapper(Generic[M]):
         return await cls._get_by_field('uid', uid, session, raise_error)
 
     @classmethod
-    async def update_by_id(cls, session: AsyncSession = None, update_user: User = None, **kwargs) -> M:
+    async def update_by_id(
+        cls,
+        session: AsyncSession = None,
+        update_user: User = None,
+        post_update_hook: Optional[callable] = None,
+        **kwargs,
+    ) -> M:
         """
         通过 id 更新模型实例。
 
@@ -207,10 +213,15 @@ class Mapper(Generic[M]):
         Args:
             session: 可选的外部会话对象
             update_user: 更新人信息（自动注入 updater/updaterName）
+            post_update_hook: BUG-D10 修复 — 在 expunge 之前调用的 callback,
+                签名 `async (target) -> Any` 或 `def (target) -> Any`。
+                用于在 target 还 attached 时拿 to_dict() 快照, 避免 expunge
+                后 lazy='selectin' 关系访问 detached instance 报错。
+                返回值会被透传出去。
             **kwargs: 更新字段（必须包含 id）
 
         Returns:
-            M: 更新后的模型实例
+            M: 更新后的模型实例 (或 post_update_hook 的返回值, 如果提供)
 
         Raises:
             ValueError: kwargs 中缺少 id 时抛出
@@ -229,6 +240,13 @@ class Mapper(Generic[M]):
             async with cls.transaction(session) as session:
                 target = await cls.get_by_id(ident, session)
                 await cls.update_cls(target, session, **kwargs)
+                # BUG-D10 修复: 在 expunge 之前 (target 还 attached) 跑 hook,
+                # 防止 lazy='selectin' 关系访问 detached instance
+                if post_update_hook is not None:
+                    result = post_update_hook(target)
+                    if hasattr(result, '__await__'):
+                        result = await result
+                    return result
                 return target
         except Exception as e:
             log.exception(e)

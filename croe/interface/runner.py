@@ -177,7 +177,15 @@ class InterfaceRunner:
             env=target_env,
             task_result=task_result
         )
-        log.debug(f"self.result_writer.init_case_result ={case_result}")
+        # BUG-OBS-6 修复: 显式 log case_result_id, 不靠 trace_id 间接关联。
+        # trace_id 是跨多 case 时的 correlation, 但排查单 case 时直接 grep
+        # case_result_id 更直接 (trace_id 还要查 map 才知道是哪个 case)。
+        log.debug(
+            f"[BUG-OBS-6] case_result 初始化完成: "
+            f"case_id={interface_case_id} "
+            f"case_result_id={getattr(case_result, 'id', None)} "
+            f"task_result_id={getattr(task_result, 'id', None) if task_result else None}"
+        )
 
         try:
             # BUG-F8 修复: 把 runner 自有 result_writer 注入上下文,

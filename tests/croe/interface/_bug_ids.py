@@ -198,3 +198,41 @@ BUG_S7 = "S7"
 # 或 TODO 标记, 后续维护者分不清"忘写了"还是"故意占位"。
 # 修: 改成 raise NotImplementedError + TODO 注释。
 BUG_D9 = "D9"
+
+# D10: dynamicMapper append_dynamic 时机不对
+# update_interface_case / update_interface 在 update_by_id 之后调 to_dict(),
+# 但 update_by_id 内部走 expunge (默认 True), 此时 lazy='selectin' 的关系
+# 已不命中。当前 to_dict 只读列字段没问题, 但任何关系访问会静默拿到 stale
+# data 或 detached instance 报错。修: add a `post_update_hook` callback to
+# update_by_id, 让调用方在 expunge 前拿 snapshot; 或传 expunge=False 让
+# 业务方自己管。
+BUG_D10 = "D10"
+
+# E11: condition_step 写库漏 assert_data
+# step_content_condition 把 condition_manager 算出的 assert_data (含
+# key/value/operator/condition_result) 拆成 4 个列 (condition_result /
+# condition_key / condition_value / condition_operator) 写库, 漏了原始
+# assert_data 字典。模型里有 assert_data JSON 列, 应一并存。修: 写库时
+# 同时把 content_condition 整个 dict 存到 assert_data 列。
+BUG_E11 = "E11"
+
+# OBS-4: starter.send 的 emoji 协议
+# starter.send 靠 "🫳🫳" / "✍️✍️" / "⏭️⏭️" emoji 区分步骤类型, 前端要正则
+# 解析这些 emoji。一旦换前缀或加新类型, 前端要同步改, 没类型安全。
+# 修: 加 STARTER_MSG_TYPE 常量, 内部走 enum 字符串前缀, 旧 emoji 保留
+# 兼容 (deprecated, 仅作 fallback)。
+BUG_OBS_4 = "OBS-4"
+
+# OBS-5: set_result_field 只有 setter 没 getter / 返值语义不明
+# interfaceResultMapper.py InterfaceCaseResultMapper.set_result_field 只
+# add_flush_expunge, 不返回任何状态或成功标识, 调用方无法判断是否成功 (只能
+# 靠 raise)。修: 改返成功 bool (True=成功, False=失败), 跟 result_writer
+# 风格对齐。
+BUG_OBS_5 = "OBS-5"
+
+# OBS-6: 日志里无 case_result_id, 只有 interface_case_id
+# runner.py log.info(f"查询到业务流用例  {interface_case}") 拿到 case
+# 对象但不打 case_result_id, 排查时无法 grep 单个 case_result 的全链路。
+# 修: 第一条 log 后追加 log.info(case_result_id=xxx), 加 trace_id 后本来
+# 也能关联, 但显式 ID 更直接 (trace_id 查 map 还要多一步)。
+BUG_OBS_6 = "OBS-6"

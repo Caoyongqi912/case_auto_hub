@@ -83,12 +83,16 @@ class InterfaceMapper(Mapper[Interface]):
             async with cls.transaction() as session:
                 old_interface = await cls.get_by_id(ident=interface_id, session=session)
                 old_interface_map = old_interface.to_dict()
+                # BUG-D10 修复: 用 post_update_hook 在 expunge 前拿 to_dict()
+                # 快照, 避免 lazy='selectin' 关系访问 detached instance
+                new_interface_map_holder = {}
                 new_interface = await cls.update_by_id(
                     session=session,
                     update_user=user,
+                    post_update_hook=lambda t: new_interface_map_holder.__setitem__('m', t.to_dict()) or t,
                     **kwargs
                 )
-                new_interface_map = new_interface.to_dict()
+                new_interface_map = new_interface_map_holder['m']
                 await InterfaceDynamicMapper.append_dynamic(
                     entity_id=interface_id,
                     user=user,
