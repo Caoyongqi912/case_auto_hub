@@ -271,15 +271,28 @@ class ScriptManager:
 
     @staticmethod
     def _hub_api_request(url: str, method: str = "GET", **kwargs) -> Any:
-        """发送 HTTP 请求"""
-        try:
+        """
+        发送 HTTP 请求 (BUG-V4 修复:改 httpx.AsyncClient,不再独占同步栈)。
+
+        子进程里没有现成 event loop,直接 asyncio.run 即可;主进程若将来
+        在 async 上下文里调,需要再换成直接 await(本入口设计上仍是同步)。
+        """
+        import asyncio
+
+        async def _do_request() -> Any:
             import httpx
-            with httpx.Client(timeout=10) as client:
-                response = client.request(method=method, url=url, **kwargs)
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.request(method=method, url=url, **kwargs)
                 response.raise_for_status()
-                return response.json() if response.headers.get('content-type', '').startswith('application/json') else response.text
-        except Exception as e:
-            log.error(f"hub_request error: {e}")
+                if response.headers.get("content-type", "").startswith("application/json"):
+                    return response.json()
+                return response.text
+
+        try:
+            return asyncio.run(_do_request())
+        except Exception as e:  # noqa: BLE001 - 调用方按 None 处理
+            # 用 exception 而不是 error,把 traceback 落盘便于排查
+            log.exception(f"hub_request error: {e}")
             return None
 
     @staticmethod
