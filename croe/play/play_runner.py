@@ -113,9 +113,16 @@ class PlayRunner:
                     break
 
         except Exception as e:
-            log.exception(e)
-            case_success = False  # 发生异常时标记为失败
-            raise
+            # BUG-P-R1 修复: 之前 except 块调 raise 抛回去, 任务级 retry
+            # (__execute_case 的 for r in range(retry+1)) 看不到
+            # case_success=False, 整个 task 直接挂, 进度统计
+            # (success_number/fail_number) 不准。修: except 块只设
+            # case_success=False, 不 raise; finally 仍照常写入结果。
+            # 调用方 (task_runner) 拿到 case_success=False, 走 retry
+            # 路径。跟接口自动化的 run_interface_case 风格一致
+            # (那里也是 except 后只 log, finally 写, 不 raise)。
+            log.exception(f"PlayRunner.execute_case 异常: {e}")
+            case_success = False
         finally:
             await self.starter.send(f'执行完成 >> {play_case}, 结果: {case_success}')
             # 只有成功时 或者 允许失败写入时 才写入结果
