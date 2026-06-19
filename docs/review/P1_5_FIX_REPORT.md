@@ -106,7 +106,7 @@
 
 ## 兼容性 / 注意事项
 
-- **M5 是 schema breaking change**:生产部署必须跑 `docs/MANUAL_MIGRATION.sql` 的 M5 章节。两张表 `interface_case_step_content` 和 `interface_case_step_content_result` 的 `content_type` 列从 `INT` 改 `VARCHAR(20)`,并 UPDATE 所有行从 int 转 enum NAME。**未跑迁移前不能部署新代码**(否则 SQLAlchemy 写入 enum NAME,DB 还是 INT 列,直接报错)。
+- **M5 是 schema breaking change**:生产部署必须跑 `docs/MANUAL_MIGRATION.sql` 的 M5 章节。两张表 `interface_case_step_content` 和 `interface_case_content_result` 的 `content_type` 列(注意:模型基类表名是 `interface_case_content_result`,**不是** `interface_case_step_content_result`)从 `INT` 改 `VARCHAR(20)`,并 UPDATE 所有行从 int 转 enum NAME。**未跑迁移前不能部署新代码**(否则 SQLAlchemy 写入 enum NAME,DB 还是 INT 列,直接报错)。
   
 - **D4 是 mapper API 破坏**:`bulk_insert_models` / `bulk_insert_results` 不再允许 `session=None` 隐式 commit。仓内只有 `result_writer._flush_cache` 一个调用方,已同步改完。**任何仓外脚本(CLI 工具 / 一次性任务)直接调这两个方法,需要补传 session,否则 ValueError**。
 

@@ -56,19 +56,19 @@ ALTER TABLE interface_task_result
 -- 对应 commit: <本轮 M5>
 -- 风险等级: 中 (改列类型 + UPDATE 全表, 需在低峰期跑)
 -- 备份: 必须先 mysqldump 备份 interface_case_step_content +
---       interface_case_step_content_result 两张基类表
+--       interface_case_content_result 两张基类表
 -- ============================================================
 
 -- ---------- 前置: 备份 ----------
 -- mysqldump -h $HOST -u $USER -p$PASS case_auto_hub \
---   interface_case_step_content interface_case_step_content_result \
+--   interface_case_step_content interface_case_content_result \
 --   > /backup/case_auto_hub_m5_$(date +%Y%m%d).sql
 
 -- ---------- 步骤 1: 改列类型到 VARCHAR(20) ----------
 ALTER TABLE interface_case_step_content
     MODIFY COLUMN content_type VARCHAR(20) COMMENT '步骤类型 (enum NAME)';
 
-ALTER TABLE interface_case_step_content_result
+ALTER TABLE interface_case_content_result
     MODIFY COLUMN content_type VARCHAR(20) COMMENT '步骤类型 (enum NAME)';
 
 -- ---------- 步骤 2: int -> name 数据迁移 ----------
@@ -87,19 +87,19 @@ UPDATE interface_case_step_content SET content_type = 'STEP_API_WAIT'     WHERE 
 UPDATE interface_case_step_content SET content_type = 'STEP_API_ASSERT'   WHERE content_type = '8';
 UPDATE interface_case_step_content SET content_type = 'STEP_LOOP'         WHERE content_type = '9';
 
-UPDATE interface_case_step_content_result SET content_type = 'STEP_API'          WHERE content_type = '1';
-UPDATE interface_case_step_content_result SET content_type = 'STEP_API_GROUP'    WHERE content_type = '2';
-UPDATE interface_case_step_content_result SET content_type = 'STEP_API_CONDITION' WHERE content_type = '3';
-UPDATE interface_case_step_content_result SET content_type = 'STEP_API_SCRIPT'   WHERE content_type = '4';
-UPDATE interface_case_step_content_result SET content_type = 'STEP_API_DB'       WHERE content_type = '5';
-UPDATE interface_case_step_content_result SET content_type = 'STEP_API_WAIT'     WHERE content_type = '6';
-UPDATE interface_case_step_content_result SET content_type = 'STEP_API_ASSERT'   WHERE content_type = '8';
-UPDATE interface_case_step_content_result SET content_type = 'STEP_LOOP'         WHERE content_type = '9';
+UPDATE interface_case_content_result SET content_type = 'STEP_API'          WHERE content_type = '1';
+UPDATE interface_case_content_result SET content_type = 'STEP_API_GROUP'    WHERE content_type = '2';
+UPDATE interface_case_content_result SET content_type = 'STEP_API_CONDITION' WHERE content_type = '3';
+UPDATE interface_case_content_result SET content_type = 'STEP_API_SCRIPT'   WHERE content_type = '4';
+UPDATE interface_case_content_result SET content_type = 'STEP_API_DB'       WHERE content_type = '5';
+UPDATE interface_case_content_result SET content_type = 'STEP_API_WAIT'     WHERE content_type = '6';
+UPDATE interface_case_content_result SET content_type = 'STEP_API_ASSERT'   WHERE content_type = '8';
+UPDATE interface_case_content_result SET content_type = 'STEP_LOOP'         WHERE content_type = '9';
 
 -- ---------- 步骤 3: 验证 (任意一个 int 都不应还存在) ----------
 SELECT content_type, COUNT(*) AS leftover FROM interface_case_step_content
     WHERE content_type REGEXP '^[0-9]+$' GROUP BY content_type;
-SELECT content_type, COUNT(*) AS leftover FROM interface_case_step_content_result
+SELECT content_type, COUNT(*) AS leftover FROM interface_case_content_result
     WHERE content_type REGEXP '^[0-9]+$' GROUP BY content_type;
 -- 期望: 0 行返回 (如果还有, 表示 enum 整数值和 CaseStepContentType 对不上, 检查 enums/CaseEnum.py)
 
@@ -114,4 +114,4 @@ SELECT content_type, COUNT(*) AS leftover FROM interface_case_step_content_resul
 -- UPDATE interface_case_step_content SET content_type = 6 WHERE content_type = 'STEP_API_WAIT';
 -- UPDATE interface_case_step_content SET content_type = 8 WHERE content_type = 'STEP_API_ASSERT';
 -- UPDATE interface_case_step_content SET content_type = 9 WHERE content_type = 'STEP_LOOP';
--- (对 interface_case_step_content_result 同样)
+-- (对 interface_case_content_result 同样)
