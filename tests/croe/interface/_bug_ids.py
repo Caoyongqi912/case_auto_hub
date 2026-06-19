@@ -297,3 +297,12 @@ BUG_RB2 = "RB2"
 # 注释 (result_writer.py:367) 都写 "自管事务", 实际静默 except, 丢对账。
 # 修: session=None 时开自己的 cls.transaction(), 跟 D4 哲学一致。
 BUG_DOC = "DOC"
+
+# D4-V2 修复: interfaceResultMapper.py:backfill_content_result_id_fk +
+# reconcile_fk_from_polymorphic 之前用 cls.session_scope(session) +
+# 显式 await session.commit(), 当 caller 传 session 进来 (bulk 业务流
+# 场景) 时, "中途提交" 把 caller 同一事务里的其他 INSERT 一起提前 commit,
+# 破坏 bulk 事务边界, 数据不变量破坏 (FK 已回填但主表空)。
+# 修: 改 cls.transaction(session) — session=None 时 session.begin() 自动
+# commit, session 传进来时 caller 控制事务边界。
+BUG_D4_V2 = "D4-V2"

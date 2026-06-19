@@ -194,33 +194,37 @@ async def test_bug_d6_find_returns_empty_list_when_no_drift(bug_d6_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d6_reconcile_returns_rowcount(bug_d6_marker):
-    """[BUG-D6] reconcile_fk_from_polymorphic 端到端: 返 rowcount。"""
+    """[BUG-D6 + D4-V2] reconcile_fk_from_polymorphic 端到端: 返 rowcount,
+    且 caller 传 session 进来时不再中途 commit (D4-V2 修)。
+    """
     mock_session = AsyncMock()
     mock_result = MagicMock()
     mock_result.rowcount = 5
     mock_session.execute = AsyncMock(return_value=mock_result)
 
-    # mock 整个 session_scope 上下文管理器
+    # BUG-D4-V2 修复: 改 mock transaction, 不是 session_scope
     from contextlib import asynccontextmanager
 
     @asynccontextmanager
     async def fake_scope(s=None):
         yield mock_session
 
-    with patch.object(InterfaceResultMapper, "session_scope", fake_scope):
+    with patch.object(InterfaceResultMapper, "transaction", fake_scope):
         fixed = await InterfaceResultMapper.reconcile_fk_from_polymorphic(
             case_result_id=42, session=mock_session
         )
 
     assert fixed == 5, f"[{BUG_D6}] reconcile 应返 rowcount, 实际: {fixed}"
-    # commit 必须调
-    mock_session.commit.assert_awaited_once()
+    # BUG-D4-V2 修复: caller 传 session 时, 函数不调 commit, 让 caller 控制
+    mock_session.commit.assert_not_awaited()
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d6_reconcile_handles_zero_fixes(bug_d6_marker):
-    """[BUG-D6] reconcile 没找到漂移 (rowcount=0) 时返 0 不崩。"""
+    """[BUG-D6 + D4-V2] reconcile 没找到漂移 (rowcount=0) 时返 0 不崩,
+    且 caller 传 session 时不调 commit (D4-V2 修)。
+    """
     mock_session = AsyncMock()
     mock_result = MagicMock()
     mock_result.rowcount = 0
@@ -232,14 +236,14 @@ async def test_bug_d6_reconcile_handles_zero_fixes(bug_d6_marker):
     async def fake_scope(s=None):
         yield mock_session
 
-    with patch.object(InterfaceResultMapper, "session_scope", fake_scope):
+    with patch.object(InterfaceResultMapper, "transaction", fake_scope):
         fixed = await InterfaceResultMapper.reconcile_fk_from_polymorphic(
             session=mock_session
         )
 
     assert fixed == 0
-    # 没 commit 也行 (PyMySQL 行为, 无 UPDATE 不需要 commit), 但调用不崩
-    mock_session.commit.assert_awaited()
+    # BUG-D4-V2 修复: 没 UPDATE 也照样不调 commit, caller 控制
+    mock_session.commit.assert_not_awaited()
 
 
 # ---- 异常路径 ----
@@ -274,6 +278,90 @@ async def test_bug_d6_reconcile_propagates_db_errors(bug_d6_marker):
                 session=mock_session
             )
 
+
+
+# ---- BUG-D4-V2: partial commit 修 ----
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bug_d4_v2_backfill_no_explicit_commit(bug_d6_marker):
+    """[BUG-D4-V2] backfill_content_result_id_fk 不再调 await session.commit()。
+
+    修法: 把 session_scope(session) + 显式 commit() 换成 transaction(session),
+    transaction() 在 session=None 时 session.begin() 自动 commit, session 传
+    进来时 caller 控制事务边界, 不中途 commit 破坏 bulk 业务流。
+    """
+    src = inspect.getsource(InterfaceResultMapper.backfill_content_result_id_fk)
+    # 1. 源码里不能有显式 commit (去掉注释行再查, 避免误命中修复注释里
+    #    "await session.commit() 会"中途提交"" 这种描述性引用)
+    code_lines = [
+        ln for ln in src.splitlines()
+        if ln.strip() and not ln.strip().startswith("#")
+    ]
+    code_only = "\n".join(code_lines)
+    assert "await session.commit()" not in code_only, (
+        f"[BUG-D4-V2] backfill_content_result_id_fk 不应再 await session.commit(), "
+        f"改用 cls.transaction(session) 让 caller 控制事务边界"
+    )
+    # 2. 应该用 transaction 不是 session_scope
+    assert "cls.transaction(session)" in code_only, (
+        f"[BUG-D4-V2] backfill_content_result_id_fk 应改用 cls.transaction(session)"
+    )
+    assert "cls.session_scope(session)" not in code_only, (
+        f"[BUG-D4-V2] backfill_content_result_id_fk 不应再用 session_scope(session)"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bug_d4_v2_reconcile_no_explicit_commit(bug_d6_marker):
+    """[BUG-D4-V2] reconcile_fk_from_polymorphic 不再调 await session.commit()。"""
+    src = inspect.getsource(InterfaceResultMapper.reconcile_fk_from_polymorphic)
+    assert "await session.commit()" not in src, (
+        f"[BUG-D4-V2] reconcile_fk_from_polymorphic 不应再 await session.commit(), "
+        f"改用 cls.transaction(session)"
+    )
+    assert "cls.transaction(session)" in src, (
+        f"[BUG-D4-V2] reconcile_fk_from_polymorphic 应改用 cls.transaction(session)"
+    )
+    assert "cls.session_scope(session)" not in src, (
+        f"[BUG-D4-V2] reconcile_fk_from_polymorphic 不应再用 session_scope(session)"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bug_d4_v2_backfill_session_none_still_works(bug_d6_marker):
+    """[BUG-D4-V2] backfill session=None 时也能返 rowcount, transaction() 自管事务。
+
+    用 mock 模拟 transaction() 自管路径 (创建新 session + session.begin())。
+    """
+    from contextlib import asynccontextmanager
+
+    fake_inner_session = AsyncMock()
+    fake_inner_result = MagicMock()
+    fake_inner_result.rowcount = 7
+    fake_inner_session.execute = AsyncMock(return_value=fake_inner_result)
+
+    @asynccontextmanager
+    async def fake_transaction(s=None):
+        if s is None:
+            # 模拟 transaction() 自管: 创建新 session, begin 自动 commit
+            async with AsyncMock() as begin_ctx:
+                yield fake_inner_session
+        else:
+            yield s
+
+    with patch.object(InterfaceResultMapper, "transaction", fake_transaction):
+        fixed = await InterfaceResultMapper.backfill_content_result_id_fk(
+            case_result_id=42
+        )
+
+    assert fixed == 7, f"[BUG-D4-V2] backfill session=None 应返 rowcount, 实际: {fixed}"
+    # 内部 session 执行了 UPDATE
+    fake_inner_session.execute.assert_awaited_once()
+    # 内部 session 的 begin() 会处理 commit, 不是手动 commit
+    fake_inner_session.commit.assert_not_awaited()
 
 # ---- 集成: F8B 旧 backfill 仍存在 (D6 不删) ----
 

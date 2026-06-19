@@ -232,11 +232,16 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
               AND ir.content_result_id IS NULL
         """)
         try:
-            async with cls.session_scope(session) as session:
+            # BUG-D4-V2 修复: 用 cls.transaction(session) 替 session_scope(session) +
+            # 显式 commit()。原因: 当 caller 传 session 进来 (bulk 业务流场景),
+            # 显式 await session.commit() 会"中途提交", 把 caller 同一事务里的
+            # 其他 INSERT 一起提前 commit, 破坏 bulk 事务边界, 数据不变量破坏
+            # (FK 已回填但主表空)。改: transaction() 在 session=None 时
+            # session.begin() 自动 commit, session 传进来时 caller 控制边界。
+            async with cls.transaction(session) as session:
                 result = await session.execute(
                     sql, {"case_result_id": case_result_id}
                 )
-                await session.commit()
                 return result.rowcount or 0
         except Exception as e:
             log.error(f"backfill_content_result_id_fk error: {e}")
@@ -352,11 +357,13 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
               ))
         """)
         try:
-            async with cls.session_scope(session) as session:
+            # BUG-D4-V2 修复: 同 backfill_content_result_id_fk, 改
+            # transaction(session), 不再显式 commit()。让 caller 控制
+            # 事务边界, 避免 bulk 场景中途 commit 破坏数据不变量。
+            async with cls.transaction(session) as session:
                 result = await session.execute(
                     sql, {"case_result_id": case_result_id}
                 )
-                await session.commit()
                 return result.rowcount or 0
         except Exception as e:
             log.error(f"reconcile_fk_from_polymorphic error: {e}")
