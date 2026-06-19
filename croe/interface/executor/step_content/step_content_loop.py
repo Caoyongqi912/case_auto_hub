@@ -19,7 +19,7 @@ from croe.interface.executor.step_content.base import StepBaseStrategy
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums import (
     InterfaceAPIResultEnum,
-    ExtractTargetVariablesEnum
+    ExtractTargetVariablesEnum,    StepStatusEnum,
 )
 from enums.CaseEnum import LoopTypeEnum, CaseStepContentType
 from utils import log
@@ -411,7 +411,7 @@ class APILoopContentStrategy(StepBaseStrategy):
         await step_context.result_writer.update_step_result(
             result_id=content_result.id,
             result=all_success,
-            status="SUCCESS" if all_success else "FAIL",
+            status=StepStatusEnum.SUCCESS if all_success else StepStatusEnum.FAIL,
             loop_count=loop_count,
             success_count=success_count,
             fail_count=fail_count,

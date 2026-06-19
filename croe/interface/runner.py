@@ -210,7 +210,9 @@ class InterfaceRunner:
                     await self.starter.send(
                         f"✍️✍️  EXECUTE_STEP {index} ： 调试禁用 跳过执行"
                     )
-                    case_result.progress = (index * 100) // total_steps
+                    # BUG-F6 修复: 用 round(index/total*100, 2) 替代整除截断,
+                    # 避免 total=4 index=3 仍算 75% 但用户读 int 字段看到 75.0 一致。
+                    case_result.progress = round(index / total_steps * 100, 2)
                     await self.result_writer.update_case_progress(case_result)
                     continue
 
@@ -231,7 +233,10 @@ class InterfaceRunner:
 
                 case_success = case_success and step_success
 
-                case_result.progress = (index * 100) // total_steps
+                # BUG-F6 修复: 进度=已完成步数 / 总步数 * 100, 保留 2 位小数。
+                # 失败停在第 N 步时 progress 表示"跑到 N 步失败停了"的真实进度
+                # (F5 已修: 不再 force 100%)。
+                case_result.progress = round(index / total_steps * 100, 2)
 
                 # 用例执行失败 且 配置了错误停止
                 if not case_success and error_stop:

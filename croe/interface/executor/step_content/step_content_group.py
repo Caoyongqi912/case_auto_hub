@@ -15,7 +15,7 @@ from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 # BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
-from enums import InterfaceAPIResultEnum
+from enums import InterfaceAPIResultEnum, StepStatusEnum
 from enums.CaseEnum import CaseStepContentType
 from utils import GenerateTools
 
@@ -98,7 +98,7 @@ class APIGroupContentStrategy(StepBaseStrategy):
         await step_context.result_writer.update_step_result(
             result_id=content_result.id,
             result=all_success,
-            status="SUCCESS" if all_success else "FAIL",
+            status=StepStatusEnum.SUCCESS if all_success else StepStatusEnum.FAIL,
             success_api_num=success_api_num,
             fail_api_num=fail_api_num,
             use_time=GenerateTools.calculate_time_difference(start_time.strftime("%Y-%m-%d %H:%M:%S")),

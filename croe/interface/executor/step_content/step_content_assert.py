@@ -19,6 +19,7 @@ from croe.a_manager.assert_manager import AssertManager
 # BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums.CaseEnum import CaseStepContentType
+from enums import StepStatusEnum
 from utils import log
 
 VARS = List[Dict[str, Any]]
@@ -120,7 +121,7 @@ async def write_case_step_content_assert_result(
         content_desc=step_content.content_desc,
         content_step=step_index,
         result=assert_result,
-        status="SUCCESS" if assert_result else "FAIL",
+        status=StepStatusEnum.SUCCESS if assert_result else StepStatusEnum.FAIL,
         start_time=datetime.now(),
         assert_data=assert_data,
         assert_result=assert_result,

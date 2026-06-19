@@ -14,7 +14,7 @@ from croe.interface.executor.step_content.base import StepBaseStrategy
 from croe.a_manager import ConditionManager
 # BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
-from enums import InterfaceAPIResultEnum
+from enums import InterfaceAPIResultEnum, StepStatusEnum
 from enums.CaseEnum import CaseStepContentType
 
 
@@ -92,7 +92,7 @@ class APIConditionContentStrategy(StepBaseStrategy):
                 await step_context.result_writer.update_step_result(
                     result_id=condition_content_result.id,
                     result=True,
-                    status="SUCCESS",
+                    status=StepStatusEnum.SUCCESS,
                 )
                 case_result.success_num += 1
                 await step_context.result_writer.update_case_progress(case_result)
@@ -127,7 +127,7 @@ class APIConditionContentStrategy(StepBaseStrategy):
                     await step_context.result_writer.update_step_result(
                         result_id=condition_content_result.id,
                         result=False,
-                        status="FAIL",
+                        status=StepStatusEnum.FAIL,
                     )
                     await step_context.result_writer.update_case_progress(case_result)
                     return False
@@ -135,7 +135,7 @@ class APIConditionContentStrategy(StepBaseStrategy):
             await step_context.result_writer.update_step_result(
                 result_id=condition_content_result.id,
                 result=True,
-                status="SUCCESS",
+                status=StepStatusEnum.SUCCESS,
             )
             case_result.success_num += 1
             await step_context.result_writer.update_case_progress(case_result)
@@ -149,7 +149,7 @@ class APIConditionContentStrategy(StepBaseStrategy):
             await step_context.result_writer.update_step_result(
                 result_id=condition_content_result.id,
                 result=True,
-                status="SUCCESS",
+                status=StepStatusEnum.SUCCESS,
             )
             await step_context.result_writer.update_case_progress(case_result)
             return True

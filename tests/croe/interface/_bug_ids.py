@@ -236,3 +236,32 @@ BUG_OBS_5 = "OBS-5"
 # 修: 第一条 log 后追加 log.info(case_result_id=xxx), 加 trace_id 后本来
 # 也能关联, 但显式 ID 更直接 (trace_id 查 map 还要多一步)。
 BUG_OBS_6 = "OBS-6"
+
+# M9: case_status String(10) 无枚举约束, step_content 8 文件写
+# "SUCCESS"/"FAIL" 字面量无 enum。修: 加 StepStatusEnum, model 改
+# Enum(StepStatusEnum, native_enum=False, length=20), 8 个 step_content
+# 改用 enum 常量。
+BUG_M9 = "M9"
+
+# F6: progress 截断语义不一致。runner.py 在 step loop 末尾
+# case_result.progress = (index * 100) // total_steps, total_steps=4
+# index=3 时 75, index=4 才 100。F5 修了"不再 force 100", 但 progress
+# 在 error_stop 路径是中间值而非 100%, 用户对截断语义有歧义。修:
+# 加注释说明 + 用 (i+1)*100//total 一致地"完成进度"。
+BUG_F6 = "F6"
+
+# M10: __allow_unmapped__ = True 是给 dataclass-style 基类用的, 但本
+# 项目全是 declarative class, 加了反而跳过注解到 Column 的转换, 是
+# 反作用。修: 删 2 处 (interfaceResultModel.py:180, interfaceCaseContentsModel.py:37)。
+BUG_M10 = "M10"
+
+# E2: HttpxClient 默认 user-agent 写死 "case_Hub_http/v0.1", 调用方无法
+# 在 Interface.interface_headers 里覆盖。修: 删 DEFAULT_HEADERS 写死,
+# 改读运行时 headers (同 S7 黑名单模式反过来, 允许 User-Agent 覆盖)。
+BUG_E2 = "E2"
+
+# E10: step_content_db.py 调 db_script.invoke 异常时整个 step 挂, 跟
+# step_content_script.py:53-77 包裹 ScriptSecurityError + Exception
+# 的风格不一致。修: step_content_db 加 try/except, 失败 WARNING +
+# success=False 返。
+BUG_E10 = "E10"

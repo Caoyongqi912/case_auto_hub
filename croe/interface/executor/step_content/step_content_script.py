@@ -138,7 +138,7 @@ async def write_case_step_content_script_result(
         content_desc=step_content.content_desc,
         content_step=step_index,
         result=success,
-        status="SUCCESS" if success else "FAIL",
+        status=StepStatusEnum.SUCCESS if success else StepStatusEnum.FAIL,
         start_time=datetime.now(),
         script_vars=script_vars,
         script_error=script_error,

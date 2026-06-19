@@ -35,7 +35,6 @@ class InterfaceCaseContents(BaseModel):
     - 通过 polymorphic_on (content_type) 区分类型
     """
     __tablename__ = "interface_case_step_content"
-    __allow_unmapped__ = True
 
     # BUG-M5 修复: 改用 Enum 类型, DB 存 enum NAME 而不是 int value,
     # 避免重排枚举值时旧数据全错。native_enum=False 用 VARCHAR(20) 实现。

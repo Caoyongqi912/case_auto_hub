@@ -16,13 +16,20 @@ LOG = MyLoguru().get_logger()
 
 
 class HttpxClient:
-    DEFAULT_HEADERS = {"user-agent": "case_Hub_http/v0.1"}
+    # BUG-E2 修复: 写死的 user-agent "case_Hub_http/v0.1" 删了。
+    # 旧逻辑下, 调用方无法在 Interface.interface_headers 里覆盖, 因为 client
+    # headers 在 client 创建时硬塞 user-agent, 后续 httpx 合并时若 interface_headers
+    # 不含 User-Agent 就会用这个 magic string, 且 magic string 没来源说明。
+    # 改: 入参 default_user_agent (None = 走 httpx 内置 user-agent);
+    # 运行时通过 interface_headers / g_headers 配的 User-Agent 仍会按 httpx 规则
+    # 单次 request 覆盖。
 
     def __init__(
             self,
             logger: Optional[Callable] = None,
             hooks: Optional[Dict[str, List[Callable]]] = None,
             default_timeout: Optional[Timeout] = 10,
+            default_user_agent: Optional[str] = None,
             **client_kwargs
     ):
         """
@@ -46,8 +53,14 @@ class HttpxClient:
                 self._hooks.setdefault(event, []).extend(event_hooks)
 
         # 客户端配置
+        # BUG-E2 修复: 仅当调用方显式传 default_user_agent 时才注入 client headers,
+        # 不传就走 httpx 内置 user-agent ("python-httpx/x.y.z"), 由 interface_headers
+        # 传入的 User-Agent 单次覆盖 (httpx 合并规则: request headers 覆盖 client headers)。
+        client_headers: Dict[str, str] = {}
+        if default_user_agent:
+            client_headers["user-agent"] = default_user_agent
         self._client_config = {
-            "headers": self.DEFAULT_HEADERS,
+            "headers": client_headers,
             "event_hooks": self._hooks,
             **client_kwargs
         }

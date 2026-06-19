@@ -19,6 +19,7 @@ from croe.interface.executor.step_content.base import StepBaseStrategy
 # BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums.CaseEnum import CaseStepContentType
+from enums import StepStatusEnum
 
 
 
@@ -97,7 +98,7 @@ async def write_case_step_content_wait_result(
         content_desc=step_content.content_desc,
         content_step=step_index,
         result=True,
-        status="SUCCESS",
+        status=StepStatusEnum.SUCCESS,
         start_time=datetime.now(),
         wait_seconds=wait_seconds,
     )

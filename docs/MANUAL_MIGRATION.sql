@@ -115,3 +115,55 @@ SELECT content_type, COUNT(*) AS leftover FROM interface_case_content_result
 -- UPDATE interface_case_step_content SET content_type = 8 WHERE content_type = 'STEP_API_ASSERT';
 -- UPDATE interface_case_step_content SET content_type = 9 WHERE content_type = 'STEP_LOOP';
 -- (对 interface_case_content_result 同样)
+
+
+-- ============================================================================
+-- BUG-M9: interface_case_content_result.status 从 String(20) 改 Enum
+--         (StepStatusEnum, native_enum=False, length=20)
+-- ============================================================================
+-- 背景:
+--   * 原 status 字段是 String(20), 8 个 step_content 文件写 "SUCCESS"/"FAIL"
+--     字面量, 写错字符串 (e.g. "success"/"OK"/"DONE") 不会报错, 要等前端 /
+--     DB 查询才发现。
+--   * M9 修: 字段改 Enum(StepStatusEnum, native_enum=False, length=20),
+--     写库只接受 "SUCCESS"/"FAIL"/"PENDING", 跟 M5 content_type 同模式。
+--   * 历史 PENDING 字符串 (旧 default="PENDING") 仍合法, 已纳入 enum。
+--
+-- 兼容分析:
+--   * String(20) → VARCHAR(20): 长度一致, 不需要改 schema 类型, SQLAlchemy
+--     用 native_enum=False 走 VARCHAR, 数据库侧无感。
+--   * 数据侧: 现有 "SUCCESS"/"FAIL"/"PENDING" 三个合法值, 都不用改;
+--     如果历史有非三选一脏数据 (理论上没, 但先 sanity check), 需要 UPDATE 成
+--     PENDING 兜底。
+
+-- ---------- 步骤 1: 脏数据 sanity check ----------
+SELECT status, COUNT(*) AS n FROM interface_case_content_result
+    WHERE status NOT IN ('SUCCESS', 'FAIL', 'PENDING')
+    GROUP BY status;
+-- 期望: 0 行返回
+-- 如果有, 走步骤 1.5 兜底
+
+-- ---------- 步骤 1.5 (可选, 仅当步骤 1 有返回值时执行) ----------
+-- UPDATE interface_case_content_result
+--     SET status = 'PENDING'
+--     WHERE status NOT IN ('SUCCESS', 'FAIL', 'PENDING');
+
+-- ---------- 步骤 2: 应用层就绪 (代码已部署) ----------
+-- 无需 schema DDL: native_enum=False 走 VARCHAR(20), 已存在的 String(20)
+-- 字段可直接被 Enum(StepStatusEnum, native_enum=False, length=20) 读写。
+-- ORM 层 INSERT / SELECT 完全兼容。
+-- (若以后想收紧成 native ENUM, 见步骤 3)
+
+-- ---------- 步骤 3 (可选, 改 MySQL 原生 ENUM 类型) ----------
+-- ALTER TABLE interface_case_content_result
+--     MODIFY COLUMN status ENUM('SUCCESS','FAIL','PENDING') NOT NULL DEFAULT 'PENDING'
+--     COMMENT '执行状态';
+-- 注意: 这一步会让 SQLAlchemy 端 native_enum=True 才能配合, 模型还得再改,
+-- 现阶段没强需求, 跳过。
+
+-- ---------- 回滚 (如需要) ----------
+-- 应用层回滚:
+--   * git revert M9 commit
+--   * 字段类型自动回到 String(20), "SUCCESS"/"FAIL"/"PENDING" 仍合法
+--   * 老 default="PENDING" 也回得来
+-- 数据库侧无需动作。

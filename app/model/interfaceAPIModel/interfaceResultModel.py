@@ -13,6 +13,7 @@ from sqlalchemy.orm import relationship
 
 from app.model import BaseModel
 from enums.CaseEnum import CaseStepContentType
+from enums.InterfaceEnum import StepStatusEnum
 
 
 def step_content_result_id_column():
@@ -177,7 +178,6 @@ class InterfaceCaseContentResult(BaseModel):
     - 通过 content_type 区分不同类型的执行结果
     """
     __tablename__ = "interface_case_content_result"
-    __allow_unmapped__ = True
 
     case_result_id = Column(
         INTEGER,
@@ -214,7 +214,15 @@ class InterfaceCaseContentResult(BaseModel):
     result = Column(Boolean, nullable=True, comment="执行结果")
     start_time = Column(DATETIME, default=datetime.now, comment="开始时间")
     use_time = Column(String(50), nullable=True, comment="执行用时")
-    status = Column(String(20), default="PENDING", comment="执行状态")
+    # BUG-M9 修复: status 从 String(20) 改 Enum(StepStatusEnum, native_enum=False, length=20),
+    # 跟 content_type (M5) 同模式, 写库存 enum NAME, 避免写错字符串 ("success"/"OK"/"DONE")。
+    # 8 个 step_content 文件同步改用 StepStatusEnum.SUCCESS / .FAIL。
+    # PENDING 保留作 default 兼容 (interfaceResultModel 之前 default="PENDING")。
+    status = Column(
+        Enum(StepStatusEnum, native_enum=False, length=20),
+        default=StepStatusEnum.PENDING,
+        comment="执行状态 (存 enum NAME, e.g. 'SUCCESS'/'FAIL')",
+    )
 
     __mapper_args__ = {
         'polymorphic_on': content_type,

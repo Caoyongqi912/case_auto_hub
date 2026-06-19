@@ -121,3 +121,17 @@ class InterfaceAuthType(enum.IntEnum):
     BASIC_Auth = 3
     BEARER_Auth = 4
     KV_Auth = 2
+
+class StepStatusEnum(enum.Enum):
+    """步骤结果状态 (跟 InterfaceCaseContentResult.status 列对齐)。
+
+    BUG-M9 修复: 原本 8 个 step_content 文件写 status="SUCCESS"/"FAIL" 字面量,
+    没有任何 enum 约束, 写错字符串 ("success"/"fail"/"OK"/"DONE") 不会报错,
+    只有等前端 / DB 查询才发现。 改: 统一走 StepStatusEnum.SUCCESS / .FAIL,
+    model 改 Enum(StepStatusEnum, native_enum=False, length=20), 跟 M5 同模式。
+    SQLAlchemy 要求 Enum(...) 入参是 enum.Enum 的子类, 故此处继承 enum.Enum。
+    """
+    SUCCESS = "SUCCESS"
+    FAIL = "FAIL"
+    # 兼容旧 default='PENDING' / 历史 DB 数据 (interfaceResultModel 之前 default="PENDING")。
+    PENDING = "PENDING"
