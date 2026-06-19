@@ -376,8 +376,18 @@ class ResultWriter:
         if not self.content_result_cache:
             return
 
-        count = await InterfaceContentStepResultMapper.bulk_insert_results(self.content_result_cache)
-        log.info(f"批量插入 content_result: {count} 条")
+        # BUG-D2 修复: bulk_insert_results 现在返回 (inserted, skipped)
+        # skipped 由 mapper 内部统一 WARNING 输出,这里只记 inserted
+        inserted, skipped = await InterfaceContentStepResultMapper.bulk_insert_results(
+            self.content_result_cache
+        )
+        if skipped:
+            log.warning(
+                f"批量插入 content_result: inserted={inserted}, "
+                f"skipped={skipped} (已由 mapper 落盘 WARNING, 见上方)"
+            )
+        else:
+            log.info(f"批量插入 content_result: {inserted} 条")
 
     async def _fallback_insert_api_results(self):
         """

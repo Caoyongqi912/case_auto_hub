@@ -5,7 +5,7 @@
 # @File : interfaceResultMapper
 # @Software: PyCharm
 # @Desc: 接口执行结果 Mapper
-from typing import Dict, Type, List, Optional
+from typing import Dict, Type, List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload, selectinload
@@ -518,7 +518,7 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         cls,
         items: List[Dict],
         session: AsyncSession = None
-    ) -> int:
+    ) -> Tuple[int, int]:
         """
         批量插入步骤内容结果（支持多态）
 
@@ -528,23 +528,41 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         - 需要按 content_type 分组后，使用对应的子类模型批量插入
         - SQLAlchemy 会自动处理基类表和子类表的插入
 
+        BUG-D2 修复：
+        - 旧版对缺 content_type / 未知 content_type 的 item 静默 continue，
+          调用方只能看到 total_inserted，根本不知道丢了多少。
+        - 改 return 为 (inserted, skipped) 元组，skip 的全部 item 末尾 WARNING 输出
+          原因（content_name / content_id / content_type），让数据丢失可见。
+        - 缺失 content_type 视作编程错误直接抛 ValueError，
+          跟 insert_result 的策略保持一致。
+
         Args:
             items: 数据字典列表，每个字典必须包含 content_type 字段
             session: 可选的数据库会话
 
         Returns:
-            int: 插入的记录数
+            Tuple[int, int]: (inserted_count, skipped_count)
         """
         if not items:
-            return 0
+            return (0, 0)
 
         from collections import defaultdict
         grouped_items: Dict[CaseStepContentType, List[Dict]] = defaultdict(list)
+        # 收集被跳过的 item 与原因,循环结束后统一 log,避免数据丢失静默
+        skipped_items: List[Tuple[Dict, str]] = []
 
         for item in items:
             content_type = item.get('content_type')
             if content_type is None:
-                log.error(f"bulk_insert_results: 缺少 content_type 字段: {item}")
+                # 编程错误: 调用方没传 content_type。直接抛,跟 insert_result 一致。
+                raise ValueError(
+                    f"bulk_insert_results: 缺少 content_type 字段: {item}"
+                )
+            if content_type not in cls.RESULT_TYPE_MAP:
+                skipped_items.append((
+                    item,
+                    f"未知 content_type: {content_type!r} (未在 RESULT_TYPE_MAP 注册)",
+                ))
                 continue
             grouped_items[content_type].append(item)
 
@@ -554,8 +572,12 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
             if session:
                 for content_type, type_items in grouped_items.items():
                     result_model = cls.RESULT_TYPE_MAP.get(content_type)
+                    # 上面已经过滤过,这里理论上必能取到,留一道防御
                     if not result_model:
-                        log.error(f"bulk_insert_results: 不支持的 content_type: {content_type}")
+                        skipped_items.append((
+                            {"content_type": content_type, "count": len(type_items)},
+                            f"RESULT_TYPE_MAP 中无对应模型: {content_type!r}",
+                        ))
                         continue
 
                     models = [result_model(**item) for item in type_items]
@@ -563,23 +585,51 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
                     total_inserted += len(models)
 
                 await session.flush()
-                return total_inserted
             else:
                 async with cls.transaction() as session:
                     for content_type, type_items in grouped_items.items():
                         result_model = cls.RESULT_TYPE_MAP.get(content_type)
                         if not result_model:
-                            log.error(f"bulk_insert_results: 不支持的 content_type: {content_type}")
+                            skipped_items.append((
+                                {"content_type": content_type, "count": len(type_items)},
+                                f"RESULT_TYPE_MAP 中无对应模型: {content_type!r}",
+                            ))
                             continue
 
                         models = [result_model(**item) for item in type_items]
                         session.add_all(models)
                         total_inserted += len(models)
-
-                    return total_inserted
         except Exception as e:
-            log.error(f"bulk_insert_results error: {e}")
+            # 透传前先把已经掌握的 skip 信息落盘,排查时能看到"已经丢了多少"
+            if skipped_items:
+                log.warning(
+                    f"bulk_insert_results: DB 异常前已记录 {len(skipped_items)} 条 skip, "
+                    f"本次异常: {e}"
+                )
+            log.exception(f"bulk_insert_results error: {e}")
             raise
+
+        if skipped_items:
+            # 全部 skip 原因一次性 WARNING,带 content_name / content_id 便于排查
+            preview_lines = []
+            for item, reason in skipped_items[:5]:  # 最多展示 5 条样本
+                preview_lines.append(
+                    f"  - {reason} | content_name={item.get('content_name')!r}, "
+                    f"content_id={item.get('content_id')!r}, "
+                    f"content_type={item.get('content_type')!r}"
+                )
+            extra = (
+                f" ...(还有 {len(skipped_items) - 5} 条)"
+                if len(skipped_items) > 5
+                else ""
+            )
+            header = (
+                f"bulk_insert_results: 共跳过 {len(skipped_items)} 条 item "
+                f"(inserted={total_inserted}):"
+            )
+            log.warning(header + "\n" + "\n".join(preview_lines) + extra)
+
+        return (total_inserted, len(skipped_items))
 
 __all__ = ["InterfaceCaseResultMapper",
            "InterfaceResultMapper",
