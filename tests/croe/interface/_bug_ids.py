@@ -272,3 +272,9 @@ BUG_E10 = "E10"
 # code 一直在 mock 里。修: 删 2 个方法 + 加测试锁住 0 caller (防止别人
 # 误加调用, 然后踩 NotImplementedError)。
 BUG_N2 = "N2"
+
+# RB1: RequestBuilder._prepare_auth KV Auth target 字段非 "query"/"header" 时
+# 静默不报错。用户配错 (target="body"/"cookie" 等) 完全无线索, 调
+# 试半天才发现认证字段没生效。修: 加 else 分支, log.warning 含 target 值 +
+# case_id + 允许值列表, 业务异常也能查到。
+BUG_RB1 = "RB1"

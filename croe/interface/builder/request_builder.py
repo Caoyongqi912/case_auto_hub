@@ -185,6 +185,16 @@ class RequestBuilder:
                 request_data[KEY_HEADERS].update(
                     GenerateTools.list2dict(auth_data)
                 )
+            else:
+                # BUG-RB1 修复: target 既不是 query 也不是 header 时不能静默
+                # 吞掉, Pydantic KVAuth 限制 target=Literal['query','header'],
+                # 但 DB 存的是 JSON, 旧数据 / 手工编辑可能绕过 schema 校验
+                # 落库, 执行时没线索。
+                log.warning(
+                    f"[BUG-RB1] 未知的 KV Auth target: {target!r} "
+                    f"(case_id={getattr(interface, 'interface_case_id', '?')}), "
+                    f"允许值: query / header, kv 字段将不写入请求"
+                )
 
         # Basic 认证：生成 Basic 认证头
         elif auth_type == InterfaceAuthType.BASIC_Auth:
