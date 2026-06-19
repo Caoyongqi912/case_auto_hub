@@ -1,0 +1,119 @@
+"""
+[BUG-V6] VariableTrans 引用未定义变量时静默返回变量名
+
+根因: _resolve_vars 在 var_name not in self._vars 时, 走
+      `self._vars.get(var_name, f"{var_name}")` 兜底, 把变量名当字符串返回。
+      get_var 同病: `self._vars.get(key, key)` 缺失时返回 key 名字符串。
+后果: 用户写 {{user_id}} 在 URL 里, 如果上游 extract 失败 (handler 返回 None
+      + E12 已经把它从 vars_list 过滤), 这里拿不到 user_id, 静默把 URL
+      替换成 "/users/user_id/profile" — 请求发出去, 拿到 404, 操作员
+      误以为 API 挂了, 实际上是自己的变量没提取到。
+修: WARNING 日志让运维 grep 可见, 行为保持 (不破坏存量 case),
+    VARIABLE_TRANS_STRICT=1 改成抛 KeyError 让 case 立刻挂。
+
+测试 (7 个, 不接 DB):
+  - _resolve_vars 缺失变量 → 仍返 var_name + WARNING 出现
+  - _resolve_vars 已定义变量 → 不 WARNING + 返真值
+  - _resolve_vars $f_ 前缀仍走 faker.value
+  - _resolve_vars $g_ 前缀仍走 _find_g_vars
+  - get_var 缺失 → 返 key + WARNING
+  - get_var 已有 → 不 WARNING + 返真值
+  - VARIABLE_TRANS_STRICT=1 时 _resolve_vars 抛 KeyError
+"""
+import os
+import pytest
+from unittest.mock import AsyncMock, patch
+
+from utils.variableTrans import VariableTrans
+
+
+@pytest.fixture
+def vt():
+    return VariableTrans()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bug_v6_resolve_undefined_var_returns_name_with_warning(vt):
+    """核心回归: 缺失变量仍返 var_name, 但 WARNING 出来让运维可见"""
+    from utils import log
+    with patch.object(log, "warning") as mock_warn:
+        result = await vt._resolve_vars("user_id")
+    assert result == "user_id", f"期望返回 'user_id' 字符串, 实际 {result!r}"
+    assert mock_warn.called, "[BUG-V6] 缺失变量未触发 log.warning"
+    msg = str(mock_warn.call_args)
+    assert "user_id" in msg and "未定义" in msg, (
+        f"[BUG-V6] WARNING 应含 'user_id' 和 '未定义', 实际: {msg}"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bug_v6_resolve_defined_var_no_warning(vt):
+    """定义了的变量: 不应 WARNING, 直接返真值"""
+    from utils import log
+    vt._vars["token"] = "abc123"
+    with patch.object(log, "warning") as mock_warn:
+        result = await vt._resolve_vars("token")
+    assert result == "abc123", f"期望 'abc123', 实际 {result!r}"
+    assert not mock_warn.called, f"[BUG-V6] 已定义变量不应 WARNING, 实际: {mock_warn.call_args_list}"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bug_v6_resolve_f_prefix_still_works(vt):
+    """$f_ 前缀仍走 faker.value, 不进 V6 警告分支"""
+    # faker.value 在 {{$f_name}} 之类会生成随机值, 不进 _vars 也没事
+    with patch.object(vt._faker, "value", return_value="MockFaker"):
+        result = await vt._resolve_vars("$f_name")
+    assert result == "MockFaker"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bug_v6_resolve_g_prefix_still_works(vt):
+    """$g_ 前缀仍走 _find_g_vars, 不进 V6 警告分支"""
+    with patch.object(VariableTrans, "_find_g_vars", new=AsyncMock(return_value="g_val")):
+        result = await vt._resolve_vars("$g_userId")
+    assert result == "g_val"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bug_v6_get_var_undefined_returns_key_with_warning(vt):
+    """get_var 同病: 缺失返 key + WARNING"""
+    from utils import log
+    with patch.object(log, "warning") as mock_warn:
+        result = await vt.get_var("missing_key")
+    assert result == "missing_key", f"期望返 'missing_key', 实际 {result!r}"
+    assert mock_warn.called
+    msg = str(mock_warn.call_args)
+    assert "missing_key" in msg and "未定义" in msg, (
+        f"[BUG-V6] get_var 期望 WARNING 含 'missing_key', 实际: {msg}"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bug_v6_get_var_defined_no_warning(vt):
+    """get_var 已定义: 不 WARNING"""
+    from utils import log
+    vt._vars["foo"] = "bar"
+    with patch.object(log, "warning") as mock_warn:
+        result = await vt.get_var("foo")
+    assert result == "bar"
+    assert not mock_warn.called, f"[BUG-V6] 已定义变量不应 WARNING, 实际: {mock_warn.call_args_list}"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bug_v6_strict_mode_raises_keyerror(vt, monkeypatch):
+    """VARIABLE_TRANS_STRICT=1 时 _resolve_vars 抛 KeyError, 让 case 立刻挂"""
+    from utils import log
+    monkeypatch.setenv("VARIABLE_TRANS_STRICT", "1")
+    with patch.object(log, "warning"):
+        with pytest.raises(KeyError, match="user_id"):
+            await vt._resolve_vars("user_id")
+    with patch.object(log, "warning"):
+        with pytest.raises(KeyError, match="missing"):
+            await vt.get_var("missing")

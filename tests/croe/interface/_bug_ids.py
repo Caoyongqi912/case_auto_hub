@@ -102,6 +102,13 @@ BUG_D8 = "D8"
 # HUB_REQUEST_ALLOW_PRIVATE=1 逃生口。
 BUG_S4 = "S4"
 
+# V6: 引用未定义变量时静默返回变量名
+# _resolve_vars / get_var 缺失变量时返变量名字符串, URL 变成
+# /users/user_id/ 静默错, 操作员误以为是 API 挂。
+# 修: WARNING 兜底 + VARIABLE_TRANS_STRICT=1 严格模式抛 KeyError。
+BUG_V6 = "V6"
+
+
 
 
 # D7: query_steps_result 漏 LoopStepContentResult.interface_results 的 joinedload

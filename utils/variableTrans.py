@@ -48,6 +48,16 @@ class VariableTrans:
         self._vars.clear()
 
     async def get_var(self, key: str):
+        # BUG-V6 修复: 旧版缺失变量返回 key 名字符串 (跟 _resolve_vars 一样),
+        # 调用方拿 "字符串而非 None" 容易误判为 "变量存在但值就是这字符串"。
+        # 修: WARNING 日志兜底, 行为保持返回 key (不破坏存量),
+        # 严格模式 (VARIABLE_TRANS_STRICT=1) 抛 KeyError。
+        if key not in self._vars:
+            import os
+            msg = f"[BUG-V6] get_var 未定义变量 '{key}'"
+            if os.environ.get("VARIABLE_TRANS_STRICT") == "1":
+                raise KeyError(msg)
+            log.warning(msg)
         return self._vars.get(key, key)
 
     async def add_vars(self, data: VARS) -> None:
@@ -144,6 +154,17 @@ class VariableTrans:
             # 处理全局变量
             return await self._find_g_vars(var_name[1:])
         # 常规变量
+        # BUG-V6 修复: 缺失变量时, 旧版直接返回变量名字符串, 静默错
+        # (例 {{user_id}} 没提取, URL 变成 /users/user_id/...).
+        # 修: WARNING 日志兜底 (保留 "返回 var_name" 行为, 不破坏存量 case,
+        # 让运维 grep 警告可定位缺失变量)。生产想严格, 加 ENV VAR
+        # VARIABLE_TRANS_STRICT=1 改成抛 KeyError 让 case 立刻挂。
+        if var_name not in self._vars:
+            import os
+            msg = f"[BUG-V6] 引用了未定义的变量 '{var_name}', 将按字面量返回"
+            if os.environ.get("VARIABLE_TRANS_STRICT") == "1":
+                raise KeyError(msg)
+            log.warning(msg)
         return self._vars.get(var_name, f"{var_name}")
 
     async def _transform_str_with_vars(self, target: str) -> str:
