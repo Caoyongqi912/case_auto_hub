@@ -76,3 +76,18 @@ BUG_E6 = "E6"  # _build_result 返回 Dict, 不再 (Dict, bool) tuple
 # 失败时 'value' 未设, 旧实现仍把它放进返回 list, 下游日志把 value=None
 # 打印出来很丑, 还要靠 list2dict 兜底 None 防御。改成只返回成功的。
 BUG_E12 = "E12"  # extract_manager 只返回有 value 的 extract
+
+
+# V2: list2dict 重复 key 静默覆盖
+# 步骤 1 提取 token=abc, 步骤 2 又提 token=xyz (配置错误/数据脏),
+# 后者静默覆盖前者, 业务上不知道哪个步骤改了哪个值。
+# 保持 last-wins 语义 (跟 dict.update 一致), 但 WARNING 出去。
+BUG_V2 = "V2"  # list2dict 重复 key WARNING
+
+
+# D5: query_steps 多 joinedload 笛卡尔积
+# 5 个 joinedload(APIStepContent.interface_api 等) 是死代码,
+# 5 个 step strategy 都用 step_content.target_id + Mapper.get_by_id
+# 自行 fetch, 不会用 ORM relationship 预加载。
+# 旧 .options(joinedload(...)) 让 SQL 多 5 个 LEFT JOIN, 5x 行宽膨胀, 0 收益。
+BUG_D5 = "D5"  # query_steps 删除 5 个死 joinedload

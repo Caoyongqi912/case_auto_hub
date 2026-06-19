@@ -10,7 +10,6 @@ import asyncio
 from typing import List, Sequence, Dict, Callable, Any
 
 from sqlalchemy import select, insert, delete, update
-from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper.interfaceApi.dynamicMapper import InterfaceCaseDynamicMapper
 from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
@@ -760,18 +759,16 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         Returns:
             Sequence[ Any]: 步骤内容列表
         """
+        # BUG-D5 修复: 删除 5 个 joinedload, 全部是死代码。
+        # 5 个 step strategy 都用 step_content.target_id + Mapper.get_by_id(target_id)
+        # 自行 fetch 关联实体, 不会用 ORM relationship 预加载。
+        # 旧 .options(joinedload(...)) 让 SQL 多 5 个 LEFT JOIN, 5x 行宽膨胀, 0 收益。
+        # 只查基类 + 关联表 (association), 步进内容本身就够了。
         stmt = (
             select(InterfaceCaseContents)
             .join(
                 InterfaceCaseStepContentAssociation,
                 InterfaceCaseContents.id == InterfaceCaseStepContentAssociation.interface_case_content_id
-            )
-            .options(
-                joinedload(APIStepContent.interface_api),
-                joinedload(ConditionStepContent.interface_condition),
-                joinedload(LoopStepContent.interface_loop),
-                joinedload(GroupStepContent.interface_group),
-                joinedload(DBStepContent.db_execute),
             )
             .where(InterfaceCaseStepContentAssociation.interface_case_id == case_id)
             .order_by(InterfaceCaseStepContentAssociation.step_order)
