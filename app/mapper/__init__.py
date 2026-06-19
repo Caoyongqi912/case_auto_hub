@@ -842,28 +842,33 @@ class Mapper(Generic[M]):
 
         与 bulk_insert 不同，此方法适用于已经创建好模型实例的场景。
 
-        事务边界说明：
-        - 传入外部 session：在其上 add_all 并 flush，由调用方控制 commit
-        - 未传入 session：自动创建 session + 事务，add_all 后自动 commit
+        BUG-D4 修复:强制要求调用方传入 session,从外部事务统一管理 commit/rollback。
+        原版允许 session=None 时自动 commit, 容易在"多张表批量操作不在同一事务"时
+        出现"先 commit 再失败"导致数据半写。
+        如果调用方真的要自管理事务, 显式 `async with async_session() as s: s.begin()` 后
+        把 s 传进来即可。
 
         Args:
             models: 模型实例列表
-            session: 可选的外部会话对象
+            session: 必填的外部会话对象 (BUG-D4: 不再可选)
 
         Returns:
             int: 插入的记录数
         """
+        if session is None:
+            # 强约束: 不再隐式开事务自 commit, 否则多张表批量无法同事务
+            raise ValueError(
+                "bulk_insert_models requires an external session "
+                "(BUG-D4: 不再允许 session=None 隐式 commit)。"
+                "如需自管理事务, 用 `async with async_session() as s, s.begin():` 后传入 s。"
+            )
         if not models:
             return 0
 
         try:
-            # 统一使用 transaction(session) 消除 if session 分支：
-            # - session 不为 None：复用它，在其上执行操作并 flush（不擅自 commit）
-            # - session 为 None：transaction() 自动创建新 session + begin，退出时自动 commit
-            async with cls.transaction(session) as session:
-                session.add_all(models)
-                await session.flush()
-                return len(models)
+            session.add_all(models)
+            await session.flush()
+            return len(models)
         except Exception as e:
             log.exception(f"bulk_insert_models error: {e}")
             raise

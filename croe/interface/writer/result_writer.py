@@ -8,6 +8,8 @@
 
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.model.base import EnvModel
 
 from app.mapper.interfaceApi.interfaceResultMapper import (
@@ -321,54 +323,65 @@ class ResultWriter:
 
     async def _flush_cache(self):
         """
-        刷新缓存，批量插入数据
+        刷新缓存，批量插入数据 (BUG-D4 修复)。
+
+        事务策略：
+        - 单一事务包住 api_result + content_result 两次 bulk, 任一失败整体回滚
+        - 事务路径失败 -> 进入降级路径, 降级自己再开一个事务逐条 commit
+        - 缓存清空只在最后做, 失败时不丢缓存(其实也丢, 因为 retry 不在当前设计里;
+          留 TODO: 把缓存重试也做掉)
 
         重要：
         - content_result_cache 中存储的是字典，需要先转换成模型
         - api_result_cache 中存储的是 InterfaceResult 模型
-        - 添加异常处理，批量插入失败时降级为逐条插入
         """
         if self.api_result_cache or self.content_result_cache:
             log.info(
-                f"开始刷新缓存: api_result={len(self.api_result_cache)}, content_result={len(self.content_result_cache)}")
+                f"开始刷新缓存: api_result={len(self.api_result_cache)}, "
+                f"content_result={len(self.content_result_cache)}"
+            )
 
-        if self.api_result_cache:
-            try:
-                await self._bulk_insert_api_results()
-            except Exception as e:
-                log.error(f"批量插入 api_result 失败: {e}，尝试逐条插入")
-                await self._fallback_insert_api_results()
+        # 1. 主路径: 单事务批量
+        bulk_ok = False
+        try:
+            async with InterfaceResultMapper.transaction() as session:
+                if self.api_result_cache:
+                    await self._bulk_insert_api_results(session=session)
+                if self.content_result_cache:
+                    await self._bulk_insert_content_results(session=session)
+            bulk_ok = True
+        except Exception as e:
+            log.error(
+                f"BUG-D4 路径: 批量事务失败, 整批回滚, 转入逐条降级: {e}"
+            )
 
-        if self.content_result_cache:
-            try:
-                await self._bulk_insert_content_results()
-            except Exception as e:
-                log.error(f"批量插入 content_result 失败: {e}，尝试逐条插入")
-                await self._fallback_insert_content_results()
+        # 2. 降级路径: 自管事务, 逐条 commit, 不被前面半写污染
+        if not bulk_ok:
+            await self._fallback_insert_api_results()
+            await self._fallback_insert_content_results()
 
         self.api_result_cache.clear()
         self.content_result_cache.clear()
 
-    async def _bulk_insert_api_results(self):
+    async def _bulk_insert_api_results(self, session: AsyncSession) -> None:
         """
-        批量插入 API 结果
+        批量插入 API 结果 (BUG-D4: session 由外部事务传入, 本方法不自管 commit)。
 
-        优化说明：
         - 直接使用模型实例列表调用 bulk_insert_models
-        - 移除手动构建字典的逻辑
         - 缓存中已存储 InterfaceResult 模型实例
         """
         if not self.api_result_cache:
             return
 
-        count = await InterfaceResultMapper.bulk_insert_models(self.api_result_cache)
+        count = await InterfaceResultMapper.bulk_insert_models(
+            self.api_result_cache, session=session
+        )
         log.info(f"批量插入 api_result: {count} 条")
 
-    async def _bulk_insert_content_results(self):
+    async def _bulk_insert_content_results(self, session: AsyncSession) -> None:
         """
-        批量插入步骤内容结果
+        批量插入步骤内容结果 (BUG-D4: session 由外部事务传入, 本方法不自管 commit)。
 
-        优化说明：
         - 使用 InterfaceContentStepResultMapper.bulk_insert_results 方法
         - 该方法支持 Joined Table Inheritance，按 content_type 分组后批量插入
         - SQLAlchemy 自动处理基类表和子类表的插入
@@ -379,7 +392,7 @@ class ResultWriter:
         # BUG-D2 修复: bulk_insert_results 现在返回 (inserted, skipped)
         # skipped 由 mapper 内部统一 WARNING 输出,这里只记 inserted
         inserted, skipped = await InterfaceContentStepResultMapper.bulk_insert_results(
-            self.content_result_cache
+            self.content_result_cache, session=session
         )
         if skipped:
             log.warning(

@@ -364,9 +364,11 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         result_id: int,
         **kwargs
     ) -> InterfaceCaseContentResult:
-        """执行更新逻辑"""
+        """执行更新逻辑 (BUG-D3 修复: 删掉 get_by_id 后的冗余 refresh)"""
+        # get_by_id 内部 session.get(model, ident) 已从 DB 取到最新数据并 attach,
+        # 本函数接下来除了 setattr 不会有人改 target, 多余的 refresh 一次纯粹浪费
+        # 一次往返。
         target = await cls.get_by_id(result_id, session)
-        await session.refresh(target)
 
         base_columns = set(InterfaceCaseContentResult.__table__.columns.keys())
         child_columns = set(target.__class__.__table__.columns.keys())
@@ -536,13 +538,21 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         - 缺失 content_type 视作编程错误直接抛 ValueError，
           跟 insert_result 的策略保持一致。
 
+        BUG-D4 修复：session 改为必填，杜绝隐式 commit 导致多表批量不在同事务。
+        与 bulk_insert_models 行为对齐。
+
         Args:
             items: 数据字典列表，每个字典必须包含 content_type 字段
-            session: 可选的数据库会话
+            session: 必填的外部会话对象 (BUG-D4: 不再可选)
 
         Returns:
             Tuple[int, int]: (inserted_count, skipped_count)
         """
+        if session is None:
+            raise ValueError(
+                "bulk_insert_results requires an external session "
+                "(BUG-D4: 不再允许 session=None 隐式 commit)。"
+            )
         if not items:
             return (0, 0)
 
@@ -568,37 +578,23 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
 
         total_inserted = 0
 
+        # BUG-D4: session 已强制必填, 不再需要 if/else 分支 + 自开 transaction
         try:
-            if session:
-                for content_type, type_items in grouped_items.items():
-                    result_model = cls.RESULT_TYPE_MAP.get(content_type)
-                    # 上面已经过滤过,这里理论上必能取到,留一道防御
-                    if not result_model:
-                        skipped_items.append((
-                            {"content_type": content_type, "count": len(type_items)},
-                            f"RESULT_TYPE_MAP 中无对应模型: {content_type!r}",
-                        ))
-                        continue
+            for content_type, type_items in grouped_items.items():
+                result_model = cls.RESULT_TYPE_MAP.get(content_type)
+                # 上面已经过滤过,这里理论上必能取到,留一道防御
+                if not result_model:
+                    skipped_items.append((
+                        {"content_type": content_type, "count": len(type_items)},
+                        f"RESULT_TYPE_MAP 中无对应模型: {content_type!r}",
+                    ))
+                    continue
 
-                    models = [result_model(**item) for item in type_items]
-                    session.add_all(models)
-                    total_inserted += len(models)
+                models = [result_model(**item) for item in type_items]
+                session.add_all(models)
+                total_inserted += len(models)
 
-                await session.flush()
-            else:
-                async with cls.transaction() as session:
-                    for content_type, type_items in grouped_items.items():
-                        result_model = cls.RESULT_TYPE_MAP.get(content_type)
-                        if not result_model:
-                            skipped_items.append((
-                                {"content_type": content_type, "count": len(type_items)},
-                                f"RESULT_TYPE_MAP 中无对应模型: {content_type!r}",
-                            ))
-                            continue
-
-                        models = [result_model(**item) for item in type_items]
-                        session.add_all(models)
-                        total_inserted += len(models)
+            await session.flush()
         except Exception as e:
             # 透传前先把已经掌握的 skip 信息落盘,排查时能看到"已经丢了多少"
             if skipped_items:

@@ -36,3 +36,6 @@ BUG_M11 = "M11"  # *_uid 长度截断
 # V4 审查 + D2 追加
 BUG_V4 = "V4"  # _hub_api_request 同步 httpx.Client 阻塞
 BUG_D2 = "D2"  # bulk_insert_results 异常吞掉部分成功记录
+
+# D4 追加
+BUG_D4 = "D4"  # bulk_insert_* 隐式 commit, 多表批量不在同事务

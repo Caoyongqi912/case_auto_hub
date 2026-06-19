@@ -39,6 +39,14 @@ def _valid_item(content_type=CaseStepContentType.STEP_API, content_id=100):
     }
 
 
+def _fake_session():
+    """返回一个 AsyncMock 的 session, 用于 D2 测试。"""
+    s = AsyncMock()
+    s.add_all = MagicMock()
+    s.flush = AsyncMock()
+    return s
+
+
 def _patch_transaction(fake_session):
     """把 cls.transaction() mock 成一个 async ctx mgr,内部 yield fake_session。"""
     @contextlib.asynccontextmanager
@@ -51,7 +59,9 @@ def _patch_transaction(fake_session):
 @pytest.mark.asyncio
 async def test_bug_d2_empty_returns_zero_zero(bug_d2_marker):
     """[BUG-D2] 空输入应当返回 (0, 0)。"""
-    inserted, skipped = await InterfaceContentStepResultMapper.bulk_insert_results([])
+    inserted, skipped = await InterfaceContentStepResultMapper.bulk_insert_results(
+        [], session=_fake_session()
+    )
     assert inserted == 0, f"[{BUG_D2}] empty 应 inserted=0, 实际 {inserted}"
     assert skipped == 0, f"[{BUG_D2}] empty 应 skipped=0, 实际 {skipped}"
 
@@ -62,7 +72,9 @@ async def test_bug_d2_missing_content_type_raises(bug_d2_marker):
     """[BUG-D2] 缺 content_type 应抛 ValueError(编程错误,不静默吞)。"""
     bad = {"content_id": 1, "content_name": "no-ct"}  # 没 content_type
     with pytest.raises(ValueError, match="content_type"):
-        await InterfaceContentStepResultMapper.bulk_insert_results([bad])
+        await InterfaceContentStepResultMapper.bulk_insert_results(
+            [bad], session=_fake_session()
+        )
 
 
 @pytest.mark.unit
@@ -79,7 +91,9 @@ async def test_bug_d2_unknown_content_type_is_counted_and_logged(bug_d2_marker):
     fake_session.flush = AsyncMock()
 
     with _patch_transaction(fake_session), patch("utils.log.warning") as mock_warn:
-        inserted, skipped = await InterfaceContentStepResultMapper.bulk_insert_results([unknown])
+        inserted, skipped = await InterfaceContentStepResultMapper.bulk_insert_results(
+            [unknown], session=fake_session
+        )
 
     assert inserted == 0, f"[{BUG_D2}] 未知 type 不应被 inserted, 实际 {inserted}"
     assert skipped == 1, f"[{BUG_D2}] 未知 type 应被 skipped=1, 实际 {skipped}"
@@ -107,7 +121,7 @@ async def test_bug_d2_mix_valid_and_unknown(bug_d2_marker):
 
     with _patch_transaction(fake_session), patch("utils.log.warning") as mock_warn:
         inserted, skipped = await InterfaceContentStepResultMapper.bulk_insert_results(
-            [good, unknown, good2]
+            [good, unknown, good2], session=fake_session
         )
 
     assert inserted == 2, f"[{BUG_D2}] 2 条合法应 inserted=2, 实际 {inserted}"
@@ -130,7 +144,9 @@ async def test_bug_d2_all_valid_no_warning(bug_d2_marker):
     fake_session.flush = AsyncMock()
 
     with _patch_transaction(fake_session), patch("utils.log.warning") as mock_warn:
-        inserted, skipped = await InterfaceContentStepResultMapper.bulk_insert_results(items)
+        inserted, skipped = await InterfaceContentStepResultMapper.bulk_insert_results(
+            items, session=fake_session
+        )
 
     assert inserted == 3, f"[{BUG_D2}] 应 inserted=3, 实际 {inserted}"
     assert skipped == 0, f"[{BUG_D2}] 应 skipped=0, 实际 {skipped}"
