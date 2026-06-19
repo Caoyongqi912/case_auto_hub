@@ -133,3 +133,12 @@ BUG_D7 = "D7"
 # 自行 fetch, 不会用 ORM relationship 预加载。
 # 旧 .options(joinedload(...)) 让 SQL 多 5 个 LEFT JOIN, 5x 行宽膨胀, 0 收益。
 BUG_D5 = "D5"  # query_steps 删除 5 个死 joinedload
+
+# D6: InterfaceResult <-> APIStepContentResult 双向 FK 漂移检测 + reconcile
+# InterfaceResult.content_result_id 跟 APIStepContentResult.interface_result_id
+# 是同一 1:1 关系的两个方向, 任何一边漏更新就漂。F8B 只处理 'ir_missing_fk'
+# (ir.content_result_id IS NULL) 这一种, 还有 'mismatch' (ir.content_result_id
+# 跟 api.interface_result_id 不等) 跟 'api_missing_fk' (api 那边没记录) 两种
+# 漂移没处理。修: 加 find_fk_inconsistencies (3 种 reason 全识别) +
+# reconcile_fk_from_polymorphic (UPDATE JOIN 兜底覆写)。
+BUG_D6 = "D6"

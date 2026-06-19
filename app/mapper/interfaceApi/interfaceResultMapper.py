@@ -5,7 +5,7 @@
 # @File : interfaceResultMapper
 # @Software: PyCharm
 # @Desc: 接口执行结果 Mapper
-from typing import Dict, Type, List, Optional, Tuple
+from typing import Any, Dict, Type, List, Optional, Tuple
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import joinedload, selectinload, with_polymorphic
@@ -228,7 +228,127 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
             log.error(f"backfill_content_result_id_fk error: {e}")
             raise
 
-    
+    @classmethod
+    async def find_fk_inconsistencies(
+        cls,
+        case_result_id: Optional[int] = None,
+        session: AsyncSession = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        [BUG-D6] 找出 InterfaceResult.content_result_id 跟 polymorphic
+        子类 (interface_result_id FK) 不一致的行。
+
+        双向 FK 设计: InterfaceResult.content_result_id 跟 APIStepContentResult
+        .interface_result_id 是同一 1:1 关系的两个方向, 应该始终指向同一对
+        id。任何一边漏更新就漂。
+
+        修法: D6 没改 schema (删 FK 是大改), 改成 invariant 检查 + reconcile
+        兜底。生产环境 / 迁移后可跑这个查询找出历史漂移。
+
+        Args:
+            case_result_id: 限定单个 case_result (CI 用), None = 全表扫描
+            session: 外部 session (D4 强制)
+
+        Returns:
+            List[Dict]: 每条 {'interface_result_id', 'interface_result.content_result_id',
+                              'api_subclass.interface_result_id', 'mismatch_reason'}
+        """
+        if session is None:
+            raise ValueError(
+                "find_fk_inconsistencies requires external session "
+                "(BUG-D4: 不再隐式 commit)"
+            )
+        from sqlalchemy import text
+        sql = text("""
+            SELECT
+                ir.id AS interface_result_id,
+                ir.content_result_id AS ir_content_result_id,
+                api.interface_result_id AS api_interface_result_id,
+                CASE
+                    WHEN ir.content_result_id IS NULL AND api.interface_result_id IS NOT NULL
+                        THEN 'ir_missing_fk'
+                    WHEN ir.content_result_id IS NOT NULL AND api.interface_result_id IS NULL
+                        THEN 'api_missing_fk'
+                    WHEN ir.content_result_id != api.interface_result_id
+                        THEN 'mismatch'
+                    ELSE 'ok'
+                END AS mismatch_reason
+            FROM interface_result ir
+            LEFT JOIN interface_case_content_result_api api
+                ON api.interface_result_id = ir.id
+            WHERE (ir.content_result_id IS NULL OR api.interface_result_id IS NULL
+                   OR ir.content_result_id != api.interface_result_id)
+              AND (:case_result_id IS NULL OR ir.id IN (
+                  SELECT ir2.id FROM interface_result ir2
+                  JOIN interface_case_content_result cr ON cr.id = ir2.content_result_id
+                  WHERE cr.case_result_id = :case_result_id
+              ))
+        """)
+        try:
+            result = await session.execute(sql, {"case_result_id": case_result_id})
+            rows = result.mappings().all()
+            return [dict(r) for r in rows]
+        except Exception as e:
+            log.error(f"find_fk_inconsistencies error: {e}")
+            raise
+
+    @classmethod
+    async def reconcile_fk_from_polymorphic(
+        cls,
+        case_result_id: Optional[int] = None,
+        session: AsyncSession = None,
+    ) -> int:
+        """
+        [BUG-D6] 用 polymorphic 子类的 interface_result_id FK 覆写
+        InterfaceResult.content_result_id, 修双向 FK 漂移。
+
+        策略: interface_case_content_result_api.interface_result_id 才是
+        source of truth (因为它是 polymorphic 子类表, 在 ORM 创建 content_result
+        时就 INSERT 好了), interface_result.content_result_id 是 denormalized
+        缓存, 漂移时以子类为准。
+
+        D6 现状: F8B backfill_content_result_id_fk 已经在 finalize 调,
+        只回填 'ir_missing_fk' (ir.content_result_id IS NULL)。
+        本方法更全面: 处理 'ir_missing_fk' + 'mismatch' 两种情况。
+
+        Args:
+            case_result_id: 限定单个 case_result, None = 全表
+            session: 外部 session (D4 强制)
+
+        Returns:
+            int: 修复的行数
+        """
+        if session is None:
+            raise ValueError(
+                "reconcile_fk_from_polymorphic requires external session "
+                "(BUG-D4: 不再隐式 commit)"
+            )
+        from sqlalchemy import text
+        sql = text("""
+            UPDATE interface_result ir
+            JOIN interface_case_content_result_api api
+                ON api.interface_result_id = ir.id
+            SET ir.content_result_id = api.interface_result_id
+            WHERE (ir.content_result_id IS NULL
+                   OR ir.content_result_id != api.interface_result_id)
+              AND (:case_result_id IS NULL OR ir.id IN (
+                  SELECT ir2.id FROM interface_result ir2
+                  JOIN interface_case_content_result cr ON cr.id = ir2.content_result_id
+                  WHERE cr.case_result_id = :case_result_id
+              ))
+        """)
+        try:
+            async with cls.session_scope(session) as session:
+                result = await session.execute(
+                    sql, {"case_result_id": case_result_id}
+                )
+                await session.commit()
+                return result.rowcount or 0
+        except Exception as e:
+            log.error(f"reconcile_fk_from_polymorphic error: {e}")
+            raise
+
+
 class InterfaceTaskResultMapper(Mapper[InterfaceTaskResult]):
     __model__ = InterfaceTaskResult
 
