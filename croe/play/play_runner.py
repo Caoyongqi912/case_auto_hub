@@ -10,6 +10,7 @@ from croe.play.starter import UIStarter
 from croe.play.writer import ContentResultWriter, PlayCaseResultWriter
 from utils import log
 from croe.play.browser import BrowserManagerFactory, PageManager, BrowserManager
+from croe.interface.observability import set_trace_id, clear_trace_id
 
 
 class PlayRunner:
@@ -58,26 +59,36 @@ class PlayRunner:
         :param write_result_on_failure: 失败时是否写入结果（重试场景下设为False）
         :return: bool - 用例执行是否成功
         """
+        # BUG-P-2-3 修复: 之前 UI 业务流没有 trace_id, 多 case 并发时日志
+        # 串在一起无法定位"这条日志是哪条 case 跑的"。接口自动化 (interface
+        # runner) 已经有 OBS-2 trace_id, UI 一直缺。修: 跟接口风格统一,
+        # execute_case 进入时 set_trace_id (8 字符够区分并发, 短不抢眼),
+        # 在 finally 块 clear_trace_id 防泄漏到下一次 case。复用了 interface
+        # 已有 ContextVar, 不引入新机制。
+        trace_id = set_trace_id()
         # 默认结果为成功
         page_manager = None
         case_success = True
+        # 默认 None, finally 用 isinstance 检查避免 NameError (早期 return 路径)
+        content_writer = None
 
-        case_step_contents = await PlayCaseMapper.query_content_steps(case_id=play_case.id)
-        case_step_content_length = len(case_step_contents)
-        await self.starter.send(f"用例 {play_case.title} 执行开始。执行人 {self.starter.username}")
-        await self.starter.send(f"查询到关联步骤 x {case_step_content_length} ...")
-
-        if not case_step_contents:
-            await self.starter.send("无可执行业务流步骤，结束执行")
-            await self.starter.over()
-            return case_success
-
-        # 初始化。步骤结果写入器
-        content_writer = ContentResultWriter(
-            play_case_result_id=case_result_writer.play_case_result.id,
-            play_task_result_id=task_result.id if task_result else None
-        )
+        # 整个 case 执行 (含早期 return) 都在 try/finally 里, 保证 trace_id 清掉
         try:
+            case_step_contents = await PlayCaseMapper.query_content_steps(case_id=play_case.id)
+            case_step_content_length = len(case_step_contents)
+            await self.starter.send(f"用例 {play_case.title} 执行开始。执行人 {self.starter.username}")
+            await self.starter.send(f"查询到关联步骤 x {case_step_content_length} ...")
+
+            if not case_step_contents:
+                await self.starter.send("无可执行业务流步骤，结束执行")
+                await self.starter.over()
+                return case_success
+
+            # 初始化。步骤结果写入器
+            content_writer = ContentResultWriter(
+                play_case_result_id=case_result_writer.play_case_result.id,
+                play_task_result_id=task_result.id if task_result else None
+            )
             page_manager = await self._init_page()
 
             await self.starter.send(f"初始化页面成功")
@@ -124,9 +135,14 @@ class PlayRunner:
             log.exception(f"PlayRunner.execute_case 异常: {e}")
             case_success = False
         finally:
+            # [OBS-2] 不管 case 成功 / 失败 / 异常, 都清掉 trace_id, 防泄漏
+            # 到下一次 case (下个 case 进入 execute_case 会重新 set_trace_id)。
+            clear_trace_id()
             await self.starter.send(f'执行完成 >> {play_case}, 结果: {case_success}')
             # 只有成功时 或者 允许失败写入时 才写入结果
-            if case_success or write_result_on_failure:
+            # BUG-P-2-3 配套: content_writer 默认 None (早期 return 路径),
+            # 检查一下避免 NameError
+            if content_writer is not None and (case_success or write_result_on_failure):
                 # 一次性写入 content results
                 await content_writer.flush()
                 await case_result_writer.write_result(case_success)

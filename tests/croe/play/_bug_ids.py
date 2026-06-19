@@ -75,3 +75,25 @@ BUG_P_1_7 = "P-1-7"
 # 跟 error_continue 语义冲突 (error_continue=True 仍被 raise 中断)。修:
 # 失败只 log.exception + starter.send WARNING, 不 raise, 让 case 继续跑。
 BUG_P_1_8 = "P-1-8"
+
+# ---------------------------------------------------------------------------
+# P2 批: 中优先级修复
+# ---------------------------------------------------------------------------
+
+# P-2-1 修复: app/mapper/play/playCaseMapper.py:association_groups 和
+# copy_content 函数体内有 `from app.mapper.play.playStepGroupMapper import
+# PlayStepGroupMapper` 内联 import, 应该放文件顶部。修: 移到顶部, 删
+# 内联 import (静态分析 + 避免 lazy import 的循环依赖风险)。
+BUG_P_2_1 = "P-2-1"
+
+# P-2-2 修复: app/mapper/play/playCaseMapper.py:reload_content 死代码, 全仓
+# grep 无任何 caller。修: 加 deprecation docstring, 不删 (接口稳定, controller
+# 没暴露, 之后批量刷新步骤名称/描述时还能用, 留着无害)。
+BUG_P_2_2 = "P-2-2"
+
+# P-2-3 修复: croe/play/play_runner.py:execute_case 之前没有 trace_id, 多
+# case 并发时日志无法定位"这条日志是哪条 case 跑的"。接口自动化已经有
+# OBS-2 trace_id, UI 一直缺。修: execute_case 进入时 set_trace_id (8 字符
+# 够区分并发), finally 块 clear_trace_id 防泄漏。复用了 interface 已有
+# ContextVar, 不引入新机制。
+BUG_P_2_3 = "P-2-3"

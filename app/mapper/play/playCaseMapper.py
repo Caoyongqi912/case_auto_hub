@@ -161,8 +161,7 @@ class PlayCaseMapper(Mapper[PlayCase]):
                     raise ValueError(f"找不到ID为{case_id}的用例")
 
                 group_content_list = []
-                # 查询组
-                from app.mapper.play.playStepGroupMapper import PlayStepGroupMapper
+                # 查询组 (PlayStepGroupMapper 在文件顶部已 import, 见 P2-1 修复)
                 groups = await PlayStepGroupMapper.query_by_id(group_id_list, session)
                 for group in groups:
                     content = await PlayStepContentMapper.init_content(
@@ -509,9 +508,19 @@ class PlayCaseMapper(Mapper[PlayCase]):
     @classmethod
     async def reload_content(cls, case_id: int):
         """
-        刷新content
+        刷新content (死代码, 没有任何 caller)
+
         Args:
-            case_id：用例id
+            case_id: 用例id
+
+        Notes:
+            - BUG-P-2-2: 之前该方法在 review 时被标为"死代码", 全仓 grep 无任何调用方。
+              内容修改靠 SQLAlchemy ORM dirty tracking 自动 flush (对象已在 session
+              里), 不是死代码的根因。真正问题是没人调用。
+            - 保留原因: 接口稳定, controller 没暴露这条路径, 之后真要"批量刷新步骤
+              名称/描述"还能用。删了就没了, 留着无害 (死代码不耗运行资源, IDE 会
+              灰显提示)。
+            - 如果之后确认永远不用, 再删。改 caller 风险低: 只有 controller 会调。
         """
 
         async with cls.transaction() as session:
@@ -1001,9 +1010,8 @@ class PlayStepContentMapper(Mapper[PlayStepContent]):
                 )
                 return await cls.add_flush_expunge(session, new_content)
 
-            # 复制组
+            # 复制组 (PlayStepGroupMapper 在文件顶部已 import, 见 P2-1 修复)
             case PlayStepContentType.STEP_PLAY_GROUP:
-                from app.mapper.play.playStepGroupMapper import PlayStepGroupMapper
                 group = await PlayStepGroupMapper.copy_group2(group_id=content.target_id,
                                                               user=user,
                                                               session=session)
