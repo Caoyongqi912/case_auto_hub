@@ -71,7 +71,7 @@ class InterfaceRunner:
         interface = await InterfaceMapper.get_by_id(ident=interface_id)
         env = await self._get_running_env(env=env_id)
         await self.init_global_headers()
-        result, _ = await self.interface_executor.execute(
+        result = await self.interface_executor.execute(
             interface=interface, env=env
         )
         return result
@@ -100,7 +100,7 @@ class InterfaceRunner:
         results = []
         for interface in interfaces:
             await self.starter.send(f"✍️✍️  Execute    {interface}")
-            result, _ = await self.interface_executor.execute(
+            result = await self.interface_executor.execute(
                 interface=interface, env=env
             )
             results.append(result)
@@ -286,10 +286,12 @@ class InterfaceRunner:
             是否执行成功
         """
         for attempt in range(retry + 1):
-            result, success = await self.interface_executor.execute(
+            result = await self.interface_executor.execute(
                 interface=interface,
                 env=env
             )
+            # BUG-E6 修复: 第二个返回值 (success) 没了, 从 result['result'] 拿
+            success = result['result']
 
             if success:
                 await self.result_writer.write_interface_result(

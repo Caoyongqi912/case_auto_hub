@@ -60,3 +60,19 @@ BUG_M7 = "M7"  # 删 InterfaceCaseResultEnum + result_writer._result_flag_to_boo
 # ±1/±N 散落在 5 个同步点, 移除 GROUP/CONDITION/LOOP 时 -1 写死,
 # 实际一个 group 含 N 个 API, 永远算错。加 recompute_case_api_num 兜底。
 BUG_M8 = "M8"  # recompute_case_api_num 兜底 5 个 ±N 同步点
+
+# M6: with_polymorphic='*' 笛卡尔积风险
+# InterfaceCaseContentResult (结果表) 用 '*' 让每次 SELECT 自动 LEFT JOIN
+# 所有 8 个子类表, 行宽膨胀 8x, 网络/内存/DB 计划都浪费。
+# 实际 3 个查询都只读基类字段, 删 '*' 零风险。
+BUG_M6 = "M6"  # 删 InterfaceCaseContentResult 的 with_polymorphic='*'
+
+# E6: _build_result 过度声明
+# 旧签名 (Tuple[Dict, bool]) 把 success 单独返回, 但 result 字典里
+# 也有 'result' 字段, 两路来源不同步风险。改返 Dict, 调用方用 result['result']。
+BUG_E6 = "E6"  # _build_result 返回 Dict, 不再 (Dict, bool) tuple
+
+# E12: extract_manager 静默吞错 + 返回 list 含失败项
+# 失败时 'value' 未设, 旧实现仍把它放进返回 list, 下游日志把 value=None
+# 打印出来很丑, 还要靠 list2dict 兜底 None 防御。改成只返回成功的。
+BUG_E12 = "E12"  # extract_manager 只返回有 value 的 extract

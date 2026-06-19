@@ -43,7 +43,9 @@ class ExtractManager:
             extracts: 提取配置列表
 
         Returns:
-            提取结果列表
+            提取结果列表。BUG-E12 修复: 只返回成功提取的 (含 'value' 键的),
+            失败/无 handler 的不再返回, 避免后续日志把 value=None 也打印,
+            也避免下游 list2dict 需要 None-skip 防御。
         """
         handlers: Dict[int, Callable] = {
             ExtractTargetVariablesEnum.ResponseJsonExtract:
@@ -56,22 +58,29 @@ class ExtractManager:
                 self._handle_response_text_extract,
         }
 
+        successful: List[Dict[str, Any]] = []
         for extract in extracts:
             try:
                 target = int(extract.get("target", 0))
                 handler: Optional[Callable] = handlers.get(target)
 
-                if handler:
-                    extract['value'] = await handler(extract)
-                else:
+                if not handler:
                     log.warning(f"Unsupported Target: {target}")
+                    continue
+
+                extract['value'] = await handler(extract)
+                # BUG-E12 修复: 只在 handler 返回有效 value (非 None) 时纳入结果
+                if extract.get('value') is not None:
+                    successful.append(extract)
+                else:
+                    log.warning(f"Extract returned None: {extract.get('key')}")
 
             except KeyError as e:
                 log.error(f"Missing key in extract: {e}")
             except Exception as e:
                 log.error(f"Error processing extract: {e}")
 
-        return extracts
+        return successful
 
     async def _handle_response_json_extract(
         self,

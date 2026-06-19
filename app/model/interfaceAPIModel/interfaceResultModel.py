@@ -219,7 +219,14 @@ class InterfaceCaseContentResult(BaseModel):
     __mapper_args__ = {
         'polymorphic_on': content_type,
         'polymorphic_identity': None,
-        'with_polymorphic': '*',
+        # BUG-M6 修复: 去掉 with_polymorphic='*'。
+        # 原配置会让每次 SELECT InterfaceCaseContentResult 都自动 LEFT OUTER JOIN
+        # 所有 8 个子类表 (api/group/condition/script/db/wait/assert/loop) —
+        # 每行宽度膨胀 8x, 网络/内存/DB 计划都浪费, 实际 ORM 子类字段
+        # (to_dict 里用 self_and_descendants) 是运行时反射, 跟 with_polymorphic 无关。
+        # 当前 3 个查询 (query_by_case_result_id / query_by_task_result_id /
+        # query_by_content_type) 都只读基类字段, 不需要子类表 JOIN。
+        # 如果以后要按子类字段过滤, 显式加 .with_polymorphic([APIStepContentResult, ...]) 即可。
     }
 
     def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:

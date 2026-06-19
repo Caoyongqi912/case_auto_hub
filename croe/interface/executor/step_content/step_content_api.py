@@ -42,10 +42,12 @@ class APIStepContentStrategy(StepBaseStrategy):
             )
             return False
 
-        step_result, success = await self.interface_executor.execute(
+        step_result = await self.interface_executor.execute(
             interface=interface,
             env=step_context.execution_context.env
         )
+        # BUG-E6 修复: 第二个返回值 (success) 没了, 从 step_result['result'] 拿
+        success = step_result['result']
 
         log.info(f"api step step_result {step_result}")
         interface_result = await step_context.result_writer.write_interface_result(

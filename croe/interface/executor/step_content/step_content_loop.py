@@ -134,10 +134,12 @@ class APILoopContentStrategy(StepBaseStrategy):
             f"{interface.interface_name} {'-' * 20}"
         )
 
-        interface_result, success = await self.interface_executor.execute(
+        interface_result = await self.interface_executor.execute(
             interface=interface,
             env=step_context.execution_context.env
         )
+        # BUG-E6 修复: 第二个返回值 (success) 没了, 从 interface_result['result'] 拿
+        success = interface_result['result']
 
         try:
             await step_context.result_writer.write_interface_result(

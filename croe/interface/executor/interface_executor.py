@@ -82,7 +82,7 @@ class InterfaceExecutor:
         interface: Interface,
         env: Optional[EnvModel] = None,
         temp_var: Optional[Dict] = None
-    ) -> Tuple[Dict[str, Any], bool]:
+    ) -> Dict[str, Any]:
         """
         执行接口请求（主入口）
 
@@ -98,8 +98,9 @@ class InterfaceExecutor:
             temp_var: 临时变量（单个 dict 或 list）
 
         Returns:
-            Tuple[结果字典, 是否成功]
-            结果字典字段与 InterfaceResult 模型对齐
+            Dict[str, Any]: 结果字典, 字段与 InterfaceResult 模型对齐,
+            其中 'result' 字段 (bool) 表示执行是否成功。
+            调用方请用 result['result'] 代替旧的 success 返回值 (BUG-E6 修复)。
         """
         # 创建执行上下文
         ctx: ExecutionContext = ExecutionContext(
@@ -385,9 +386,10 @@ class InterfaceExecutor:
 
         return vars_list
 
-    def _build_result(self, ctx: ExecutionContext) -> Tuple[Dict[str, Any], bool]:
+    def _build_result(self, ctx: ExecutionContext) -> Dict[str, Any]:
         """
-        构建接口执行结果
+        构建接口执行结果 (BUG-E6 修复: 不再返回 Tuple, 改返 Dict,
+        调用方用 result['result'] 拿成功标志, 避免 dict 和 bool 两路来源歧义)。
 
         构建结果与 InterfaceResult 模型字段对齐
 
@@ -395,7 +397,7 @@ class InterfaceExecutor:
             ctx: 执行上下文
 
         Returns:
-            Tuple[结果字典, 是否成功]
+            Dict[str, Any]: 结果字典, 'result' 字段 (bool) 表示执行是否成功
         """
         # 基础信息
         result: Dict[str, Any] = {
@@ -453,7 +455,7 @@ class InterfaceExecutor:
         result['result'] = ctx.success
         result['start_time'] = ctx.start_time
 
-        return result, ctx.success
+        return result
 
     @staticmethod
     def _normalize_temp_variables(temp_var: Optional[Union[Dict, List]]) -> List:
