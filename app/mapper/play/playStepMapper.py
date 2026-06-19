@@ -63,7 +63,7 @@ class PlayStepV2Mapper(Mapper[PlayStepModel]):
             # 发生异常时回滚
             if should_close and session:
                 await session.rollback()
-            raise e
+            raise
         finally:
             if should_close and session:
                 await session.close()
@@ -106,7 +106,7 @@ class PlayStepV2Mapper(Mapper[PlayStepModel]):
 
         except Exception as e:
             log.exception(e)
-            raise e
+            raise
 
     @classmethod
     async def get_by_ids(cls, play_step_id_list: List[int], session: AsyncSession) -> List[PlayStepModel]:
@@ -141,4 +141,4 @@ class PlayStepV2Mapper(Mapper[PlayStepModel]):
             return ordered_steps
         except Exception as e:
             log.exception(e)
-            raise e
+            raise

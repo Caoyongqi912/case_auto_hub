@@ -33,8 +33,8 @@ class PlayTaskMapper(Mapper[PlayTask]):
                 tasks = await session.scalars(select(PlayTask).where(PlayTask.is_auto is True))
                 return tasks.all()
         except Exception as e:
-            log.error(e)
-            raise e
+            log.exception(f"play mapper operation failed: {e}")
+            raise
 
     @classmethod
     async def remove_task(cls, taskId: int, scheduler):
@@ -51,7 +51,7 @@ class PlayTaskMapper(Mapper[PlayTask]):
                 await scheduler.remove_job(task.uid)
                 await session.execute(delete(PlayTask).where(PlayTask.id == taskId))
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def query_case(cls, taskId: int) -> List[PlayCase]:
@@ -81,7 +81,7 @@ class PlayTaskMapper(Mapper[PlayTask]):
                 )
                 return cases.all()
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def association_cases(cls, taskId: int, caseIdList: list[int]):
@@ -126,7 +126,7 @@ class PlayTaskMapper(Mapper[PlayTask]):
                     result = await session.execute(insert(PlayTaskCasesAssociation).values(new_cases))
                     task.play_case_num += result.rowcount  # 更新已添加的用例数量
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def reorder_association_case(cls, taskId: int, caseIdList: list[int]):
@@ -147,7 +147,7 @@ class PlayTaskMapper(Mapper[PlayTask]):
 
                     ).values(case_order=index))
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def remove_association_case(cls, taskId: int, caseId: int):
@@ -179,7 +179,7 @@ class PlayTaskMapper(Mapper[PlayTask]):
                 )
                 task.ui_case_num = data.scalar()
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def set_task_status(cls, taskId: int, status: str):
@@ -201,7 +201,7 @@ class PlayTaskMapper(Mapper[PlayTask]):
                     status=status
                 ))
         except Exception as e:
-            raise e
+            raise
 
 
 class PlayTaskResultMapper(Mapper[PlayTaskResult]):
@@ -243,7 +243,7 @@ class PlayTaskResultMapper(Mapper[PlayTaskResult]):
                 await cls.flush_expunge(session, result)
                 return result
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def set_result(cls, result: PlayTaskResult):
@@ -258,7 +258,7 @@ class PlayTaskResultMapper(Mapper[PlayTaskResult]):
                 session.add(result)
                 await session.flush()
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def clear_result(cls, taskId: int):
@@ -275,4 +275,4 @@ class PlayTaskResultMapper(Mapper[PlayTaskResult]):
             async with cls.transaction() as session:
                 await session.execute(delete(PlayTaskResult).where(PlayTaskResult.task_id == taskId))
         except Exception as e:
-            raise e
+            raise

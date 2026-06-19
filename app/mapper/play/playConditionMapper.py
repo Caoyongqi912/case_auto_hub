@@ -99,7 +99,7 @@ class PlayConditionMapper(Mapper[PlayCondition]):
                     await session.delete(step_content)
 
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def init_empty(cls, user: User, session: AsyncSession):

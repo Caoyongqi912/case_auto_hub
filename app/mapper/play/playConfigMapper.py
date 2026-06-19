@@ -26,7 +26,7 @@ class PlayMethodMapper(Mapper[PlayMethod]):
                     insert(cls.__model__).values(methods)
                 )
         except Exception as e:
-            raise e
+            raise
 
 
 class PlayLocatorMapper(Mapper[PlayLocator]):
@@ -40,7 +40,7 @@ class PlayLocatorMapper(Mapper[PlayLocator]):
                     insert(cls.__model__).values(locators)
                 )
         except Exception as e:
-            raise e
+            raise
 
 
 class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):

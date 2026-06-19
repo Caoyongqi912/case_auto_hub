@@ -216,7 +216,7 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
                 return result.all()
 
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def insert_play_step(cls, group_id: int, user: User, **kwargs) -> None:
@@ -306,7 +306,7 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
                 )
 
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def reorder_step(cls, step_list: List[int], group_id: int) -> None:
@@ -344,7 +344,7 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
                 ))
 
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def remove_step(cls, group_id: int, step_id: int) -> None:
@@ -388,7 +388,7 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
                     await session.delete(step)
 
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def query_by_id(cls, group_id_list: List[int], session: AsyncSession):
@@ -434,7 +434,7 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
             async with cls.transaction() as session:
                 return await cls.copy_group2(group_id, user, session)
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def copy_group2(cls, group_id: int, user: User, session: AsyncSession) -> PlayStepGroup:
@@ -494,7 +494,7 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
 
             return group
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def remove_group(cls, group_id: int):
@@ -535,4 +535,4 @@ class PlayStepGroupMapper(Mapper[PlayStepGroup]):
                     await session.delete(step)
                 await session.delete(group)
         except Exception as e:
-            raise e
+            raise

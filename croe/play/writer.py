@@ -64,13 +64,27 @@ class ContentResultWriter:
 
     async def update_content_result(self, step_index: int, success: bool):
         """
-        更新主步骤结果
+        更新主步骤结果(用于步骤组/条件组等聚合步骤, 子步骤跑完后再回填结果)
         Args:
             step_index (int): 主步骤的索引
             success (bool): 主步骤的执行结果
+
+        Notes:
+            - BUG-P-1-6 修复: 之前只更新 content_result 字段, use_time 是
+              占位时的初值(几乎为 0)。修: 重新计算 use_time = now - start_time,
+              让步骤组耗时反映真实执行时间 (子步骤总和)。跟 add_content_result
+              设的初值语义一致 (即步骤组"创建时" → "子步骤跑完时")。
+            - 为什么不在调用方 (group_strategy/condition_strategy) 算好传过来:
+              1) 调用方已经有 use_time 局部变量, 但跟 content_result 的 start_time
+                 不一定同步 (group 创建时算的 start_time, 但 use_time 是子步骤结
+                 束后算的); 2) writer 拿 start_time 自己重算最一致。
         """
         if step_index in self.content_results:
-            self.content_results[step_index]["result"].content_result = success
+            content_result = self.content_results[step_index]["result"]
+            content_result.content_result = success
+            if content_result.start_time:
+                end_time = datetime.datetime.now()
+                content_result.use_time = GenerateTools.timeDiff(content_result.start_time, end_time)
         else:
             log.warning(f"[ContentResultWriter] Step index {step_index} not found")
 
@@ -105,7 +119,7 @@ class ContentResultWriter:
         return len(self.content_results)
 
     def __repr__(self):
-        return f"<ContentResultWriter case_result_id={self.play_case_result_id}> task_result_id={self.play_task_result_id}> results={len(self.content_results)}> />"
+        return f"<ContentResultWriter case_result_id={self.play_case_result_id} task_result_id={self.play_task_result_id} results={len(self.content_results)} />"
 
 
 class PlayCaseResultWriter:
@@ -147,15 +161,18 @@ class PlayCaseResultWriter:
             vars_list=vars_list,
         )
 
-    async def write_result(self, SUCCESS: bool):
+    async def write_result(self, success: bool):
         """
         写入最终结果
+
+        Args:
+            success: True=用例通过, False=用例失败
         """
         end_time = datetime.datetime.now()
         self.play_case_result.end_time = end_time
         self.play_case_result.use_time = GenerateTools.timeDiff(self.play_case_result.start_time, end_time)
         self.play_case_result.status = Status.DONE
-        self.play_case_result.result = Result.SUCCESS if SUCCESS else Result.FAIL
+        self.play_case_result.result = Result.SUCCESS if success else Result.FAIL
         self.play_case_result.running_logs = "".join(self._starter.logs)
         await PlayCaseResultMapper.set_case_result(self.play_case_result)
 

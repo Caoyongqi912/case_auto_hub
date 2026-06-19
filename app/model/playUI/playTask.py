@@ -1,1 +1,88 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2025/7/2# @Author : cyq# @File : playTask# @Software: PyCharm# @Desc:from app.model import BaseModelfrom sqlalchemy import Column, String, BOOLEAN, INTEGER, ForeignKey, DATETIME, DATEfrom datetime import datetime, dateclass PlayTask(BaseModel):    """    Play Task    """    __tablename__ = "play_task"    title = Column(String(20), unique=True, nullable=False, comment="任务标题")    description = Column(String(100), nullable=False, comment="任务描述")    level = Column(String(20), nullable=False, comment="任务等级")    play_case_num = Column(INTEGER, nullable=False, default=0, comment="用例个数")    module_id = Column(INTEGER, nullable=False, comment="所属模块")    project_id = Column(INTEGER, ForeignKey("project.id", ondelete='set null'),                        nullable=True,                        comment="所属项目")    @property    def desc(self):        if len(self.description) > 10:            return self.description[:10] + "..."        return self.description    def __repr__(self):        return f"<PlayTask(title='{self.title}', desc='{self.desc}')>"class PlayTaskResult(BaseModel):    """    Play Task Result    """    __tablename__ = "play_task_result"    status = Column(String(10), default="RUNNING", comment="状态 RUNNING DONE")    result = Column(String(10), nullable=True, comment="运行结果  SUCCESS FAIL")    total_number = Column(INTEGER, comment="总运行数量")    success_number = Column(INTEGER, default=0, comment="成功数量")    fail_number = Column(INTEGER, default=0, comment="失败数量")    rate_number = Column(INTEGER, default=0, comment="通过率")    starter_name = Column(String(20), nullable=True, comment="运行人名称")    total_usetime = Column(String(20), comment="运行时间")    start_time = Column(DATETIME, default=datetime.now, nullable=True, comment="开始时间")    end_time = Column(DATETIME, nullable=True, comment="结束时间")    task_id = Column(INTEGER, ForeignKey("play_task.id", ondelete="CASCADE"), nullable=True)    task_uid = Column(String(10), nullable=False, comment="task索引")    task_name = Column(String(20), nullable=True, comment="任务名称")    run_day = Column(DATE, default=date.today(), comment="运行日期")    project_id = Column(INTEGER, ForeignKey("project.id", ondelete='set null'), nullable=True,                        comment="所属项目")    module_id = Column(INTEGER, nullable=True, comment="所属模块")    @property    def notify(self)->dict[str,str|int]:        return {            "starter": self.starter_name,            "result_id": self.id,            "result_uid": self.uid,            "task_name": self.task_name,            "task_id": self.task_id,            "task_uid": self.task_uid,            "result": self.result,            "total": self.total_number,            "success": self.success_number,            "fail": self.fail_number,            "use_time": self.total_usetime,            "start_time": self.start_time,            "end_time": self.end_time,            "project_id": self.project_id        }    def __repr__(self):        return (            f"<PlayTaskResult(taskId='{self.task_id}', taskName='{self.task_name}', "            f"runDay='{self.run_day}',status='{self.status}'),result='{self.result})>'")
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2025/7/2
+# @Author : cyq
+# @File : playTask
+# @Software: PyCharm
+# @Desc:
+from app.model import BaseModel
+from sqlalchemy import Column, String, BOOLEAN, INTEGER, ForeignKey, DATETIME, DATE, Float
+from datetime import datetime, date
+
+
+class PlayTask(BaseModel):
+    """
+    Play Task
+    """
+    __tablename__ = "play_task"
+
+    title = Column(String(20), unique=True, nullable=False, comment="任务标题")
+    description = Column(String(100), nullable=False, comment="任务描述")
+    level = Column(String(20), nullable=False, comment="任务等级")
+    play_case_num = Column(INTEGER, nullable=False, default=0, comment="用例个数")
+    module_id = Column(INTEGER, nullable=False, comment="所属模块")
+    project_id = Column(INTEGER, ForeignKey("project.id", ondelete='set null'),
+                        nullable=True,
+                        comment="所属项目")
+
+    @property
+    def desc(self):
+        if len(self.description) > 10:
+            return self.description[:10] + "..."
+        return self.description
+
+    def __repr__(self):
+        return f"<PlayTask(title='{self.title}', desc='{self.desc}')>"
+
+
+class PlayTaskResult(BaseModel):
+    """
+    Play Task Result
+    """
+    __tablename__ = "play_task_result"
+    status = Column(String(10), default="RUNNING", comment="状态 RUNNING DONE")
+    result = Column(String(10), nullable=True, comment="运行结果  SUCCESS FAIL")
+
+    total_number = Column(INTEGER, comment="总运行数量")
+    success_number = Column(INTEGER, default=0, comment="成功数量")
+    fail_number = Column(INTEGER, default=0, comment="失败数量")
+    # BUG-P-1-3 修复: 之前 Column(INTEGER) 但 writer.py 用 round(..., 2) 写 float,
+    # MySQL 静默截断, 85.5% 变成 85% (丢 1 位小数)。修: 改 Column(Float) 保留小数。
+    # 已有部署需手动跑迁移: ALTER TABLE play_task_result MODIFY COLUMN rate_number FLOAT DEFAULT 0 COMMENT '通过率';
+    rate_number = Column(Float, default=0, comment="通过率")
+    starter_name = Column(String(20), nullable=True, comment="运行人名称")
+    total_usetime = Column(String(20), comment="运行时间")
+    start_time = Column(DATETIME, default=datetime.now, nullable=True, comment="开始时间")
+    end_time = Column(DATETIME, nullable=True, comment="结束时间")
+    task_id = Column(INTEGER, ForeignKey("play_task.id", ondelete="CASCADE"), nullable=True)
+    task_uid = Column(String(10), nullable=False, comment="task索引")
+    task_name = Column(String(20), nullable=True, comment="任务名称")
+    run_day = Column(DATE, default=date.today(), comment="运行日期")
+
+    project_id = Column(INTEGER, ForeignKey("project.id", ondelete='set null'), nullable=True,
+                        comment="所属项目")
+    module_id = Column(INTEGER, nullable=True, comment="所属模块")
+
+    @property
+    def notify(self)->dict[str,str|int]:
+        return {
+            "starter": self.starter_name,
+            "result_id": self.id,
+            "result_uid": self.uid,
+            "task_name": self.task_name,
+            "task_id": self.task_id,
+            "task_uid": self.task_uid,
+            "result": self.result,
+            "total": self.total_number,
+            "success": self.success_number,
+            "fail": self.fail_number,
+            "use_time": self.total_usetime,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "project_id": self.project_id
+        }
+
+    def __repr__(self):
+        return (
+            f"<PlayTaskResult(taskId='{self.task_id}', taskName='{self.task_name}', "
+            f"runDay='{self.run_day}',status='{self.status}'),result='{self.result})>'")

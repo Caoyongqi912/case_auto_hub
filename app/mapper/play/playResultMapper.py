@@ -20,8 +20,8 @@ class PlayContentResultMapper(Mapper[PlayStepContentResult]):
             async with cls.transaction() as session:
                 await cls.add_flush_expunge(session, result)
         except Exception as e:
-            log.error(e)
-            raise e
+            log.exception(f"play mapper operation failed: {e}")
+            raise
 
 
     @classmethod

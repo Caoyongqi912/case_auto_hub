@@ -78,7 +78,7 @@ class PlayRunner:
             play_task_result_id=task_result.id if task_result else None
         )
         try:
-            page_manager = await self.__init_page()
+            page_manager = await self._init_page()
 
             await self.starter.send(f"初始化页面成功")
 
@@ -131,10 +131,10 @@ class PlayRunner:
                 await content_writer.flush()
                 await case_result_writer.write_result(case_success)
             await self.starter.over(case_result_writer.play_case_result.id)
-            await self.__clean(page_manager)
+            await self._clean(page_manager)
         return case_success
 
-    async def __clean(self, page_manager: Optional[PageManager] = None):
+    async def _clean(self, page_manager: Optional[PageManager] = None):
         """
         清理资源
         """
@@ -146,7 +146,7 @@ class PlayRunner:
         await self.variable_manager.clear()
         await self.starter.clear_logs()
 
-    async def __init_page(self) -> PageManager:
+    async def _init_page(self) -> PageManager:
         """
         初始化页面
         :return:
@@ -161,8 +161,23 @@ class PlayRunner:
     async def init_case_variables(self, play_case: PlayCase):
         """
         初始化变量
-        :param play_case: UICaseModel
-        :return:
+
+        Args:
+            play_case: UI 用例模型
+
+        Returns:
+            None。失败不抛异常 (跟 error_continue 语义一致), 仅
+            log.exception + starter.send WARNING, 让 case 继续
+            跑 (变量缺失用空值/默认值兜底)。
+
+        Notes:
+            - BUG-P-1-8 修复: 之前 except 块 `raise e` 抛回去, 调用方
+              (task_runner.__execute_case) 看到 Exception 走 retry 路径,
+              error_continue=True 也救不回来。修: 失败只 log + send warning,
+              跟 retry / error_continue 解耦。
+            - 为什么变量加载失败不致命: 变量是辅助数据 (e.g. token/host),
+              单个变量加载失败不应阻塞整 case 跑, 让用户在结果里看 warning
+              知道是哪个变量没加载成功。
         """
         try:
             if variables := await PlayCaseVariablesMapper.query_by(play_case_id=play_case.id):
@@ -172,5 +187,8 @@ class PlayRunner:
                 await self.starter.send(
                     f"🫳🫳 初始化用例变量 = {json.dumps(self.variable_manager.variables, ensure_ascii=False)}")
         except Exception as e:
-            log.exception(e)
-            raise e
+            # BUG-P-1-8 修复: 之前 raise, error_continue 失效。修: 只 log + warning
+            log.exception(f"PlayRunner.init_case_variables 加载变量失败, 跳过 (case 继续跑): {e}")
+            await self.starter.send(
+                f"⚠️ 用例变量初始化失败, 跳过: {e}"
+            )

@@ -594,7 +594,7 @@ class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
                         insert(cls.__model__).values(values)
                     )
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def insert(cls, user: User, **kwargs):
@@ -618,7 +618,7 @@ class PlayCaseVariablesMapper(Mapper[PlayCaseVariables]):
                 await PlayCaseVariablesMapper._check_key(key, caseId, session)
                 await cls.save(session=session, creator_user=user, **kwargs)
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def update_by_id(cls, updateUser: User = None, **kwargs):
@@ -714,7 +714,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                 # 构建嵌套结构
                 return await cls._build_nested_results(all_results, session)
         except Exception as e:
-            raise e
+            raise
 
     @staticmethod
     async def _build_nested_results(all_results: List[PlayStepContentResult], session: AsyncSession) -> List[
@@ -775,13 +775,13 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
             # 统一使用 transaction() 替代 async_session() + session.begin()
             async with cls.transaction() as session:
                 delete_sql = delete(cls.__model__).where(and_(
-                    cls.__model__.ui_case_Id == case_id,
+                    cls.__model__.ui_case_id == case_id,
                     cls.__model__.task_result_id.is_(None)
                 ))
                 await session.execute(delete_sql)
         except Exception as e:
-            log.error(e)
-            raise e
+            log.exception(f"play mapper operation failed: {e}")
+            raise
 
     @classmethod
     async def init_case_result(cls,
@@ -810,7 +810,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
             # 统一使用 transaction() 替代 async_session() + session.begin()
             async with cls.transaction() as session:
                 result = PlayCaseResult(
-                    ui_case_Id=play_case.id,
+                    ui_case_id=play_case.id,
                     ui_case_name=play_case.title,
                     ui_case_description=play_case.description,
                     ui_case_step_num=play_case.step_num,
@@ -826,7 +826,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                 return await cls.add_flush_expunge(session, result)
         except Exception as e:
             log.exception(e)
-            raise e
+            raise
 
     @classmethod
     async def set_case_result(cls, result: PlayCaseResult):
@@ -845,8 +845,8 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                 await cls.add_flush_expunge(session, result)
                 return result
         except Exception as e:
-            log.error(e)
-            raise e
+            log.exception(f"play mapper operation failed: {e}")
+            raise
 
     @classmethod
     async def set_case_result_assertInfo(cls, crId: int, assertsInfo: List[Dict[str, Any]]):
@@ -864,7 +864,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                     asserts_info=assertsInfo)
                 await session.execute(update_sql)
         except Exception as e:
-            raise e
+            raise
 
     @classmethod
     async def set_case_result_varsInfo(cls, crId: int, varsInfo: List[Dict[str, Any]]):
@@ -882,7 +882,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
                     vars_info=varsInfo)
                 await session.execute(update_sql)
         except Exception as e:
-            raise e
+            raise
 
 
 class PlayStepContentMapper(Mapper[PlayStepContent]):
