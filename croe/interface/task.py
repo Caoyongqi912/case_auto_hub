@@ -21,7 +21,8 @@ from common.notifyManager import NotifyManager
 from enums import InterfaceAPIResultEnum
 from croe.interface.runner import InterfaceRunner
 from croe.interface.starter import APIStarter, log
-from croe.interface.writer import result_writer
+# BUG-F8 修复: 改用 TaskRunner 实例的 self.result_writer
+from croe.interface.writer import ResultWriter
 
 
 CASE = "CASE"
@@ -63,6 +64,10 @@ class TaskRunner:
         self.progress = 0
         self._last_progress_update = 0.0
         self._progress_update_interval = 0.5
+        # BUG-F8 修复: TaskRunner 自有 result_writer, 替代模块级单例
+        # (原单例 finalize_task_result 调 _flush_cache 时, 会把其他并发 case 的
+        #  数据冲掉; 自有实例隔离)
+        self.result_writer = ResultWriter()
 
     async def set_process(
         self,
@@ -87,7 +92,7 @@ class TaskRunner:
             task_result.progress = round(
                 (self.progress / task_result.total_num) * 100, 1
             )
-            await result_writer.update_task_progress(task_result=task_result)
+            await self.result_writer.update_task_progress(task_result=task_result)
             self._last_progress_update = current_time
 
     async def execute_task(
@@ -129,7 +134,7 @@ class TaskRunner:
             f"查询到关联Step x {self.task.interface_task_total_apis_num} ..."
         )
 
-        task_result = await result_writer.init_task_result(
+        task_result = await self.result_writer.init_task_result(
             task=self.task,
             starter=self.starter,
             env=params.env
@@ -276,7 +281,7 @@ class TaskRunner:
         else:
             task_result.result = InterfaceAPIResultEnum.ERROR
 
-        await result_writer.finalize_task_result(task_result)
+        await self.result_writer.finalize_task_result(task_result)
         await self.starter.send(
             f"✍️✍️ 任务 {self.task.interface_task_title} 执行结束"
         )

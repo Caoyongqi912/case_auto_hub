@@ -172,10 +172,13 @@ class InterfaceRunner:
         log.debug(f"self.result_writer.init_case_result ={case_result}")
 
         try:
+            # BUG-F8 修复: 把 runner 自有 result_writer 注入上下文,
+            # 否则 step_content 仍走模块单例的 cache, 永远不被 flush
             execution_context = ExecutionContext(
                 interface_case=interface_case,
                 env=target_env,
                 case_result=case_result,
+                result_writer=self.result_writer,
                 task_result=task_result
             )
 

@@ -11,7 +11,8 @@ from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
-from croe.interface.writer import result_writer
+# BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
+# (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums import InterfaceAPIResultEnum
 from enums.CaseEnum import CaseStepContentType
 from utils import log
@@ -47,7 +48,7 @@ class APIStepContentStrategy(StepBaseStrategy):
         )
 
         log.info(f"api step step_result {step_result}")
-        interface_result = await result_writer.write_interface_result(
+        interface_result = await step_context.result_writer.write_interface_result(
             interface_result=InterfaceResult(**step_result),
             immediate=True
         )
@@ -56,7 +57,7 @@ class APIStepContentStrategy(StepBaseStrategy):
         if step_context.execution_context.task_result:
             task_result_id = step_context.execution_context.task_result.id
 
-        await result_writer.write_step_result(
+        await step_context.result_writer.write_step_result(
             content_type=CaseStepContentType.STEP_API,
             case_result_id=step_context.execution_context.case_result.id,
             task_result_id=task_result_id,
@@ -77,6 +78,6 @@ class APIStepContentStrategy(StepBaseStrategy):
             case_result.fail_num += 1
             case_result.result = InterfaceAPIResultEnum.ERROR
 
-        await result_writer.update_case_progress(case_result)
+        await step_context.result_writer.update_case_progress(case_result)
 
         return success

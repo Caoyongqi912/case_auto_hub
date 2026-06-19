@@ -16,7 +16,8 @@ from app.mapper.interfaceApi.interfaceResultMapper import (
 from app.model.interfaceAPIModel.contents import InterfaceCaseContents
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
-from croe.interface.writer import result_writer
+# BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
+# (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums.CaseEnum import CaseStepContentType
 
 
@@ -62,7 +63,7 @@ class APIWaitContentStrategy(StepBaseStrategy):
 
         case_result = step_context.execution_context.case_result
         case_result.success_num += 1
-        await result_writer.update_case_progress(case_result)
+        await step_context.result_writer.update_case_progress(case_result)
 
         return True
 

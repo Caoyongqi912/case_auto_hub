@@ -12,7 +12,8 @@ from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 from croe.a_manager import ConditionManager
-from croe.interface.writer import result_writer
+# BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
+# (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums import InterfaceAPIResultEnum
 from enums.CaseEnum import CaseStepContentType
 
@@ -54,7 +55,7 @@ class APIConditionContentStrategy(StepBaseStrategy):
         if step_context.execution_context.task_result:
             task_result_id = step_context.execution_context.task_result.id
 
-        condition_content_result = await result_writer.write_step_result(
+        condition_content_result = await step_context.result_writer.write_step_result(
             content_type=CaseStepContentType.STEP_API_CONDITION,
             case_result_id=step_context.execution_context.case_result.id,
             task_result_id=task_result_id,
@@ -83,13 +84,13 @@ class APIConditionContentStrategy(StepBaseStrategy):
             )
 
             if not condition_api_list:
-                await result_writer.update_step_result(
+                await step_context.result_writer.update_step_result(
                     result_id=condition_content_result.id,
                     result=True,
                     status="SUCCESS",
                 )
                 case_result.success_num += 1
-                await result_writer.update_case_progress(case_result)
+                await step_context.result_writer.update_case_progress(case_result)
                 return True
 
             total_apis = len(condition_api_list)
@@ -104,7 +105,7 @@ class APIConditionContentStrategy(StepBaseStrategy):
                     env=step_context.execution_context.env,
                 )
 
-                await result_writer.write_interface_result(
+                await step_context.result_writer.write_interface_result(
                     interface_result=InterfaceResult(**interface_result),
                     content_result_id=condition_content_result.id
                 )
@@ -116,21 +117,21 @@ class APIConditionContentStrategy(StepBaseStrategy):
                     case_result.result = InterfaceAPIResultEnum.ERROR
                     case_result.fail_num += 1
 
-                    await result_writer.update_step_result(
+                    await step_context.result_writer.update_step_result(
                         result_id=condition_content_result.id,
                         result=False,
                         status="FAIL",
                     )
-                    await result_writer.update_case_progress(case_result)
+                    await step_context.result_writer.update_case_progress(case_result)
                     return False
 
-            await result_writer.update_step_result(
+            await step_context.result_writer.update_step_result(
                 result_id=condition_content_result.id,
                 result=True,
                 status="SUCCESS",
             )
             case_result.success_num += 1
-            await result_writer.update_case_progress(case_result)
+            await step_context.result_writer.update_case_progress(case_result)
             return True
         else:
             await step_context.starter.send(
@@ -138,10 +139,10 @@ class APIConditionContentStrategy(StepBaseStrategy):
             )
             case_result.success_num += 1
 
-            await result_writer.update_step_result(
+            await step_context.result_writer.update_step_result(
                 result_id=condition_content_result.id,
                 result=True,
                 status="SUCCESS",
             )
-            await result_writer.update_case_progress(case_result)
+            await step_context.result_writer.update_case_progress(case_result)
             return True

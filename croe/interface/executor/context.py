@@ -14,6 +14,7 @@ from croe.interface.starter import APIStarter
 from croe.play.starter import UIStarter
 
 if TYPE_CHECKING:
+    from croe.interface.writer.result_writer import ResultWriter
     from app.model.interfaceAPIModel.contents import InterfaceCaseContents
     from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
     from app.model.interfaceAPIModel.interfaceResultModel import (
@@ -30,6 +31,10 @@ class ExecutionContext:
     interface_case: "InterfaceCase"
     env: "EnvModel"
     case_result: "InterfaceCaseResult"
+    # BUG-F8 修复: result_writer 注入上下文, 替代模块级单例
+    # (BUG-D1 修复不闭环: 8 个 step_content_*.py 仍用模块单例,
+    # 导致 STEP_API content_result_cache 永远不被 flush, 案例拿不到数据)
+    result_writer: "ResultWriter"
     task_result: Optional["InterfaceTaskResult"] = None
 
 
@@ -42,6 +47,11 @@ class CaseStepContext:
     execution_context: ExecutionContext
     starter: Union[APIStarter, UIStarter]
     variable_manager: VariableManager
+
+    @property
+    def result_writer(self) -> "ResultWriter":
+        """[BUG-F8] 步骤级便捷访问, 避免每个 strategy 写一长串 execution_context.result_writer"""
+        return self.execution_context.result_writer
 
     @property
     def task_result_id(self) -> Optional[int]:

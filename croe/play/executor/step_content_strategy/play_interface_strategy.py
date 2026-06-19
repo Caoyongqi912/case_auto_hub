@@ -3,12 +3,11 @@ import datetime
 from app.mapper.interfaceApi.interfaceMapper import InterfaceMapper
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.interface_executor import InterfaceExecutor
+from croe.interface.writer import ResultWriter
 from croe.play.context import StepContentContext
 from croe.play.executor.play_method.result_types import StepExecutionResult
 from croe.play.executor.step_content_strategy._base import StepBaseStrategy
 from utils import log
-from croe.interface.writer import result_writer
-
 
 
 class PlayInterfaceContentStrategy(StepBaseStrategy):
@@ -19,6 +18,12 @@ class PlayInterfaceContentStrategy(StepBaseStrategy):
     async def execute(self, step_context: StepContentContext) -> bool:
         start_time = datetime.datetime.now()
 
+        # BUG-F8 修复: 局部 ResultWriter 替代模块级单例
+        # (play 路径只有 write_interface_result(immediate=True) 一处,
+        #  即便用单例 immediate=True 也走直接 insert 不进 cache,
+        #  但单例已被删, 这里用局部实例最干净)
+        rw = ResultWriter()
+
         try:
             interface_executor = InterfaceExecutor(starter=step_context.starter,
                                                    variable_manager=step_context.variable_manager)
@@ -26,7 +31,7 @@ class PlayInterfaceContentStrategy(StepBaseStrategy):
             interface = await InterfaceMapper.get_by_id(ident=step_context.play_step_content.target_id)
             result, success = await interface_executor.execute(interface=interface)
 
-            interface_result = await result_writer.write_interface_result(
+            interface_result = await rw.write_interface_result(
                 interface_result=InterfaceResult(**result),
                 immediate=True
             )

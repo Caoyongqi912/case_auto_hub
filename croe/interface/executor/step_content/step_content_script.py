@@ -17,7 +17,8 @@ from app.model.interfaceAPIModel.contents import InterfaceCaseContents
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 from croe.a_manager import ScriptManager, ScriptSecurityError
-from croe.interface.writer import result_writer
+# BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
+# (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums.CaseEnum import CaseStepContentType
 from utils import log
 
@@ -98,7 +99,7 @@ class APIScriptContentStrategy(StepBaseStrategy):
         else:
             case_result.fail_num += 1
 
-        await result_writer.update_case_progress(case_result)
+        await step_context.result_writer.update_case_progress(case_result)
 
         return success
 

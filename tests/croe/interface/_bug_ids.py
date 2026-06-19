@@ -40,3 +40,6 @@ BUG_D2 = "D2"  # bulk_insert_results 异常吞掉部分成功记录
 # D4 追加
 BUG_D4 = "D4"  # bulk_insert_* 隐式 commit, 多表批量不在同事务
 BUG_M5 = "M5"  # polymorphic_on 用 enum int, 重排炸库
+
+# F8 追加: 模块单例 result_writer 死灰复燃, STEP_API content_result 永远不落盘
+BUG_F8 = "F8"  # result_writer 注入 ExecutionContext, 替代模块单例
