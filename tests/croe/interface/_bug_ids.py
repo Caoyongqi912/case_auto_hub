@@ -21,6 +21,9 @@ BUG_D1 = "D1"  # result_writer 单例
 
 # 执行器
 BUG_E1 = "E1"  # HttpxClient 资源
+BUG_E3 = "E3"  # TaskGroup 3.10 崩
+BUG_E4 = "E4"  # _parse_url 死代码 + 跟 UrlBuilder 不一致
+BUG_E5 = "E5"  # before_sql.strip() 隐式修改 ORM 字段
 
 # 安全
 BUG_S1 = "S1"  # getattr 沙箱逃逸

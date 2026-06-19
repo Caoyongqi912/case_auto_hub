@@ -14,7 +14,6 @@ from typing import Union, Tuple, Any, Dict, List, Optional
 import httpx
 
 from app.mapper.project.dbConfigMapper import DbConfigMapper
-from app.mapper.project.env import EnvMapper
 from app.model.base import EnvModel
 from app.model.interfaceAPIModel.interfaceGlobalModel import InterfaceGlobalHeader
 from app.model.interfaceAPIModel.interfaceModel import Interface
@@ -127,34 +126,6 @@ class InterfaceExecutor:
 
         # 构建并返回结果
         return self._build_result(ctx)
-
-    @staticmethod
-    async def _parse_url(interface: Interface) -> Tuple[str, str]:
-        """
-        解析 URL，返回 host 和 path
-
-        Args:
-            interface: 接口对象
-
-        Returns:
-            Tuple[host, url_path]
-        """
-        # 判断是否使用自定义环境
-        if interface.env_id == UrlBuilder.CUSTOM_ENV_ID:
-            # 自定义环境：从接口 URL 中解析 host 和 path
-            from utils import Tools
-            parse = Tools.parse_url(interface.interface_url)
-            url = parse.path
-            host = f"{parse.scheme}://{parse.netloc}"
-        else:
-            # 使用预配置环境
-            env = await EnvMapper.get_by_id(ident=interface.env_id)
-            host = env.host
-            url = interface.interface_url
-            if env.port:
-                host += f":{env.port}"
-
-        return host, url
 
     async def _build_and_send_request(self, ctx: ExecutionContext) -> None:
         """
@@ -297,7 +268,11 @@ class InterfaceExecutor:
             return []
 
         # 变量替换 SQL 语句
-        db_script = await self.variable_manager.trans(interface.interface_before_sql.strip())
+        # BUG-E5 修复: 显式处理 None + 提取常量, 避免在 ORM 字段上
+        # 直接调 .strip() 读起来像在修改字段; 上面的 if 已经过滤掉
+        # None/空, 这里 sql_text 一定非空, 防御性 `or ""` 多一层保险。
+        sql_text = interface.interface_before_sql or ""
+        db_script = await self.variable_manager.trans(sql_text.strip())
         log.info(f"执行前sql处理: {db_script}")
 
         # 执行 SQL

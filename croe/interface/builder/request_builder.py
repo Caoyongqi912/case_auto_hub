@@ -384,7 +384,9 @@ class RequestBuilder:
         """
         并行转换请求数据中的变量
 
-        使用 asyncio.TaskGroup 并行处理所有需要变量替换的字段
+        BUG-E3 修复: 之前用 asyncio.TaskGroup (Python 3.11+), 3.10 上会
+        AttributeError。改用 asyncio.gather (Python 3.7+) 保证兼容性。
+        VariableTrans.trans 里同样的注释被注释掉, 这里照办。
 
         Args:
             request_data: 请求数据字典（会被修改）
@@ -399,15 +401,12 @@ class RequestBuilder:
         if not items_to_transform:
             return
 
-        # 并行执行变量替换
-        async with asyncio.TaskGroup() as tg:
-            tasks = {
-                tg.create_task(self.variables.trans(value)): key
-                for key, value in items_to_transform.items()
-            }
+        # 并行执行变量替换 (asyncio.gather 跨 3.7+ 兼容, 替代 TaskGroup)
+        keys = list(items_to_transform.keys())
+        coros = [self.variables.trans(value) for value in items_to_transform.values()]
+        results = await asyncio.gather(*coros)
 
         # 更新转换后的值
-        for task, key in tasks.items():
-            transformed_value = task.result()
+        for key, transformed_value in zip(keys, results):
             if transformed_value is not None:
                 request_data[key] = transformed_value
