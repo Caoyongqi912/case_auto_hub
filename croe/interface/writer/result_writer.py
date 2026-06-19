@@ -53,9 +53,9 @@ class ResultWriter:
     MAX_CACHE_SIZE = 1000
 
     def __init__(self):
+        # BUG-RED-D5 修复: 删 _progress_update_cache 死字段, 没有任何地方读写
         self.api_result_cache: List[InterfaceResult] = []
         self.content_result_cache: List[Dict[str, Any]] = []
-        self._progress_update_cache: Dict[int, Dict[str, Any]] = {}
 
     def clear_cache(self) -> None:
         """
@@ -67,7 +67,6 @@ class ResultWriter:
         """
         self.api_result_cache.clear()
         self.content_result_cache.clear()
-        self._progress_update_cache.clear()
 
     async def init_task_result(
             self,
@@ -143,8 +142,9 @@ class ResultWriter:
 
         if task_result:
             case_result.interface_task_result_id = task_result.id
-            log.info("task_result {}".format(case_result))
-            log.info("task_result {}".format(task_result))
+            # BUG-F7 修复: 原版两条 log.info 一是标签写 task_result 但变量是 case_result,
+            # 二是只 str(obj) 调试信息为零。case_result 还没 insert, 此刻日志没价值;
+            # 等 insert 完再 log 更靠谱。
 
         return await InterfaceCaseResultMapper.insert(case_result)
 
@@ -496,7 +496,6 @@ class ResultWriter:
         """清空缓存"""
         self.api_result_cache.clear()
         self.content_result_cache.clear()
-        self._progress_update_cache.clear()
 
     async def flush(self):
         """公开的刷新接口"""

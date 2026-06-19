@@ -78,13 +78,10 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
 
         try:
             async with cls.transaction() as session:
+                # BUG-D7 修复: get_by_id 找不到时本身就会抛 NotFind, 这里的 if not group
+                # 是死代码, 删了。interface 同样, 之前 get_by_id 已经会处理。
                 group = await cls.get_by_id(ident=group_id, session=session)
-                if not group:
-                    raise ValueError("分组不存在")
-
                 interface = await InterfaceMapper.get_by_id(ident=interface_id, session=session)
-                if not interface:
-                    raise ValueError("接口不存在")
                 last_index = await cls.get_last_index(session=session, group_id=group_id)
 
                 if not interface.is_common:
