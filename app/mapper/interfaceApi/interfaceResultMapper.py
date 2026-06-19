@@ -576,10 +576,17 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         )
         # joinedload 必须用 poly 实体, 不能用原 class, 因为根实体已经是 poly
         # (poly 是 with_polymorphic 返回的别名实体, 它把 8 个子类表 JOIN 在一起)
+        #
+        # BUG-D7 修复: 补上 LoopStepContentResult.interface_results 的 joinedload。
+        # M6-hotfix 时只补了 API/Group/Condition 三个, 漏了 Loop —
+        # 前端拿到循环步骤时 to_dict() 触发 self.interface_results lazy-load,
+        # session 已关, 静默返回 [], data 永远空。
+        # 测试锁: tests/croe/interface/test_bug_d7_query_steps_loop_joinedload.py
         stmt = select(poly).options(
             joinedload(poly.APIStepContentResult.interface_result),
             joinedload(poly.GroupStepContentResult.interface_results),
             joinedload(poly.ConditionStepContentResult.interface_results),
+            joinedload(poly.LoopStepContentResult.interface_results),
         ).where(
             InterfaceCaseContentResult.case_result_id == case_result_id
         ).order_by(

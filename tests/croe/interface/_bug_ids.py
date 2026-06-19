@@ -86,6 +86,14 @@ BUG_V2 = "V2"  # list2dict 重复 key WARNING
 
 
 # D5: query_steps 多 joinedload 笛卡尔积
+
+# D7: query_steps_result 漏 LoopStepContentResult.interface_results 的 joinedload
+# M6-hotfix 修 detached instance 时只补了 API/Group/Condition 三个 parent subtype,
+# 漏了 LoopStepContentResult.interface_results。前端拿循环步骤 to_dict() 时触发
+# self.interface_results lazy-load, session 已关 → 静默返回 [], data 永远空。
+# 修: joinedload 列表里补上 poly.LoopStepContentResult.interface_results。
+BUG_D7 = "D7"
+
 # 5 个 joinedload(APIStepContent.interface_api 等) 是死代码,
 # 5 个 step strategy 都用 step_content.target_id + Mapper.get_by_id
 # 自行 fetch, 不会用 ORM relationship 预加载。
