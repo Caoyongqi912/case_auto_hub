@@ -93,6 +93,16 @@ BUG_V2 = "V2"  # list2dict 重复 key WARNING
 # 4 个调用点都加 step_context=step_context。
 BUG_D8 = "D8"
 
+# S4: hub_request 缺 SSRF 防御
+# _hub_api_request 在用户脚本沙箱以 hub_request 名义暴露, 攻击者可写
+# hub_request("http://169.254.169.254/...") 偷云元数据 / 打内网 /
+# hub_request("file:///etc/passwd") 读本地文件。
+# 修: scheme 白名单 http/https + DNS 解析后 IP 黑名单
+# (loopback / private / link-local / reserved / multicast) +
+# HUB_REQUEST_ALLOW_PRIVATE=1 逃生口。
+BUG_S4 = "S4"
+
+
 
 # D7: query_steps_result 漏 LoopStepContentResult.interface_results 的 joinedload
 # M6-hotfix 修 detached instance 时只补了 API/Group/Condition 三个 parent subtype,

@@ -51,7 +51,9 @@ def test_bug_v4_returns_parsed_json(bug_v4_marker):
     async def fake_request(self, method, url, **kwargs):
         return fake_response
 
-    with patch("httpx.AsyncClient.request", new=fake_request):
+    # BUG-S4 修复后 _hub_api_request 入口先过 _check_ssrf, mock 掉避免真实 DNS
+    with patch("httpx.AsyncClient.request", new=fake_request), \
+         patch("croe.a_manager.script_manager._check_ssrf"):
         result = ScriptManager._hub_api_request("http://example.com")
     assert result == {"ok": True}, f"期望 {{'ok': True}},实际 {result!r}"
 
@@ -68,7 +70,8 @@ def test_bug_v4_returns_text_for_non_json(bug_v4_marker):
     async def fake_request(self, method, url, **kwargs):
         return fake_response
 
-    with patch("httpx.AsyncClient.request", new=fake_request):
+    with patch("httpx.AsyncClient.request", new=fake_request), \
+         patch("croe.a_manager.script_manager._check_ssrf"):
         result = ScriptManager._hub_api_request("http://example.com")
     assert result == "<html>hi</html>", f"期望 text,实际 {result!r}"
 
@@ -80,6 +83,7 @@ def test_bug_v4_returns_none_on_error(bug_v4_marker):
     async def fake_request(self, method, url, **kwargs):
         raise RuntimeError("network down")
 
-    with patch("httpx.AsyncClient.request", new=fake_request):
+    with patch("httpx.AsyncClient.request", new=fake_request), \
+         patch("croe.a_manager.script_manager._check_ssrf"):
         result = ScriptManager._hub_api_request("http://example.com")
     assert result is None, f"失败应返回 None,实际 {result!r}"

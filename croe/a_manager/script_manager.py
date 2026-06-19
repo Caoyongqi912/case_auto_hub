@@ -7,7 +7,9 @@
 # @Desc:
 import ast
 import hashlib
+import ipaddress
 import multiprocessing
+import os
 import pickle
 import random
 import time
@@ -139,6 +141,82 @@ def _validate_ast(node: ast.AST) -> None:
                 # 链式调用,如 os.system 或 getattr(obj, ...).__bases__
                 if child.func.attr in DISALLOWED_ATTRS:
                     raise ScriptSecurityError(f"不允许的链式调用: {child.func.attr}")
+
+
+def _check_ssrf(url: str) -> None:
+    """
+    [BUG-S4] SSRF 防御: 校验 URL scheme + 解析 host 后 IP 黑名单。
+
+    抛出 ValueError 走原有的 try/except, 调用方收到 None, 跟 "请求失败" 不可区分,
+    攻击者通过观察响应时间 / 行为差分也无意义 (都是 None)。
+
+    HUB_REQUEST_ALLOW_PRIVATE=1 时跳过 IP 检查 (内部测试场景需要打内网时显式开),
+    但 scheme 限制仍然生效 (file:// 这种不该开逃生口)。
+    """
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+
+    # 1. Scheme 白名单
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(
+            f"hub_request 不允许 scheme '{parsed.scheme}' (仅 http/https)"
+        )
+
+    # 2. 必须有 host
+    if not parsed.hostname:
+        raise ValueError(f"hub_request URL 缺少 host: {url!r}")
+
+    # 3. DNS 解析 + IP 黑名单
+    import socket
+    try:
+        # getaddrinfo 返回所有解析结果 (含 IPv4 + IPv6), 任何一个命中就拒
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or 80, type=socket.SOCK_STREAM)
+    except socket.gaierror as e:
+        raise ValueError(f"hub_request DNS 解析失败: {parsed.hostname!r}: {e}") from e
+
+    for family, _, _, _, sockaddr in infos:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            continue
+        if _is_blocked_ip(ip):
+            if os.environ.get("HUB_REQUEST_ALLOW_PRIVATE") == "1":
+                log.warning(
+                    f"[BUG-S4] hub_request 命中内网 IP {ip} 但环境变量 HUB_REQUEST_ALLOW_PRIVATE=1 放行"
+                )
+                return
+            raise ValueError(
+                f"hub_request 拒绝访问内网/loopback/link-local IP: {ip} (host={parsed.hostname!r})"
+            )
+
+
+def _is_blocked_ip(ip) -> bool:
+    """
+    [BUG-S4] 内网/loopback/link-local IP 黑名单。
+
+    覆盖: 127.0.0.0/8 (loopback), 10.0.0.0/8 (private), 172.16.0.0/12 (private),
+          192.168.0.0/16 (private), 169.254.0.0/16 (link-local + 云元数据),
+          0.0.0.0/8, IPv6 ::1/128, fc00::/7 (IPv6 private), fe80::/10 (IPv6 link-local)
+    """
+    if isinstance(ip, ipaddress.IPv4Address):
+        return (
+            ip.is_loopback        # 127.0.0.0/8
+            or ip.is_private      # 10/8, 172.16/12, 192.168/16
+            or ip.is_link_local    # 169.254/16 (含云元数据)
+            or ip.is_reserved      # 0.0.0.0/8, 240/4 等
+            or ip.is_multicast
+            or ip.is_unspecified   # 0.0.0.0
+        )
+    # IPv6
+    return (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
 
 
 class ScriptManager:
@@ -276,8 +354,27 @@ class ScriptManager:
 
         子进程里没有现成 event loop,直接 asyncio.run 即可;主进程若将来
         在 async 上下文里调,需要再换成直接 await(本入口设计上仍是同步)。
+
+        BUG-S4 修复: 加 SSRF 防御。
+        背景: _hub_api_request 在沙箱里以 hub_request 名义暴露给用户脚本, 攻击者
+              可写 hub_request("http://169.254.169.254/latest/meta-data/")
+              偷云元数据凭证, 或 hub_request("file:///etc/passwd") 读本地文件,
+              或打内网服务 (localhost / 192.168.x.x / 10.x.x.x)。
+        防御:
+          1. Scheme 白名单: 只允许 http/https, 其它 (file/gopher/ftp/dict/ldap) 直接拒
+          2. DNS 解析后 IP 黑名单: 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12,
+             192.168.0.0/16, 169.254.0.0/16 (含云元数据), IPv6 loopback/private/link-local
+          3. 环境变量逃生口: HUB_REQUEST_ALLOW_PRIVATE=1 显式开 (内部测试需要打内网时)
         """
         import asyncio
+
+        # BUG-S4 修复: SSRF 防御在请求发出前, ValueError 跟网络失败一起被外层
+        # try/except 兜住返回 None, 调用方不可区分 (防 SSRF 行为差分泄露)
+        try:
+            _check_ssrf(url)
+        except ValueError as e:
+            log.warning(f"[BUG-S4] hub_request SSRF 拦截: {e}")
+            return None
 
         async def _do_request() -> Any:
             import httpx
