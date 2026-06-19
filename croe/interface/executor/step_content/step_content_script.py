@@ -20,6 +20,7 @@ from croe.a_manager import ScriptManager, ScriptSecurityError
 # BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums.CaseEnum import CaseStepContentType
+from enums import StepStatusEnum
 from utils import log
 
 
@@ -82,12 +83,14 @@ class APIScriptContentStrategy(StepBaseStrategy):
             step_index=step_context.index,
             interface_case_result_id=step_context.execution_context.case_result.id,
             step_content=step_context.content,
-            script_vars=[
-                {"key":k,
-                 "value":v,
-                 "target":11}
-                for k ,v in extracted_vars.items() if extracted_vars
-            ],
+            # BUG-fix: 旧 `for k,v in extracted_vars.items() if extracted_vars` 写法
+            # Python 先 evaluate extracted_vars.items() 再 filter, 当 extracted_vars=None
+            # (script_text 为空 / 抛错时) 会 AttributeError。改用显式 None 检查。
+            script_vars=(
+                [{"key": k, "value": v, "target": 11}
+                 for k, v in extracted_vars.items()]
+                if extracted_vars is not None else []
+            ),
             script_error=script_error,
             success=success,
             interface_task_result_id=task_result_id,

@@ -36,30 +36,11 @@ from utils import log
 class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
     __model__ = InterfaceCaseResult
 
-    @classmethod
-    async def page_case_results(cls):
-        """业务流结果分页 (TODO: 实际分页查询逻辑待实现)。
-
-        BUG-D9 修复: 旧版直接 `pass`, 后续维护者分不清"忘写了"还是
-        "故意占位"。改 raise NotImplementedError + TODO 注释, 调到这里
-        直接 AttributeError-like 报错, 防止静默返回 None 让下游踩坑。
-        """
-        raise NotImplementedError(
-            "page_case_results is a placeholder (BUG-D9), "
-            "实现前请先确认是否真的需要此接口, 还是走 list_by_filter + 分页"
-        )
-
-    @classmethod
-    async def query_case_result(cls, case_result_id: int):
-        """查询单个 case_result (TODO: 实际查询逻辑待实现)。
-
-        BUG-D9 修复: 旧版直接 `pass`, 容易静默吞错。如果调用方其实想
-        走 `get_by_id`, 这里 raise NotImplementedError 让他立刻知道。
-        """
-        raise NotImplementedError(
-            "query_case_result is a placeholder (BUG-D9), "
-            "请用 InterfaceCaseResultMapper.get_by_id(case_result_id) 替代"
-        )
+    # BUG-N2 修复: 删 page_case_results / query_case_result 两个 dead code。
+    # D9 把它们从 `pass` 改成 raise NotImplementedError 防静默吞错, 但本质是
+    # 占着方法名, 没人调用, 还容易被新代码误调。改: 直接删, 真要分页走
+    # list_by_filter + 分页参数, 查单个走 get_by_id (D9 注释里已经给了指引)。
+    # 测试锁住 0 caller, 防止回归。
 
     # @classmethod
     # async def init_case_result(cls, user: User, case: InterfaceCase, env: EnvModel):

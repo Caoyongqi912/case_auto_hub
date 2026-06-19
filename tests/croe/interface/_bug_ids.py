@@ -265,3 +265,10 @@ BUG_E2 = "E2"
 # 的风格不一致。修: step_content_db 加 try/except, 失败 WARNING +
 # success=False 返。
 BUG_E10 = "E10"
+
+# N2: InterfaceCaseResultMapper.page_case_results / query_case_result 是
+# dead code (raise NotImplementedError, 无 caller)。原 D9 修复时改成
+# raise NotImplementedError + TODO 注释, 防静默返回 None, 但本质是 dead
+# code 一直在 mock 里。修: 删 2 个方法 + 加测试锁住 0 caller (防止别人
+# 误加调用, 然后踩 NotImplementedError)。
+BUG_N2 = "N2"

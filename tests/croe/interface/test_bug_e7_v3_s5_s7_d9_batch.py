@@ -251,41 +251,38 @@ async def test_bug_s7_normal_headers_still_pass():
 # ============================================================
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_bug_d9_page_case_results_raises_not_implemented():
-    """[BUG-D9] page_case_results 必须 raise NotImplementedError, 不再静默 pass。"""
+def test_bug_n2_page_case_results_removed_after_d9():
+    """[BUG-D9] 占位改 raise, [BUG-N2] 进一步删除 dead code。
+
+    历史: D9 把 page_case_results 从 `pass` 改成 raise NotImplementedError 防静默吞错。
+    N2 进一步发现这两个方法 0 caller, 是真正的 dead code, 直接删了最干净。
+    替代方案: 分页走 list_by_filter + 分页参数, 查单个走 get_by_id (D9 注释里给过指引)。
+    """
     from app.mapper.interfaceApi.interfaceResultMapper import InterfaceCaseResultMapper
 
-    with pytest.raises(NotImplementedError, match="page_case_results"):
-        await InterfaceCaseResultMapper.page_case_results()
+    assert not hasattr(InterfaceCaseResultMapper, "page_case_results"), (
+        "[BUG-N2] page_case_results 还在, 应该是 dead code 删了"
+    )
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
-async def test_bug_d9_query_case_result_raises_not_implemented():
-    """[BUG-D9] query_case_result 必须 raise NotImplementedError, 不再静默 pass。"""
+def test_bug_n2_query_case_result_removed_after_d9():
+    """[BUG-D9 → BUG-N2] query_case_result dead code 已删 (理由同上)。"""
     from app.mapper.interfaceApi.interfaceResultMapper import InterfaceCaseResultMapper
 
-    with pytest.raises(NotImplementedError, match="query_case_result"):
-        await InterfaceCaseResultMapper.query_case_result(case_result_id=42)
+    assert not hasattr(InterfaceCaseResultMapper, "query_case_result"), (
+        "[BUG-N2] query_case_result 还在, 应该是 dead code 删了"
+    )
 
 
 @pytest.mark.unit
-def test_bug_d9_no_plain_pass_in_d9_methods():
-    """[BUG-D9] 旧版 page_case_results / query_case_result 是空 pass, 必须不再出现。"""
+def test_bug_n2_no_plain_pass_in_d9_methods():
+    """[BUG-N2] 旧 BUG-D9 关注点 (raise NotImplementedError) 已通过删除方法彻底解决。"""
     from app.mapper.interfaceApi.interfaceResultMapper import InterfaceCaseResultMapper
 
     for name in ("page_case_results", "query_case_result"):
-        src = inspect.getsource(getattr(InterfaceCaseResultMapper, name))
-        # 纯 `pass` 不行 (占位语义不清)
-        # 允许 `raise NotImplementedError(...)`
-        assert "raise NotImplementedError" in src, (
-            f"[BUG-D9] {name} 必须 raise NotImplementedError, 实际: {src}"
+        assert not hasattr(InterfaceCaseResultMapper, name), (
+            f"[BUG-N2] {name} 应该被删 (N2 dead code 清理), 不应还在 mapper 上"
         )
-        # 验证源码里没有 `pass` 单独一行 (def 后面直接 pass)
-        lines = [l.strip() for l in src.split("\n")]
-        # 找到函数体, 检查 'pass' 是不是单独一行 (docstring 后)
-        body_lines = [l for l in lines if l and not l.startswith('"""') and not l.startswith("'''")]
-        assert "pass" not in body_lines, (
-            f"[BUG-D9] {name} 源码里不应有单独 pass 行, 实际: {body_lines}"
-        )
+
+
