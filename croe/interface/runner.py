@@ -333,8 +333,20 @@ class InterfaceRunner:
                     f"🫳🫳 初始化业务用例变量 = "
                     f"{self.variable_manager.variables}"
                 )
-        except Exception as e:
-            log.error(f"初始化业务流用例变量失败: {e}")
+        except Exception:
+            # BUG-F4 修复:原版用 log.error 不带 traceback,且不通知用户,
+            # 后续步骤继续用空变量跑,断言静默失败。
+            # 改为 log.exception 保留 traceback + starter.send 通知用户,
+            # 但不向外抛(让调用方可以选择继续或中止)。
+            log.exception(f"初始化业务流用例变量失败 (case_id={interface_case_id})")
+            try:
+                await self.starter.send(
+                    f"⚠️ 初始化业务用例变量失败,后续步骤将使用空变量 "
+                    f"(case_id={interface_case_id})"
+                )
+            except Exception:
+                # starter.send 自己挂了就别再吞,直接放过
+                pass
 
     async def init_global_headers(self) -> List[InterfaceGlobalHeader]:
         """
