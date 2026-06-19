@@ -72,6 +72,77 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
 
 
 
+    @classmethod
+    async def recompute_case_result_nums(
+        cls,
+        case_result_id: int,
+        session: AsyncSession = None,
+    ) -> Dict[str, int]:
+        """
+        [BUG-E8 + E9] 用 interface_result 表的 COUNT 覆写 case_result.total_num
+        / success_num / fail_num。
+
+        根因:
+          - E8: case_result.total_num 在 init_case_result 时设一次 = case_api_num,
+            之后不再更新。如果 case_api_num 跟实际跑的 API 数对不上 (M8 修了源头
+            但运行时还是可能漂), total_num 永久错位。
+          - E9: GROUP / LOOP / CONDITION 等 parent step 在 step strategy 里
+            case_result.success_num += 1, 但实际跑了 N 个 API, 应该 +N。
+            多个 step strategy 行为不对称, 改全量成本高、易漏。
+
+        修法: 在 finalize_case_result 末尾调一次, 用 interface_result 表的
+        COUNT(*) 当权威源, 覆写 case_result 三字段, 保证
+        total_num = success_num + fail_num 恒成立。
+        行为: 在原有 transaction 里跑 (跟 BUG-D4 风格一致, 失败不影响主流程)。
+
+        Args:
+            case_result_id: case_result.id
+            session: 外部 session (必需, BUG-D4 强制)
+
+        Returns:
+            Dict[str, int]: {'total': N, 'success': S, 'fail': F}
+        """
+        from sqlalchemy import func, select, case
+        if session is None:
+            raise ValueError(
+                "recompute_case_result_nums requires external session "
+                "(BUG-D4: 不再隐式 commit)"
+            )
+        try:
+            # BUG-E8: InterfaceResult 没有直接的 case_result_id 字段,
+            # 走 interface_case_content_result 中间表 JOIN:
+            # interface_result.content_result_id → interface_case_content_result.id
+            #                                      → interface_case_content_result.case_result_id
+            stmt = select(
+                func.count(InterfaceResult.id).label("total"),
+                func.sum(
+                    case((InterfaceResult.result.is_(True), 1), else_=0)
+                ).label("success"),
+                func.sum(
+                    case((InterfaceResult.result.is_(False), 1), else_=0)
+                ).label("fail"),
+            ).join(
+                InterfaceCaseContentResult,
+                InterfaceResult.content_result_id == InterfaceCaseContentResult.id,
+            ).where(InterfaceCaseContentResult.case_result_id == case_result_id)
+            row = (await session.execute(stmt)).one()
+            total = row.total or 0
+            success = row.success or 0
+            fail = row.fail or 0
+            # 覆写 case_result
+            await cls.update_by_id(
+                id=case_result_id,
+                total_num=total,
+                success_num=success,
+                fail_num=fail,
+                session=session,
+            )
+            return {"total": total, "success": success, "fail": fail}
+        except Exception as e:
+            log.error(f"recompute_case_result_nums error: {e}")
+            raise
+
+
 class InterfaceResultMapper(Mapper[InterfaceResult]):
     __model__ = InterfaceResult
 

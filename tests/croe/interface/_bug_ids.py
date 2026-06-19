@@ -108,6 +108,16 @@ BUG_S4 = "S4"
 # 修: WARNING 兜底 + VARIABLE_TRANS_STRICT=1 严格模式抛 KeyError。
 BUG_V6 = "V6"
 
+# E8 + E9 合修: case_result total/success/fail 兜底
+# E8: total_num init 时设一次 = case_api_num, 之后从不更新
+# E9: GROUP/LOOP/CONDITION 等 parent step case_result.success_num += 1
+#     跟实际 API 数不对称 (group 跑 5 个 API 只 +1)
+# 修: finalize_case_result 末尾用 interface_result 表 COUNT 覆写一次,
+#     step strategy 的手动维护保留 (不动在线行为), recompute 兜底对账。
+BUG_E8 = "E8"
+BUG_E9 = "E9"
+
+
 
 
 

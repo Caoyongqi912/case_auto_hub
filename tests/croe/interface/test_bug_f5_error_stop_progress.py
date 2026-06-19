@@ -57,7 +57,8 @@ def test_bug_f5_finalize_uses_case_result_progress(bug_f5_marker):
     src = (REPO / "croe/interface/writer/result_writer.py").read_text(encoding="utf-8")
     # 在 finalize_case_result 函数体里找 update_by_id
     finalize_idx = src.find("async def finalize_case_result")
-    body = src[finalize_idx: finalize_idx + 3000]
+    # BUG-E8+E9 修复后 finalize 多了 recompute 块, body 变长, 扩到 6000 字符
+    body = src[finalize_idx: finalize_idx + 6000]
     assert "progress=100.0" not in body, (
         f"[{BUG_F5}] finalize 还在写 progress=100.0, 应改用 case_result.progress"
     )

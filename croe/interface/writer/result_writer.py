@@ -353,6 +353,37 @@ class ResultWriter:
         # index=total 时已经 (total*100)//total = 100, 跟原来等价;
         # error_stop break 的 case, 保留"跑到 N 步失败"的中间进度, 前端能
         # 正确显示"未跑完"。
+
+        # BUG-E8 + E9 修复: 用 interface_result COUNT 覆写 total_num / success_num / fail_num
+        # - E8: init 时 total_num = case_api_num, 之后不再更新, 漂移无法纠正
+        # - E9: GROUP/LOOP/CONDITION 等 parent step case_result.success_num += 1
+        #   不对称, 实际跑 N 个 API 应该 +N
+        # 两者都用 interface_result 表的 COUNT 当权威源, 在 finalize 覆写一次,
+        # 保证 total_num = success_num + fail_num 恒成立。step strategy 的
+        # 手动维护保留 (不影响在线行为), 这里做最终对账。
+        try:
+            recomputed = await InterfaceCaseResultMapper.recompute_case_result_nums(
+                case_result_id=case_result.id,
+                session=None,  # 走自己的事务, 不影响 finalize 主流程
+            )
+            log.info(
+                f"[BUG-E8+E9] recompute case_result_nums: "
+                f"total={recomputed['total']} success={recomputed['success']} "
+                f"fail={recomputed['fail']} (case_result_id={case_result.id})"
+            )
+            # 同步内存对象 (后面 update_by_id 不带 total_num)
+            case_result.total_num = recomputed["total"]
+            case_result.success_num = recomputed["success"]
+            case_result.fail_num = recomputed["fail"]
+            # 跟上面 result = SUCCESS/ERROR 一致
+            if case_result.fail_num == 0:
+                case_result.result = InterfaceAPIResultEnum.SUCCESS
+            else:
+                case_result.result = InterfaceAPIResultEnum.ERROR
+        except Exception as e:
+            # recompute 失败不影响 finalize 主流程, 保留旧值
+            log.warning(f"[BUG-E8+E9] recompute_case_result_nums 失败, 用旧值: {e}")
+
         await InterfaceCaseResultMapper.update_by_id(
             id=case_result.id,
             use_time=case_result.use_time,
