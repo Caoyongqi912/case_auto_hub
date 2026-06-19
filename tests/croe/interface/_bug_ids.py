@@ -163,3 +163,38 @@ BUG_OBS_2 = "OBS-2"
 # Password / passwd / Token / api_key / access_key / secret 等, 大小写
 # 不敏感子串匹配), message 跟 extra=dict 都覆盖。
 BUG_OBS_3 = "OBS-3"
+
+# E7: extracts/asserts 默认值混乱
+# _build_result 用 `ctx.extracted_vars or []` / `ctx.asserts or []`, 但子策略
+# 可能传 None 进来 (Python or 链只挡 None 不挡 [None])。修复: 显式 list() 包
+# 一层 + 过滤 None 项, 保证存到 DB 的总是 list[有效值]。
+BUG_E7 = "E7"
+
+# V3: ScriptManager._variables 跨脚本累积 (全局状态)
+# ScriptManager.__init__ 每次都新建实例, 但 _collect_results 把变量存到
+# self._variables, 同一 ScriptManager 跑多个脚本就累积。当前 interface_executor
+# 每次都 ScriptManager() 新建所以不泄漏, 但语义不明, 后来人加缓存或复用就踩。
+# 修: 重命名 _variables -> _script_locals, 注释里说清楚"单脚本实例跨 exec
+# 不共享", 防后来误用。
+BUG_V3 = "V3"
+
+# S5: _prepare_raw_body raw text 模式多余 json.dumps
+# raw_type == text 时, body 本就是字符串, 走 json.dumps 会:
+#   1) 给整串加引号: "hello" -> '"hello"' (错!)
+#   2) 反斜杠被 double-escape: "\\path" -> '\\\\path'
+#   3) 用户已有的 JSON 字符串被 re-encode, 变量替换后意义变
+# 修: body 是 str 就直接用, 不是 str 才 json.dumps。
+BUG_S5 = "S5"
+
+# S7: safe_headers 不拦截下游 interface_headers
+# _prepare_headers 信任 g_headers + interface_headers, 用户可配 Host: malicious
+# 等敏感 header 覆盖后端真实值。修: 加 BLOCKED_DOWNSTREAM_HEADERS 黑名单
+# (Host / Content-Length / Connection / Transfer-Encoding), 拦截后 WARNING
+# 不静默。
+BUG_S7 = "S7"
+
+# D9: InterfaceCaseResultMapper 2 个 pass 占位方法
+# page_case_results / query_case_result 是空 `pass`, 没有任何 NotImplementedError
+# 或 TODO 标记, 后续维护者分不清"忘写了"还是"故意占位"。
+# 修: 改成 raise NotImplementedError + TODO 注释。
+BUG_D9 = "D9"

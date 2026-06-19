@@ -414,8 +414,11 @@ class InterfaceExecutor:
             'request_json': json.dumps(ctx.request_info.get('json')) if ctx.request_info.get('json') else None,
             'request_data': json.dumps(ctx.request_info.get('data')) if ctx.request_info.get('data') else None,
             'request_headers': ctx.request_info.get('headers') or None,
-            'extracts': ctx.extracted_vars or [],
-            'asserts': ctx.asserts or [],
+            # BUG-E7 修复: 显式 list() 包一层 + 过滤 None 项。
+            # 旧版用 `or []` 只挡 None 不挡 [None] 等, 子策略可能传
+            # asserts=[None] 进来, 存到 DB 后 JSON 序列化失败。
+            'extracts': [v for v in (ctx.extracted_vars or []) if v is not None],
+            'asserts': [a for a in (ctx.asserts or []) if a is not None],
         }
 
         # 环境信息

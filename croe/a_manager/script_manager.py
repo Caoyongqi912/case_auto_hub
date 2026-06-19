@@ -227,7 +227,12 @@ class ScriptManager:
     SCRIPT_TIMEOUT: int = SCRIPT_TIMEOUT  # 暴露给测试,便于断言
 
     def __init__(self):
-        self._variables: Dict[str, Any] = {}
+        # BUG-V3 修复: 重命名 _variables -> _script_locals, 注释清楚
+        # 语义: 单 ScriptManager 实例跨多次 exec 调用的 *本地上下文*, 跨
+        # 实例不共享。当前 interface_executor 每次都 ScriptManager() 新建,
+        # 不会跨 case 泄漏, 但万一以后加缓存 / 复用就立刻踩坑。改名 + 注释
+        # 让"故意累积"vs"应该新建"的语义边界清晰。
+        self._script_locals: Dict[str, Any] = {}
         self._faker = Faker(locale="zh_CN")
 
         # 允许的函数和变量
@@ -317,35 +322,39 @@ class ScriptManager:
         return self._collect_results(local_vars)
 
     def _collect_results(self, local_vars: Dict[str, Any]) -> Dict[str, Any]:
-        """收集执行结果 - 收集 local_vars 和 self._variables 中的变量"""
+        """收集执行结果 - 收集 local_vars 和 self._script_locals 中的变量。
+
+        BUG-V3 修复: 用 _script_locals (改名后的本地上下文), 注释清楚
+        跨 exec 累积是 *故意* 的, 因为是同一脚本里不同阶段共享变量。
+        """
         results: Dict[str, Any] = {}
-        
+
         # 收集 local_vars 中的变量
         for name, value in local_vars.items():
             if not name.startswith('_') and isinstance(value, ALLOWED_TYPES):
                 results[name] = value
-                self._variables[name] = value
+                self._script_locals[name] = value
 
 
-        # 收集 self._variables 中的变量
-        for name, value in self._variables.items():
+        # 收集 self._script_locals 中的变量 (本地上下文跨 exec 累积)
+        for name, value in self._script_locals.items():
             if name not in results and not name.startswith('_') and isinstance(value, ALLOWED_TYPES):
                 results[name] = value
         log.info(f"脚本执行结果: {results}")
         return results
 
     def _hub_variables_set(self, key: str, value: Any) -> None:
-        """设置变量"""
-        self._variables[key] = value
+        """设置变量 (写到本地上下文)"""
+        self._script_locals[key] = value
 
     def _hub_variables_get(self, key: str) -> Optional[Any]:
-        """获取变量"""
-        return self._variables.get(key)
+        """获取变量 (从本地上下文)"""
+        return self._script_locals.get(key)
 
     def _hub_variables_remove(self, key: str) -> None:
-        """删除变量"""
-        if key in self._variables:
-            del self._variables[key]
+        """删除变量 (从本地上下文)"""
+        if key in self._script_locals:
+            del self._script_locals[key]
 
     @staticmethod
     def _hub_api_request(url: str, method: str = "GET", **kwargs) -> Any:

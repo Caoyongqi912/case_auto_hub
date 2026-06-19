@@ -103,11 +103,27 @@ class RequestBuilder:
 
     # ==================== 私有方法 - 请求头处理 ====================
 
+    # BUG-S7 修复: 下游用户接口配置不能覆盖这些敏感 header。
+    # 否则恶意用户可配 Host: evil.com 改后端真实 host, 配
+    # Content-Length 改 body 大小让后端 parse 错, 配 Connection: keep-alive
+    # 维持长连接耗资源。httpx 也会自己设这些, 覆盖就打架。
+    BLOCKED_DOWNSTREAM_HEADERS = frozenset({
+        "host",
+        "content-length",
+        "connection",
+        "transfer-encoding",
+        "upgrade",
+    })
+
     async def _prepare_headers(self,interface: Interface) -> Dict[str, str]:
         """
         准备请求头
 
-        合并全局请求头和接口特定的请求头
+        合并全局请求头和接口特定的请求头。
+
+        BUG-S7 修复: 下游 interface_headers 里的敏感 header (Host /
+        Content-Length / Connection / Transfer-Encoding / Upgrade) 被
+        拦截, WARNING 留痕, 不静默。
 
         Args:
             interface: 接口对象
@@ -122,9 +138,17 @@ class RequestBuilder:
             for header in self.g_headers:
                 headers.update(header.map)
 
-        # 添加接口特定请求头
+        # 添加接口特定请求头 (过滤敏感字段)
         if interface.interface_headers:
-            headers.update(GenerateTools.list2dict(interface.interface_headers))
+            for k, v in GenerateTools.list2dict(interface.interface_headers).items():
+                if k.lower() in self.BLOCKED_DOWNSTREAM_HEADERS:
+                    log.warning(
+                        f"[BUG-S7] 拦截下游敏感 header: {k!r}={v!r} "
+                        f"(case_id={getattr(interface, 'interface_case_id', '?')}), "
+                        f"不让用户配覆盖后端真实值"
+                    )
+                    continue
+                headers[k] = v
 
         return headers
 
@@ -258,24 +282,33 @@ class RequestBuilder:
         """
         准备原始请求体（JSON/Text）
 
+        BUG-S5 修复: raw text 模式不再对字符串 body 走 json.dumps。
+        旧版对 str body 走 json.dumps 会:
+          1) 整串加引号: "hello" -> '"hello"' (错, 实际想发 hello)
+          2) 反斜杠 double-escape: "C:\\path" -> '"C:\\\\path"'
+          3) 用户已有的 JSON 字符串被 re-encode, 变量替换后意义变
+        修: body 是 str 就直接用, 不是 str (dict/list/num) 才 json.dumps。
+
         Args:
             interface: 接口对象
 
         Returns:
             Tuple[请求体字典, Content-Type]
         """
-        # JSON 类型
+        # JSON 类型 — body 通常是 dict, 走 json= 给 httpx
         if interface.interface_raw_type == "json":
             return (
                 {KEY_JSON: interface.interface_body},
                 "application/json"
             )
-        # Text 类型
-        else:
-            return (
-                {KEY_CONTENT: json.dumps(interface.interface_body)},
-                "text/plain"
-            )
+        # Text 类型 — body 是 str 直接用, 否则 (dict/list) 才 json.dumps
+        # BUG-S5: str 走 json.dumps 会破坏 (加引号 / double escape)
+        return (
+            {KEY_CONTENT: interface.interface_body
+             if isinstance(interface.interface_body, str)
+             else json.dumps(interface.interface_body)},
+            "text/plain"
+        )
 
     @staticmethod
     async def _prepare_form_urlencoded(interface: Interface) -> Tuple[Dict[str, Any], str]:
