@@ -204,6 +204,7 @@ class APILoopContentStrategy(StepBaseStrategy):
                     await asyncio.sleep(loop.loop_interval)
 
         await self._update_loop_result(
+            step_context=step_context,
             content_result=content_result,
             all_success=all_success,
             loop_count=loop_count,
@@ -250,6 +251,7 @@ class APILoopContentStrategy(StepBaseStrategy):
         log.info(f'_execute_loop_items {items}')
         if not items:
             await self._update_loop_result(
+                step_context=step_context,
                 content_result=content_result,
                 all_success=True,
                 loop_count=0,
@@ -289,6 +291,7 @@ class APILoopContentStrategy(StepBaseStrategy):
                     await asyncio.sleep(loop.loop_interval)
 
         await self._update_loop_result(
+            step_context=step_context,
             content_result=content_result,
             all_success=all_success,
             loop_count=loop_count,
@@ -370,6 +373,7 @@ class APILoopContentStrategy(StepBaseStrategy):
                 continue
 
         await self._update_loop_result(
+            step_context=step_context,
             content_result=content_result,
             all_success=all_success,
             loop_count=loop_count,
@@ -382,6 +386,7 @@ class APILoopContentStrategy(StepBaseStrategy):
 
     async def _update_loop_result(
         self,
+        step_context: CaseStepContext,
         content_result: Any,
         all_success: bool,
         loop_count: int,
@@ -394,6 +399,7 @@ class APILoopContentStrategy(StepBaseStrategy):
         更新循环步骤结果并更新用例执行结果
 
         Args:
+            step_context: 步骤执行上下文 (BUG-D8 修复: 原本漏传, 内部直接用 step_context 触发 NameError)
             content_result: 循环步骤结果对象
             all_success: 是否全部成功
             loop_count: 循环总次数

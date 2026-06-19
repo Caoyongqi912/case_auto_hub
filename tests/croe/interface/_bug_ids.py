@@ -87,6 +87,13 @@ BUG_V2 = "V2"  # list2dict 重复 key WARNING
 
 # D5: query_steps 多 joinedload 笛卡尔积
 
+# D8: APILoopContentStrategy._update_loop_result 函数体用 step_context.result_writer
+# 但函数签名漏收 step_context 参数, 4 个调用点都漏传, 一进去就 NameError
+# 整 case 跑挂, 日志被清空。修: 签名加 step_context: CaseStepContext,
+# 4 个调用点都加 step_context=step_context。
+BUG_D8 = "D8"
+
+
 # D7: query_steps_result 漏 LoopStepContentResult.interface_results 的 joinedload
 # M6-hotfix 修 detached instance 时只补了 API/Group/Condition 三个 parent subtype,
 # 漏了 LoopStepContentResult.interface_results。前端拿循环步骤 to_dict() 时触发
