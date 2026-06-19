@@ -97,3 +97,13 @@ BUG_P_2_2 = "P-2-2"
 # 够区分并发), finally 块 clear_trace_id 防泄漏。复用了 interface 已有
 # ContextVar, 不引入新机制。
 BUG_P_2_3 = "P-2-3"
+
+# ---------------------------------------------------------------------------
+# P3 批: 边角修复 (re-review 阶段)
+# ---------------------------------------------------------------------------
+
+# P-3-1 修复: croe/play/task_runner.py:execute_task 之前 init_result 抛
+# 异常时整 execute_task 直接挂, task_result 没初始化, task 永远显示
+# RUNNING (孤儿任务), 用户看不到任务结束。修: init_result 包 try, 失败
+# 时 log.exception + return, 让 caller 拿不到结果但不挂。
+BUG_P_3_1 = "P-3-1"

@@ -62,10 +62,19 @@ class PlayTaskRunner:
 
         play_task_writer = PlayTaskResultWriter(starter=self.starter)
 
-        # 初始化结果对象
-        task_result = await play_task_writer.init_result(
-            task=task, case_nums=len(play_cases),
-        )
+        # BUG-P3-1 修复: 之前 init_result 抛异常时整 execute_task 直接挂,
+        # task_result 没初始化, task 永远显示 RUNNING (孤儿任务), 用户
+        # 看不到任务结束。修: init_result 包 try, 失败时打 ERROR 日志
+        # 并 return, 让 caller (controller) 拿不到结果但也不会因为未处理
+        # 异常导致 500 (background task 静默失败更好)。
+        try:
+            task_result = await play_task_writer.init_result(
+                task=task, case_nums=len(play_cases),
+            )
+        except Exception as e:
+            log.exception(f"PlayTaskRunner.execute_task init_result 失败: {e}")
+            await self.starter.send(f"❌ 任务初始化失败: {e}")
+            return
         try:
             await self.__execute_case(params=params,
                                       play_cases=play_cases,
