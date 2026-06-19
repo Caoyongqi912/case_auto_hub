@@ -1,1 +1,101 @@
-#!/usr/bin/env python# -*- coding:utf-8 -*-# @Time : 2024/6/7# @Author : cyq# @File : myLoguru# @Software: PyCharm# @Desc:import osimport sysfrom loguru import logger_project_path = os.path.split(os.path.dirname(__file__))[0]_Logs_path = os.path.join(_project_path, 'logs')class MyLoguru:    """    日志记录器    特性：    - 根据时间和文件大小自动切割日志    - 分离不同级别的日志到不同文件    - 支持自定义日志格式和保留策略    - 线程和进程安全    - 自动创建日志目录    使用示例：    >>> log = MyLoguru().get_logger()    >>> log.info("This is an info message")    >>> log.error("This is an error message")    """    def __init__(self, max_size=30, retention='7 days', debug=False):        self.log_dir = _Logs_path        self.max_size = max_size        self.retention = retention        self.logger = logger        self.debug = debug        self._configure_logger()    def _configure_logger(self):        """配置日志记录器"""        self.logger.remove()        # 创建日志目录        os.makedirs(self.log_dir, exist_ok=True)        # 基础日志格式        base_format = (            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "            "<blue>{process.name}</blue> | "            "<blue>{thread.name}</blue> | "            "<cyan>{file}</cyan>.<cyan>{module}</cyan>.<cyan>{function}</cyan>:<cyan>{line}</cyan> | "            "<level>{level: <8}</level> | "            "<level>{message}</level>"        )        # 错误日志格式（包含堆栈跟踪）        error_format = base_format + "\n{exception}"        # 普通日志文件配置        self.logger.add(            sink=f"{self.log_dir}/access-{{time:YYYY-MM-DD}}.log",            rotation=self.max_size,            retention=self.retention,            level="INFO",            format=base_format,            enqueue=True,            compression="zip"  # 可选的日志压缩        )        # 错误日志单独记录        self.logger.add(            sink=f"{self.log_dir}/error-{{time:YYYY-MM-DD}}.log",            rotation=self.max_size,            retention=self.retention,            level="ERROR",            format=error_format,            enqueue=True,            backtrace=True,  # 错误日志总是记录堆栈            diagnose=True  # 错误日志总是记录变量值        )        # 控制台输出配置        self.logger.add(            sink=sys.stdout,            level="DEBUG",            format=base_format,            enqueue=True,  # 确保线程安全            colorize=True,  # 启用颜色            backtrace=self.debug,  # 调试模式下显示完整堆栈            diagnose=self.debug  # 调试模式下显示变量值        )    def get_logger(self):        return self.logger
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+# @Time : 2024/6/7
+# @Author : cyq
+# @File : myLoguru
+# @Software: PyCharm
+# @Desc:
+import os
+import sys
+
+from loguru import logger
+
+_project_path = os.path.split(os.path.dirname(__file__))[0]
+_Logs_path = os.path.join(_project_path, 'logs')
+
+
+class MyLoguru:
+    """
+    日志记录器
+
+    特性:
+    - 根据时间和文件大小自动切割日志
+    - 分离不同级别的日志到不同文件
+    - 支持自定义日志格式和保留策略
+    - 线程和进程安全
+    - 自动创建日志目录
+
+    使用示例:
+    >>> log = MyLoguru().get_logger()
+    >>> log.info("This is an info message")
+    >>> log.error("This is an error message")
+    """
+
+    def __init__(self, max_size=30, retention='7 days', debug=False):
+        self.log_dir = _Logs_path
+        self.max_size = max_size
+        self.retention = retention
+        self.logger = logger
+        self.debug = debug
+        self._configure_logger()
+
+    def _configure_logger(self):
+        """配置日志记录器"""
+        self.logger.remove()
+
+        # 创建日志目录
+        os.makedirs(self.log_dir, exist_ok=True)
+
+        # 基础日志格式: 加 {extra[trace_id]} 字段 (OBS-2)
+        # 没用 ContextVar 设 trace_id 时显示 '-'
+        base_format = (
+            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+            "<blue>{process.name}</blue> | "
+            "<blue>{thread.name}</blue> | "
+            "<cyan>{file}</cyan>.<cyan>{module}</cyan>.<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
+            "<cyan>trace={extra[trace_id]}</cyan> | "
+            "<level>{level: <8}</level> | "
+            "<level>{message}</level>"
+        )
+        # 错误日志格式(包含堆栈跟踪)
+        error_format = base_format + "\n{exception}"
+        # 普通日志文件配置
+        self.logger.add(
+            sink=f"{self.log_dir}/access-{{time:YYYY-MM-DD}}.log",
+            rotation=self.max_size,
+            retention=self.retention,
+            level="INFO",
+            format=base_format,
+            enqueue=True,
+            compression="zip"  # 可选的日志压缩
+        )
+
+        # 错误日志单独记录
+        self.logger.add(
+            sink=f"{self.log_dir}/error-{{time:YYYY-MM-DD}}.log",
+            rotation=self.max_size,
+            retention=self.retention,
+            level="ERROR",
+            format=error_format,
+            enqueue=True,
+            backtrace=True,  # 错误日志总是记录堆栈
+            diagnose=True  # 错误日志总是记录变量值
+        )
+        # 控制台输出配置
+        self.logger.add(
+            sink=sys.stdout,
+            level="DEBUG",
+            format=base_format,
+            enqueue=True,  # 确保线程安全
+            colorize=True,  # 启用颜色
+            backtrace=self.debug,  # 调试模式下显示完整堆栈
+            diagnose=self.debug  # 调试模式下显示变量值
+        )
+
+        # [OBS-1 + OBS-3] 装 patcher: 注入 trace_id + redact 敏感字段
+        # 必须最后调, 之后 add 的 sink 也会用 combined_patcher
+        from croe.interface.observability import install_patchers
+        install_patchers(self.logger)
+
+    def get_logger(self):
+        return self.logger

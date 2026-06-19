@@ -142,3 +142,24 @@ BUG_D5 = "D5"  # query_steps 删除 5 个死 joinedload
 # 漂移没处理。修: 加 find_fk_inconsistencies (3 种 reason 全识别) +
 # reconcile_fk_from_polymorphic (UPDATE JOIN 兜底覆写)。
 BUG_D6 = "D6"
+
+# OBS-1: 失败链路 trace 不可达
+# 异常分支 (except) 只 log.exception, 不写 step_result、不通知用户。
+# 修: 走 OBS-2 trace_id 帮定位"这条日志是哪条 case 跑的", 跨
+# async/log/DB/WS 一致。失败 case 的 step_result 落盘是 InterfaceExecutor
+# 单独改造 (不在本批)。
+BUG_OBS_1 = "OBS-1"
+
+# OBS-2: 缺 correlation id
+# interface_case_id / case_result_id / task_result_id 在多 case 并发时, 光看
+# 日志无法拼出"这条日志是哪条 case 跑的"。修: contextvars 注入 trace_id
+# (8 字符 uuid hex), 跨 asyncio.Task / loguru patcher / MyLoguru 格式
+# / runner 入口 + finally 清理, 一致可见。
+BUG_OBS_2 = "OBS-2"
+
+# OBS-3: 缺 log 脱敏
+# URL/变量写进 log, 可能含 token / 密钥 / cookie。修: loguru patcher
+# 在 emit 前 redact 敏感字段 (Authorization / Set-Cookie / Cookie /
+# Password / passwd / Token / api_key / access_key / secret 等, 大小写
+# 不敏感子串匹配), message 跟 extra=dict 都覆盖。
+BUG_OBS_3 = "OBS-3"

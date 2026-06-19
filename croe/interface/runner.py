@@ -26,6 +26,11 @@ from croe.interface.writer import ResultWriter  # BUG-D1:模块级单例已废�
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.starter import APIStarter
 from croe.play.starter import UIStarter
+from croe.interface.observability import (
+    set_trace_id,
+    clear_trace_id,
+    get_trace_id,
+)
 from utils import log
 
 
@@ -125,10 +130,13 @@ class InterfaceRunner:
         Returns:
             Tuple[是否成功, 用例结果对象]
         """
+        # [OBS-2] 生成 trace_id 注入 ContextVar, 跨 async/log/DB/WS 一致
+        # 8 字符够区分并发 (1M 量级), 短, 日志不抢眼
+        trace_id = set_trace_id()
         interface_case = await InterfaceCaseMapper.get_by_id(
             ident=interface_case_id
         )
-        log.info(f"查询到业务流用例  {interface_case}")
+        log.info(f"[trace={trace_id}] 查询到业务流用例  {interface_case}")
 
         if not interface_case:
             await self.starter.send(
@@ -251,6 +259,8 @@ class InterfaceRunner:
             return False, case_result
 
         finally:
+            # [OBS-2] 清掉 trace_id, 下次 case 重新设
+            clear_trace_id()
             await self.variable_manager.clear()
             # BUG-D1 修复:清空本 runner 的缓存,避免后续 runner 误用
             self.result_writer.clear_cache()
