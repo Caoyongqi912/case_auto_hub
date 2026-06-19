@@ -112,16 +112,14 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
             Dict[str, int]: {'total': N, 'success': S, 'fail': F}
         """
         from sqlalchemy import func, select, case
-        if session is None:
-            raise ValueError(
-                "recompute_case_result_nums requires external session "
-                "(BUG-D4: 不再隐式 commit)"
-            )
-        try:
+        # BUG-DOC 修复: 之前 session=None 直接 raise, 但 docstring + 调用方注释
+        # (result_writer.py:367) 都写 "自管事务", 实际静默 except, 丢对账。
+        # 改: session=None 时开自己的事务, session 传进来时复用外部事务 (D4 哲学一致)。
+        async def _do_query(sess: AsyncSession) -> Dict[str, int]:
             # BUG-E8: InterfaceResult 没有直接的 case_result_id 字段,
             # 走 interface_case_content_result 中间表 JOIN:
-            # interface_result.content_result_id → interface_case_content_result.id
-            #                                      → interface_case_content_result.case_result_id
+            # interface_result.content_result_id -> interface_case_content_result.id
+            #                                       -> interface_case_content_result.case_result_id
             stmt = select(
                 func.count(InterfaceResult.id).label("total"),
                 func.sum(
@@ -134,7 +132,7 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
                 InterfaceCaseContentResult,
                 InterfaceResult.content_result_id == InterfaceCaseContentResult.id,
             ).where(InterfaceCaseContentResult.case_result_id == case_result_id)
-            row = (await session.execute(stmt)).one()
+            row = (await sess.execute(stmt)).one()
             total = row.total or 0
             success = row.success or 0
             fail = row.fail or 0
@@ -144,9 +142,16 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
                 total_num=total,
                 success_num=success,
                 fail_num=fail,
-                session=session,
+                session=sess,
             )
             return {"total": total, "success": success, "fail": fail}
+
+        try:
+            # BUG-DOC 修复: session=None 开自己的事务, session 传进来复用
+            if session is None:
+                async with cls.transaction() as session:
+                    return await _do_query(session)
+            return await _do_query(session)
         except Exception as e:
             log.error(f"recompute_case_result_nums error: {e}")
             raise

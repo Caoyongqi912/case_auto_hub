@@ -278,3 +278,22 @@ BUG_N2 = "N2"
 # 试半天才发现认证字段没生效。修: 加 else 分支, log.warning 含 target 值 +
 # case_id + 允许值列表, 业务异常也能查到。
 BUG_RB1 = "RB1"
+
+# M9-2 修复: result_writer.write_step_result 的 result_data 写
+# status="SUCCESS"/"FAIL" 字面量, 跟 M9 修的 8 个 step_content 不一致。
+# 当 status 列改成 enum 类型时会写错值, 静默存错。
+# 修: 统一走 StepStatusEnum.SUCCESS / .FAIL。
+BUG_M9_2 = "M9-2"
+
+# RB2 修复: InterfaceRunner.run_interface_by_task 函数体漏调
+# init_global_headers(), 跟另外 3 个入口 (try_interface / try_group /
+# run_interface_case) 行为不一致。任务执行时 g_headers 永远为 [],
+# 用户配的全局 header (Authorization / X-Tenant-Id) 全部丢失。
+# 修: 函数体开头加 await self.init_global_headers()。
+BUG_RB2 = "RB2"
+
+# DOC 修复: InterfaceCaseResultMapper.recompute_case_result_nums
+# 之前 session=None 直接 raise ValueError, 但 docstring + 调用方
+# 注释 (result_writer.py:367) 都写 "自管事务", 实际静默 except, 丢对账。
+# 修: session=None 时开自己的 cls.transaction(), 跟 D4 哲学一致。
+BUG_DOC = "DOC"

@@ -308,6 +308,12 @@ class InterfaceRunner:
         Returns:
             是否执行成功
         """
+        # BUG-RB2 修复: 跟另外 3 个入口 (try_interface / try_group / run_interface_case)
+        # 对齐, 调 init_global_headers 把全局 header 注入到 executor.g_headers。
+        # 旧版漏调, 任务执行时 g_headers 永远为 [], 用户配的全局 header (Authorization /
+        # X-Tenant-Id) 全部丢失, 业务流和任务模式行为不一致, 排查极难。
+        await self.init_global_headers()
+
         for attempt in range(retry + 1):
             result = await self.interface_executor.execute(
                 interface=interface,

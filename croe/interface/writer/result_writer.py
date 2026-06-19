@@ -26,7 +26,7 @@ from app.model.interfaceAPIModel.interfaceResultModel import (
 )
 from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
 from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
-from enums import InterfaceAPIStatusEnum, InterfaceAPIResultEnum
+from enums import InterfaceAPIStatusEnum, InterfaceAPIResultEnum, StepStatusEnum  # BUG-M9-2 修复: 写 status 也走 enum, 跟 8 个 step_content 统一
 from enums.CaseEnum import CaseStepContentType
 from utils import GenerateTools, log
 from croe.interface.starter import APIStarter
@@ -240,6 +240,9 @@ class ResultWriter:
         """
         is_parent_step = content_type in self.PARENT_STEP_TYPES
 
+        # BUG-M9-2 修复: status 跟 8 个 step_content_*.py 走 StepStatusEnum, 不写
+        # 字面量 "SUCCESS"/"FAIL"。M9 修了 step strategy 那一层, 但 result_writer
+        # 这条 cache flush 路径漏了, 当 status 列改成 enum 类型时会写错值。
         result_data = {
             'content_type': content_type,
             'case_result_id': case_result_id,
@@ -249,7 +252,7 @@ class ResultWriter:
             'content_desc': content_desc,
             'content_step': content_step,
             'result': success,
-            'status': "SUCCESS" if success else "FAIL",
+            'status': StepStatusEnum.SUCCESS if success else StepStatusEnum.FAIL,
             'start_time': start_time,
             'use_time': use_time,
             **kwargs

@@ -32,16 +32,34 @@ def test_bug_e8_e9_recompute_uses_interface_result_count():
     assert "True" in src and "False" in src, "[BUG-E8] 应按 result True/False 分桶"
 
 
-@pytest.mark.asyncio
-async def test_bug_e8_e9_recompute_requires_external_session():
-    """D4 对齐: session=None 必须抛 ValueError, 禁止隐式 commit"""
-    from app.mapper.interfaceApi.interfaceResultMapper import InterfaceCaseResultMapper
+def test_bug_e8_e9_recompute_session_none_no_longer_raises():
+    """[BUG-DOC 修复] 之前 session=None 抛 ValueError, 但调用方
+    (result_writer.py:367) 注释写 "自管事务", 实际静默 except 丢对账。
+    改: session=None 时开自己的 transaction()。
 
-    with pytest.raises(ValueError, match="external session"):
-        await InterfaceCaseResultMapper.recompute_case_result_nums(
-            case_result_id=1,
-            session=None,
-        )
+    测试: 不接 DB, 用 inspect.getsource 检查源码, 锁住
+    1. 不再 raise ValueError
+    2. 走 if session is None 分支调 cls.transaction()
+    3. session 传进来时走 else 分支复用
+    """
+    from app.mapper.interfaceApi.interfaceResultMapper import InterfaceCaseResultMapper
+    import inspect
+
+    src = inspect.getsource(InterfaceCaseResultMapper.recompute_case_result_nums)
+
+    # 不应有 raise ValueError("...external session...")
+    assert "raise ValueError" not in src, (
+        "[BUG-DOC 修复后] session=None 不应再 raise ValueError, "
+        "改走 if session is None: async with cls.transaction() as session"
+    )
+
+    # 必须有 if session is None 分支调 cls.transaction()
+    assert "if session is None" in src, (
+        "[BUG-DOC 修复后] 必须有 if session is None 分支"
+    )
+    assert "cls.transaction()" in src, (
+        "[BUG-DOC 修复后] session=None 走 cls.transaction() 自管事务"
+    )
 
 
 @pytest.mark.asyncio
