@@ -8,7 +8,7 @@
 from typing import Dict, Type, List, Optional, Tuple
 
 from sqlalchemy import select, text
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import joinedload, selectinload, with_polymorphic
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper
@@ -442,7 +442,9 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         Returns:
             List[dict]: 包含完整结果信息的字典列表
         """
-        results = await cls.query_by_case_result_id(case_result_id, session)
+        # BUG-M6-hotfix: 显式 with_polymorphic, 否则 to_dict() 触发子类列
+        # refresh 时 session 已关会报 "is not bound to a Session"
+        results = await cls.query_steps_result(case_result_id)
         result_dicts = [result.to_dict() for result in results]
 
         for result_dict in result_dicts:
@@ -542,12 +544,42 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
 
 
     @classmethod
-    async def query_steps_result(cls,case_result_id: int):
+    async def query_steps_result(cls, case_result_id: int):
+        """
+        查询用例的步骤结果, 包含子类的 interface_result 关联。
 
-        stmt = select(InterfaceCaseContentResult).options(
-            joinedload(APIStepContentResult.interface_result),
-            joinedload(GroupStepContentResult.interface_results),
-            joinedload(ConditionStepContentResult.interface_results),
+        BUG-M6-hotfix: 加 with_polymorphic 显式指定所有 8 个子类, 让查询的
+        SELECT 包含子类表的所有列 (如 APIStepContentResult.interface_result_id),
+        否则 BaseModel.to_dict() 用 self_and_descendants 反射访问这些列时
+        会触发 SQLAlchemy 想 lazy-load / refresh, session 已关就报:
+        "Instance is not bound to a Session; attribute refresh operation cannot proceed"
+
+        InterfaceCaseContentResult.__mapper_args__ 已经去掉 'with_polymorphic': '*'
+        (8x 行宽浪费), 所以**需要子类列的查询**必须显式指定。
+        只读基类字段的查询 (如 get_stats) 可以不加, 保持带宽优势。
+        """
+        # 所有 8 个子类都列上 — to_dict() 反射访问可能命中任意子类列,
+        # 漏一个就触发 refresh 失败。JOIN 宽度 = 8 个子类表, 跟旧 '*' 等同,
+        # 但只在需要子类列的查询用, 其它查询继续保持无子类 JOIN。
+        poly = with_polymorphic(
+            InterfaceCaseContentResult,
+            [
+                APIStepContentResult,
+                GroupStepContentResult,
+                ConditionStepContentResult,
+                ScriptStepContentResult,
+                DBStepContentResult,
+                WaitStepContentResult,
+                AssertStepContentResult,
+                LoopStepContentResult,
+            ],
+        )
+        # joinedload 必须用 poly 实体, 不能用原 class, 因为根实体已经是 poly
+        # (poly 是 with_polymorphic 返回的别名实体, 它把 8 个子类表 JOIN 在一起)
+        stmt = select(poly).options(
+            joinedload(poly.APIStepContentResult.interface_result),
+            joinedload(poly.GroupStepContentResult.interface_results),
+            joinedload(poly.ConditionStepContentResult.interface_results),
         ).where(
             InterfaceCaseContentResult.case_result_id == case_result_id
         ).order_by(
