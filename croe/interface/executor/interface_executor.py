@@ -439,7 +439,9 @@ class InterfaceExecutor:
             ctx.success = False
         # 正常响应处理
         elif isinstance(ctx.response, httpx.Response):
-            is_success = ctx.response.status_code == 200
+            # BUG-P1-1 修复: 改用 InterfaceResponseStatusCodeEnum.SUCCESS (== "200"),
+            # 跟同文件 363 行的提取前判断风格一致, 避免魔法数字散落。
+            is_success = ctx.response.status_code == InterfaceResponseStatusCodeEnum.SUCCESS
             result.update({
                 'response_status': ctx.response.status_code,
                 'response_text': ctx.response.text,

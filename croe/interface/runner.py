@@ -37,7 +37,7 @@ from utils import log
 class InterfaceRunner:
     """接口执行入口类"""
 
-    __slots__ = ("starter", "variable_manager", "interface_executor", "global_headers", "result_writer")
+    __slots__ = ("starter", "variable_manager", "interface_executor", "result_writer")  # BUG-P1-2 修复: 删 global_headers 字段 (init_global_headers 只更新 executor.g_headers, self.global_headers 永为 stale 空 list)
 
     def __init__(
         self,
@@ -57,14 +57,17 @@ class InterfaceRunner:
         # None 时新建, 不破坏现有调用方 (try_interface / try_group /
         # run_interface_case 都走 None 路径)。
         self.variable_manager = variable_manager or VariableManager()
-        self.global_headers: List[InterfaceGlobalHeader] = []
+        # BUG-P1-2 修复: 删 self.global_headers 实例字段, 只保留
+        # executor.g_headers 单一来源。self.global_headers 旧版永为
+        # stale 空 list (init_global_headers 只更新 executor.g_headers),
+        # 读 runner.global_headers 的代码拿到空 list 串号。
         # 每个 runner 独立的 result_writer,避免并发时缓存互相污染 (BUG-D1)
         from croe.interface.writer import ResultWriter
         self.result_writer = ResultWriter()
         self.interface_executor = InterfaceExecutor(
             starter=self.starter,
             variable_manager=self.variable_manager,
-            global_headers=self.global_headers,
+            global_headers=[],  # init_global_headers 时注入
         )
 
     async def try_interface(
@@ -73,7 +76,8 @@ class InterfaceRunner:
             env_id: int
     ) -> Dict[str, Any]:
         """
-        执行单个接口请求调试
+        执行单个接口请求调试 (BUG-P1-4 修复: 加 try/finally 清理,
+        跟 run_interface_case / run_interface_by_task 风格对齐)。
 
         Args:
             interface_id: 接口id
@@ -85,10 +89,17 @@ class InterfaceRunner:
         interface = await InterfaceMapper.get_by_id(ident=interface_id)
         env = await self._get_running_env(env=env_id)
         await self.init_global_headers()
-        result = await self.interface_executor.execute(
-            interface=interface, env=env
-        )
-        return result
+        try:
+            return await self.interface_executor.execute(
+                interface=interface, env=env
+            )
+        finally:
+            # 跟 run_interface_case / run_interface_by_task 风格对齐
+            # (P1-4): UI 调试入口, 短跑, 但仍要释放 httpx 连接 (E1)
+            try:
+                await self.interface_executor.aclose()
+            except Exception:
+                pass
 
     async def try_group(
             self,
@@ -96,7 +107,8 @@ class InterfaceRunner:
             env_id: int
     ) -> list:
         """
-        执行接口组
+        执行接口组 (BUG-P1-4 修复: 加 try/finally 清理,
+        跟 run_interface_case / run_interface_by_task 风格对齐)。
 
         Args:
             group_id: 组ID
@@ -111,14 +123,21 @@ class InterfaceRunner:
 
         await self.init_global_headers()
         env = await self._get_running_env(env=env_id)
-        results = []
-        for interface in interfaces:
-            await self.starter.send(f"✍️✍️  Execute    {interface}")
-            result = await self.interface_executor.execute(
-                interface=interface, env=env
-            )
-            results.append(result)
-        return results
+        try:
+            results = []
+            for interface in interfaces:
+                await self.starter.send(f"✍️✍️  Execute    {interface}")
+                result = await self.interface_executor.execute(
+                    interface=interface, env=env
+                )
+                results.append(result)
+            return results
+        finally:
+            # 跟 run_interface_case / run_interface_by_task 风格对齐 (P1-4)
+            try:
+                await self.interface_executor.aclose()
+            except Exception:
+                pass
 
     async def run_interface_case(
             self,

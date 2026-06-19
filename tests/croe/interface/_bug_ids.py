@@ -323,3 +323,21 @@ BUG_T1 = "T1"
 # 不调 starter.over() (外层 _execute_api_steps finally 统一调), 不调
 # clear_trace_id() (本函数自己不设 trace_id, 清会误伤外层)。
 BUG_T2 = "T2"
+
+# P1-1 修复: interface_executor.py:442 之前硬编码 status_code == 200,
+# 同文件 363 行 (提取前判断) 用 InterfaceResponseStatusCodeEnum.SUCCESS,
+# 风格不一致。改用 enum, 后续如果状态码常量改 (e.g. 200 → "2xx") 一处改即可。
+BUG_P1_1 = "P1-1"
+
+# P1-2 修复: runner.py:InterfaceRunner.__slots__ 之前含 "global_headers"
+# 字段, __init__ 设 self.global_headers = [] 后, init_global_headers 只
+# 更新 self.interface_executor.g_headers (新 list), 旧 self.global_headers
+# 引用永为 stale 空 list。修: __slots__ 删 global_headers 字段,
+# 单一来源 executor.g_headers。
+BUG_P1_2 = "P1-2"
+
+# P1-4 修复: runner.py:try_interface + try_group 之前没有 try/finally,
+# UI 调试入口用完不释放 httpx 连接, 跟 run_interface_case /
+# run_interface_by_task 风格不一致。修: 加 try/finally 调 aclose,
+# 4 个入口清理风格统一。
+BUG_P1_4 = "P1-4"
