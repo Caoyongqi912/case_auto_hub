@@ -7,7 +7,7 @@
 # @Desc: 接口执行结果 Mapper
 from typing import Dict, Type, List, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -112,6 +112,49 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
                 return results.all()
         except Exception as e:
             log.error(f"get_by_content_result_id error: {e}")
+            raise
+
+    @classmethod
+    async def backfill_content_result_id_fk(
+        cls,
+        case_result_id: int,
+        session: AsyncSession = None,
+    ) -> int:
+        """
+        [BUG-F8-followup] 回填 interface_result.content_result_id
+
+        背景: STEP_API 子步骤走 cache, finalize flush 完 content_result 后
+              才有 id, 但 interface_result 是在 cache flush 之前以 immediate=True
+              入库的, content_result_id 当时是 NULL。
+              正向关系 (interface_case_content_result_api.interface_result_id)
+              已经填好, 用 UPDATE JOIN 反向回填一次性搞定。
+
+        Args:
+            case_result_id: 用例结果 ID (限定本次跑的范围, 不影响其他)
+            session: 可选的数据库会话
+
+        Returns:
+            int: 回填的行数
+        """
+        sql = text("""
+            UPDATE interface_result ir
+            JOIN interface_case_content_result_api api
+              ON api.interface_result_id = ir.id
+            JOIN interface_case_content_result cr
+              ON cr.id = api.result_id
+            SET ir.content_result_id = cr.id
+            WHERE cr.case_result_id = :case_result_id
+              AND ir.content_result_id IS NULL
+        """)
+        try:
+            async with cls.session_scope(session) as session:
+                result = await session.execute(
+                    sql, {"case_result_id": case_result_id}
+                )
+                await session.commit()
+                return result.rowcount or 0
+        except Exception as e:
+            log.error(f"backfill_content_result_id_fk error: {e}")
             raise
 
     

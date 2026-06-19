@@ -297,6 +297,19 @@ class ResultWriter:
         """
         await self._flush_cache()
 
+        # BUG-F8-followup: STEP_API 子步骤的 interface_result 在 cache flush 之前
+        # 已 immediate=True 入库, 当时 content_result_id 还是 NULL (cache 里的
+        # content_result 还没 id)。flush 完后正向关系 (子表 api) 已落盘,
+        # 这里用 UPDATE JOIN 一次性回填反向 FK。
+        backfilled = await InterfaceResultMapper.backfill_content_result_id_fk(
+            case_result_id=case_result.id
+        )
+        if backfilled:
+            log.info(
+                f"[BUG-F8-followup] 回填 interface_result.content_result_id: "
+                f"{backfilled} 行 (case_result_id={case_result.id})"
+            )
+
         if case_result.fail_num == 0:
             case_result.result = InterfaceAPIResultEnum.SUCCESS
         else:
@@ -310,12 +323,17 @@ class ResultWriter:
         if logs:
             case_result.interface_log = logs
 
+        # BUG-F5 修复: progress 不再硬编码 100.0, 用 runner 算好的
+        # case_result.progress。正常全跑完的 case, runner 算到最后一步
+        # index=total 时已经 (total*100)//total = 100, 跟原来等价;
+        # error_stop break 的 case, 保留"跑到 N 步失败"的中间进度, 前端能
+        # 正确显示"未跑完"。
         await InterfaceCaseResultMapper.update_by_id(
             id=case_result.id,
             use_time=case_result.use_time,
             status=case_result.status,
             result=case_result.result,
-            progress=100.0,
+            progress=case_result.progress,
             success_num=case_result.success_num,
             fail_num=case_result.fail_num,
             interface_log=case_result.interface_log if logs else None,

@@ -219,11 +219,13 @@ class InterfaceRunner:
 
                 # 用例执行失败 且 配置了错误停止
                 if not case_success and error_stop:
+                    # BUG-F5 修复: 不再 force 100%, 保留 (index*100)//total
+                    # 表示"跑到 N 步失败停了"的真实进度; finalize 用这个值写库。
+                    # 强制 100 会让前端误以为 case 跑完了。
                     await self.starter.send(
-                        f"⏭️⏭️  SKIP_STEP {index} ： 遇到错误已停止"
+                        f"⏭️⏭️  SKIP_STEP {index} ： 遇到错误已停止 "
+                        f"(progress={case_result.progress}%)"
                     )
-                    case_result.progress = 100
-                    await self.result_writer.update_case_progress(case_result)
                     break
 
                 await self.starter.send(

@@ -14,7 +14,7 @@ BUG_F1 = "F1"  # interfaceLog 字段名
 BUG_F2 = "F2"  # 早返 None
 BUG_F3 = "F3"  # init_global_headers 错位
 BUG_F4 = "F4"  # init_interface_case_vars 静默
-BUG_F5 = "F5"  # error_stop 状态机
+BUG_F5 = "F5"  # error_stop 状态机 (runner 强制 100, 应保留中间值)
 
 # Mapper 层
 BUG_D1 = "D1"  # result_writer 单例
@@ -43,3 +43,6 @@ BUG_M5 = "M5"  # polymorphic_on 用 enum int, 重排炸库
 
 # F8 追加: 模块单例 result_writer 死灰复燃, STEP_API content_result 永远不落盘
 BUG_F8 = "F8"  # result_writer 注入 ExecutionContext, 替代模块单例
+
+# F8-followup 追加: interface_result.content_result_id 永远 NULL (反向 FK 没回填)
+BUG_F8B = "F8B"  # finalize flush 完 cache 后用 UPDATE JOIN 一次性回填
