@@ -19,13 +19,23 @@ class InterfaceAPIStatusEnum:
 
 
 class InterfaceAPIResultEnum:
-    """接口结果实例状态"""
+    """
+    接口/用例结果标志 (命名常量, 非真 enum)。
+
+    该类的成员值是 bool: SUCCESS = True, ERROR = False。
+    它故意保留 .SUCCESS / .ERROR 形态, 让代码里
+    case_result.result = InterfaceAPIResultEnum.ERROR
+    读起来比 case_result.result = False 自描述得多, 写库 Boolean 列也直接 OK。
+
+    重要: 不要给它赋字符串 (如 InterfaceAPIResultEnum.ERROR = "ERROR"),
+    SQLAlchemy 不会报错, Python 会把非空字符串当成 True 静默写反。
+
+    旧 InterfaceCaseResultEnum (SUCCESS="SUCCESS", ERROR="ERROR", 同名 str 值)
+    已删除: 0 引用, 且同名不同值, 是两个看起来一样的命名常量陷阱。
+    需用 str 状态请改用 InterfaceAPIStatusEnum.OVER / RUNNING。
+    """
     SUCCESS = True
     ERROR = False
-
-class InterfaceCaseResultEnum:
-    SUCCESS = "SUCCESS"
-    ERROR = "ERROR"
 
 class InterfaceCaseErrorStep:
     STOP = 1

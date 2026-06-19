@@ -49,3 +49,14 @@ BUG_F8 = "F8"  # result_writer 注入 ExecutionContext, 替代模块单例
 
 # F8-followup 追加: interface_result.content_result_id 永远 NULL (反向 FK 没回填)
 BUG_F8B = "F8B"  # finalize flush 完 cache 后用 UPDATE JOIN 一次性回填
+
+# M7: result 列 enum/bool 类型安全
+# 旧 InterfaceCaseResultEnum (SUCCESS="SUCCESS", ERROR="ERROR", 同名 str 值)
+# 跟 InterfaceAPIResultEnum (SUCCESS=True, ERROR=False) 同名不同值,
+# 写 Boolean 列时 bool("ERROR")=True 会静默写反。已删前者, 加 helper 防御。
+BUG_M7 = "M7"  # 删 InterfaceCaseResultEnum + result_writer._result_flag_to_bool
+
+# M8: InterfaceCase.case_api_num 跟实际 step 关联数对账
+# ±1/±N 散落在 5 个同步点, 移除 GROUP/CONDITION/LOOP 时 -1 写死,
+# 实际一个 group 含 N 个 API, 永远算错。加 recompute_case_api_num 兜底。
+BUG_M8 = "M8"  # recompute_case_api_num 兜底 5 个 ±N 同步点

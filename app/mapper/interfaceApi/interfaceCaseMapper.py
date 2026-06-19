@@ -210,6 +210,8 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     case_id=case_id
                 )
 
+                # BUG-M8: 兜底对账
+                await cls.recompute_case_api_num(case_id, session)
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
                     case_id=case_id,
@@ -268,6 +270,8 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     start_index=last_index + 1,
                     case_id=case_id
                 )
+                # BUG-M8: 兜底对账
+                await cls.recompute_case_api_num(case_id, session)
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
                     case_id=case_id,
@@ -315,6 +319,8 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
                 last_index = await cls._get_last_step_order(case_id, session)
                 await cls._create_association(session, case_id, content.id, last_index + 1)
+                # BUG-M8: 兜底对账
+                await cls.recompute_case_api_num(case_id, session)
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
                     case_id=case_id,
@@ -366,6 +372,8 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
                 last_index = await cls._get_last_step_order(case_id, session)
                 await cls._create_association(session, case_id, content.id, last_index + 1)
+                # BUG-M8: 兜底对账
+                await cls.recompute_case_api_num(case_id, session)
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
                     case_id=case_id,
@@ -398,6 +406,8 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 )
                 last_index = await cls._get_last_step_order(case_id, session)
                 await cls._create_association(session, case_id, content.id, last_index + 1)
+                # BUG-M8: 兜底对账
+                await cls.recompute_case_api_num(case_id, session)
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
                     case_id=case_id,
@@ -544,6 +554,8 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 await cls._create_association(
                     session, case_id, content.id, last_index + 1
                 )
+                # BUG-M8: 兜底对账
+                await cls.recompute_case_api_num(case_id, session)
 
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
@@ -679,11 +691,58 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     .where(InterfaceCase.id == case_id)
                     .values(case_api_num=InterfaceCase.case_api_num - 1)
                 )
+                # BUG-M8: 兜底对账 (移除一个 step, 但 -1 不一定准, 比如批量内部)
+                await cls.recompute_case_api_num(case_id, session)
         except Exception as e:
             log.error(f"remove_step error: {e}")
             raise
 
     # ==================== 查询操作 ====================
+
+    @classmethod
+    async def recompute_case_api_num(
+            cls,
+            case_id: int,
+            session: AsyncSession = None
+    ) -> int:
+        """
+        BUG-M8: 重新计算用例的 step 关联数, 写回 case_api_num。
+
+        根因: ±1/±N 散落在 5+ 个同步点 (associate_interfaces/groups/condition/
+        loop/db + copy_step + remove_step), 任何一处漏写或多写都让 case_api_num
+        跟实际 step 数对不上。比如:
+        - 移除 GROUP 时 -1 写死, 但 group 内部含 N 个 API, 实际应 -N
+        - 批量操作中途失败, 部分 ±1 没回滚, 字段永久错位
+
+        修法: 不逐个替换 (太碎, 易遗漏), 保留 ±N 立即更新 (给 UI 实时反馈),
+        在每个事务末尾再调一次 recompute 做最终对账, 任何漂移都会被纠正。
+
+        Args:
+            case_id: 用例 ID
+            session: 可选, 不传则开新事务
+
+        Returns:
+            int: 实际关联的 step 数
+        """
+        async def _do(sess: AsyncSession) -> int:
+            # 直接 COUNT 关联表, 跟 case_api_num 字段语义对得上 (步骤关联数)
+            result = await sess.execute(
+                select(InterfaceCaseStepContentAssociation).where(
+                    InterfaceCaseStepContentAssociation.interface_case_id == case_id
+                )
+            )
+            actual_count = len(result.all())
+            await sess.execute(
+                update(InterfaceCase)
+                .where(InterfaceCase.id == case_id)
+                .values(case_api_num=actual_count)
+            )
+            return actual_count
+
+        if session is not None:
+            return await _do(session)
+        async with cls.transaction() as session:
+            return await _do(session)
 
     @classmethod
     async def query_steps(

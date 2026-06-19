@@ -32,6 +32,31 @@ from utils import GenerateTools, log
 from croe.interface.starter import APIStarter
 
 
+def _result_flag_to_bool(value: Any) -> bool:
+    """
+    BUG-M7: 把"结果标志"统一归一成 bool, 防止"同名不同类型"陷阱。
+
+    背景: InterfaceAPIResultEnum.SUCCESS=True / .ERROR=False (bool),
+    旧 InterfaceCaseResultEnum.SUCCESS="SUCCESS" / .ERROR="ERROR" (str)
+    同名不同值, 写 Boolean 列时 bool("ERROR")=True 会静默写反。
+    M7 已删 InterfaceCaseResultEnum, 这个 helper 留作防御:
+    - bool: 原样返回
+    - str: ERROR/FAIL/false/0/no -> False, 其它非空 -> True
+    - None: False (保守, 不污染历史数据)
+    - 其它: bool() 兜底
+    """
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in ("error", "fail", "false", "0", "no", "n"):
+            return False
+        return bool(lowered)
+    return bool(value)
+
+
 class ResultWriter:
     """
     统一结果写入器（优化版）
