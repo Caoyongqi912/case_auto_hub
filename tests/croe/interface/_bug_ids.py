@@ -39,3 +39,4 @@ BUG_D2 = "D2"  # bulk_insert_results 异常吞掉部分成功记录
 
 # D4 追加
 BUG_D4 = "D4"  # bulk_insert_* 隐式 commit, 多表批量不在同事务
+BUG_M5 = "M5"  # polymorphic_on 用 enum int, 重排炸库

@@ -8,7 +8,7 @@
 from datetime import datetime, date
 from typing import Optional, Set
 
-from sqlalchemy import Column, INTEGER, String, ForeignKey, Boolean, DATETIME, JSON, TEXT, Float, DATE
+from sqlalchemy import Column, INTEGER, String, ForeignKey, Boolean, DATETIME, JSON, TEXT, Float, DATE, Enum
 from sqlalchemy.orm import relationship
 
 from app.model import BaseModel
@@ -202,7 +202,14 @@ class InterfaceCaseContentResult(BaseModel):
     content_name = Column(String(250), nullable=True, comment="步骤名称")
     content_desc = Column(String(250), nullable=True, comment="步骤描述")
     content_step = Column(INTEGER, nullable=False, comment="步骤序号")
-    content_type = Column(INTEGER, nullable=False, index=True, comment="步骤类型")
+    # BUG-M5 修复: 改用 Enum 类型, DB 存 enum NAME 而不是 int value,
+    # 避免重排枚举值时旧数据全错。native_enum=False 用 VARCHAR(20) 实现。
+    content_type = Column(
+        Enum(CaseStepContentType, native_enum=False, length=20),
+        nullable=False,
+        index=True,
+        comment="步骤类型 (存 enum NAME, e.g. 'STEP_API')",
+    )
 
     result = Column(Boolean, nullable=True, comment="执行结果")
     start_time = Column(DATETIME, default=datetime.now, comment="开始时间")

@@ -9,9 +9,10 @@
 from datetime import datetime
 from typing import Optional, Set
 
-from sqlalchemy import Column, INTEGER, String
+from sqlalchemy import Column, INTEGER, String, Enum
 
 from app.model import BaseModel
+from enums.CaseEnum import CaseStepContentType
 
 
 def step_content_id_column():
@@ -36,7 +37,14 @@ class InterfaceCaseContents(BaseModel):
     __tablename__ = "interface_case_step_content"
     __allow_unmapped__ = True
 
-    content_type = Column(INTEGER, nullable=False, index=True, comment="步骤类型")
+    # BUG-M5 修复: 改用 Enum 类型, DB 存 enum NAME 而不是 int value,
+    # 避免重排枚举值时旧数据全错。native_enum=False 用 VARCHAR(20) 实现。
+    content_type = Column(
+        Enum(CaseStepContentType, native_enum=False, length=20),
+        nullable=False,
+        index=True,
+        comment="步骤类型 (存 enum NAME, e.g. 'STEP_API')",
+    )
     enable = Column(INTEGER, default=1, nullable=False, comment="是否启用")
     content_name = Column(String(100), nullable=True, comment="自定义名称")
 
