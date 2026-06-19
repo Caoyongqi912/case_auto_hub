@@ -306,3 +306,20 @@ BUG_DOC = "DOC"
 # 修: 改 cls.transaction(session) — session=None 时 session.begin() 自动
 # commit, session 传进来时 caller 控制事务边界。
 BUG_D4_V2 = "D4-V2"
+
+# T1 修复: task.py:_init_task_variables 之前只 log.info 一行, 函数名说
+# "init task variables" 但实际 params.variables 永远不注入 VariableManager,
+# 用户传的任务级变量 (如 {base_url: staging}) 静默丢失。修: TaskRunner 自
+# 管 self._shared_vm, params.variables 走 trans 后 add_vars 进去, 后续
+# 每个 InterfaceRunner 共享这个 vm, 任务级 variables 跨 API/CASE step
+# 全局可见。
+BUG_T1 = "T1"
+
+# T2 修复: runner.py:run_interface_by_task 之前整个函数没 try/finally,
+# 跑完一个 task (N 个 interface) 后 httpx 连接池不释放 (E1 漏修到这条
+# 路径), variable / result_writer 缓存跨 case 残留 (D1 / OBS-2 漏修
+# 到这条路径), 跨 task 累积泄漏 / 串号。修: 加 try/finally 跟
+# run_interface_case 清理顺序对齐: aclose → rw.clear_cache → vm.clear。
+# 不调 starter.over() (外层 _execute_api_steps finally 统一调), 不调
+# clear_trace_id() (本函数自己不设 trace_id, 清会误伤外层)。
+BUG_T2 = "T2"

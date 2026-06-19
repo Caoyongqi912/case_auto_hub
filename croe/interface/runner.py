@@ -39,15 +39,24 @@ class InterfaceRunner:
 
     __slots__ = ("starter", "variable_manager", "interface_executor", "global_headers", "result_writer")
 
-    def __init__(self, starter: Union[UIStarter, APIStarter]) -> None:
+    def __init__(
+        self,
+        starter: Union[UIStarter, APIStarter],
+        variable_manager: Optional[VariableManager] = None,
+    ) -> None:
         """
         初始化接口执行器
 
         Args:
             starter: 启动器实例（UI或API）
+            variable_manager: 可选外部 VariableManager (BUG-T1 修复, 任务级共享
+                变量用)。None 时新建, 跟原来行为一致。
         """
         self.starter = starter
-        self.variable_manager = VariableManager()
+        # BUG-T1 修复: 接受外部 vm, 让 TaskRunner 共享 vm 跨 step;
+        # None 时新建, 不破坏现有调用方 (try_interface / try_group /
+        # run_interface_case 都走 None 路径)。
+        self.variable_manager = variable_manager or VariableManager()
         self.global_headers: List[InterfaceGlobalHeader] = []
         # 每个 runner 独立的 result_writer,避免并发时缓存互相污染 (BUG-D1)
         from croe.interface.writer import ResultWriter
@@ -300,7 +309,7 @@ class InterfaceRunner:
 
         Args:
             interface: 接口对象
-            task_result_id: 接口任务结果对象
+            task_result_id: 接口任务结果 ID
             retry: 重试次数
             retry_interval: 重试间隔
             env: 环境对象
@@ -314,38 +323,57 @@ class InterfaceRunner:
         # X-Tenant-Id) 全部丢失, 业务流和任务模式行为不一致, 排查极难。
         await self.init_global_headers()
 
-        for attempt in range(retry + 1):
-            result = await self.interface_executor.execute(
-                interface=interface,
-                env=env
-            )
-            # BUG-E6 修复: 第二个返回值 (success) 没了, 从 result['result'] 拿
-            success = result['result']
-
-            if success:
-                await self.result_writer.write_interface_result(
-                    interface_result=InterfaceResult(**result,
-                                                     task_result_id=task_result_id)
+        # BUG-T2 修复: 跟 run_interface_case 的 finally 清理风格对齐, 跑完整个
+        # task (含 retry) 后释放 httpx 连接 (E1) + 清空本 runner 的 variable (防
+        # 跨 interface 残留) + 清空 result_writer 缓存 (D1) + clear trace_id
+        # (OBS-2 跨并发 case 隔离)。修前 run_interface_by_task 整个函数没有
+        # try/finally, 一个 task 跑 N 个 interface 后 httpx 连接池不释放, 跨 task
+        # 累积泄漏; 失败时 vm/rw 缓存也残留, 下一个 task 串号。
+        try:
+            for attempt in range(retry + 1):
+                result = await self.interface_executor.execute(
+                    interface=interface,
+                    env=env
                 )
-                return True
+                # BUG-E6 修复: 第二个返回值 (success) 没了, 从 result['result'] 拿
+                success = result['result']
 
-            if attempt == retry:
-                await self.result_writer.write_interface_result(
-                    interface_result=InterfaceResult(**result,
-                                                     task_result_id=task_result_id)
-                )
+                if success:
+                    await self.result_writer.write_interface_result(
+                        interface_result=InterfaceResult(**result,
+                                                         task_result_id=task_result_id)
+                    )
+                    return True
+
+                if attempt == retry:
+                    await self.result_writer.write_interface_result(
+                        interface_result=InterfaceResult(**result,
+                                                         task_result_id=task_result_id)
+                    )
+                    await self.starter.send(
+                        f"接口 {interface} 执行结果 FALSE"
+                    )
+                    return False
+
                 await self.starter.send(
-                    f"接口 {interface} 执行结果 FALSE"
+                    f"接口 {interface} 执行结果 FALSE 第 {attempt + 1} 次重试"
                 )
-                return False
+                if retry_interval:
+                    await asyncio.sleep(retry_interval)
 
-            await self.starter.send(
-                f"接口 {interface} 执行结果 FALSE 第 {attempt + 1} 次重试"
-            )
-            if retry_interval:
-                await asyncio.sleep(retry_interval)
-
-        return False
+            return False
+        finally:
+            # 跟 run_interface_case 清理顺序对齐: aclose → rw clear → vm clear。
+            # 不调 starter.over() 是因为 _execute_api_steps 外层 finally 统一
+            # 调, 重复调会让前端收到 N+1 个 over 事件。
+            # 不调 clear_trace_id() 是因为本函数自己不设 trace_id (那是
+            # run_interface_case 的事), 清掉反而把外层设的 trace_id 误清。
+            try:
+                await self.interface_executor.aclose()
+            except Exception:
+                pass
+            self.result_writer.clear_cache()
+            await self.variable_manager.clear()
 
     async def init_interface_case_vars(self, interface_case_id: int) -> None:
         """

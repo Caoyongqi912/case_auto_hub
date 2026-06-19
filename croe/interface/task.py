@@ -68,6 +68,11 @@ class TaskRunner:
         # (原单例 finalize_task_result 调 _flush_cache 时, 会把其他并发 case 的
         #  数据冲掉; 自有实例隔离)
         self.result_writer = ResultWriter()
+        # BUG-T1 修复: TaskRunner 自有 _shared_vm, 任务级 variables 注入到这里,
+        # 后续每个 InterfaceRunner 用这个 vm 而不是新建一个, 让 params.variables
+        # 跨 API/CASE step 共享 (任务级"全局变量"语义)。
+        from croe.a_manager import VariableManager
+        self._shared_vm = VariableManager()
 
     async def set_process(
         self,
@@ -144,7 +149,9 @@ class TaskRunner:
             await self._init_task_variables(params.variables)
 
         try:
-            interface_runner = InterfaceRunner(self.starter)
+            # BUG-T1 修复: 把 _shared_vm 注入 InterfaceRunner, 任务级 variables
+            # 跨 API step 共享
+            interface_runner = InterfaceRunner(self.starter, variable_manager=self._shared_vm)
 
             if API in params.options:
                 await self._execute_api_steps(
@@ -173,17 +180,33 @@ class TaskRunner:
 
     async def _init_task_variables(self, variables: Any) -> None:
         """
-        初始化任务变量
+        初始化任务变量 (BUG-T1 修复: 之前只 log.info 一行, params.variables 静默丢失)
+
+        修法: 在 TaskRunner 自管一个 VariableManager, 把 params.variables 走
+        trans 变量替换后 add_vars, 后续每个 InterfaceRunner 共享这个 vm,
+        跨 API/CASE step 共享变量 (类似"任务级 variables 全局可见"语义)。
 
         Args:
-            variables: 变量配置
+            variables: 变量配置, dict 或 list[dict]
         """
+        if variables is None:
+            return
         try:
+            # 走 trans 做变量替换 (variables 自身可能含 ${xxx} 引用)
+            transed = await self._shared_vm.trans(variables)
+            await self._shared_vm.add_vars(transed)
             await self.starter.send(
-                f"🫳🫳 初始化任务变量 = {variables}"
+                f"🫳🫳 初始化任务变量 = {self._shared_vm.variables}"
             )
         except Exception as e:
-            log.error(f"初始化任务变量失败: {e}")
+            # BUG-F4 风格对齐: log.exception 保留 traceback + starter.send 通知
+            log.exception(f"初始化任务变量失败: {e}")
+            try:
+                await self.starter.send(
+                    f"⚠️ 初始化任务变量失败, 任务变量将不可用: {e}"
+                )
+            except Exception:
+                pass
 
     async def _execute_api_steps(
         self,
