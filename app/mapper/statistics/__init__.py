@@ -27,7 +27,7 @@ class StatisticsMapper:
             statistics['uis'] = uis
             return statistics
         except Exception as e:
-            log.error(e)
+            log.exception(f"error: {e}")
             return statistics
 
     @staticmethod
@@ -84,7 +84,7 @@ class StatisticsMapper:
                 return result
 
         except Exception as e:
-            log.error(e)
+            log.exception(f"error: {e}")
             return result
 
     @staticmethod
@@ -135,8 +135,7 @@ class StatisticsMapper:
                 log.debug(result)
                 return result
         except Exception as e:
-            raise e
-
+            raise
     @staticmethod
     async def week_data(n=7):
         try:
@@ -188,7 +187,7 @@ class StatisticsMapper:
                 return statistics
 
         except Exception as e:
-            log.error(f"An unexpected error occurred in week_data: {e}", exc_info=True)
+            log.exception(f"An unexpected error occurred in week_data: {e}", exc_info=True)
             raise
 
 

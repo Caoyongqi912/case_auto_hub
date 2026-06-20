@@ -28,5 +28,5 @@ class MindCaseMapper(Mapper[TestCaseMind]):
                 return await cls.get_by(requirement_id=requirement_id)
             return None
         except Exception as e:
-            log.error(f"get_by_plan_or_requirement error: {e}")
+            log.exception(f"get_by_plan_or_requirement error: {e}")
             raise

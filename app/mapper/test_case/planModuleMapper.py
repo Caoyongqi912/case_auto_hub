@@ -37,7 +37,7 @@ class PlanModuleMapper(Mapper[PlanModule]):
                 plan_id=plan_id, user=user, session=session,
             )
         except Exception as e:
-            log.error(f"init_module error: {e}")
+            log.exception(f"init_module error: {e}")
             raise
 
     @classmethod
@@ -308,7 +308,7 @@ class PlanModuleMapper(Mapper[PlanModule]):
 
                 return root_modules
         except Exception as e:
-            log.error(f"build_tree error: {e}")
+            log.exception(f"build_tree error: {e}")
             raise
 
     @classmethod

@@ -60,5 +60,5 @@ class PlayContentResultMapper(Mapper[PlayStepContentResult]):
             log.info(f"[PlayContentResultMapper] Batch inserted {total_count} results with parent relationships")
             return total_count
         except Exception as e:
-            log.error(f"[PlayContentResultMapper] Error saving results with children: {e}")
+            log.exception(f"[PlayContentResultMapper] Error saving results with children: {e}")
             raise

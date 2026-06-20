@@ -105,7 +105,7 @@ class PlayStepV2Mapper(Mapper[PlayStepModel]):
                     await session.execute(stmt)
 
         except Exception as e:
-            log.exception(e)
+            log.exception(f"error: {e}")
             raise
 
     @classmethod
@@ -140,5 +140,5 @@ class PlayStepV2Mapper(Mapper[PlayStepModel]):
 
             return ordered_steps
         except Exception as e:
-            log.exception(e)
+            log.exception(f"error: {e}")
             raise

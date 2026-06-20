@@ -38,8 +38,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                                              step_order=new_index)
                 return interface
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def association_interfaces(cls, group_id: int, interface_ids: list[int], is_copy: bool) -> None:
         """
@@ -68,8 +67,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                 await cls.insert_associations(session=session, group_id=group_id, interface_ids=interface_ids_to_add,
                                               last_index=last_index)
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def copy_interface(cls, group_id: int, interface_id: int, user: User):
         """
@@ -96,7 +94,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                                              , group_id=group_id, interface_id=interface.id,
                                              step_order=new_index)
         except Exception as e:
-            log.error(e)
+            log.exception(f"error: {e}")
             raise
 
     @classmethod
@@ -122,9 +120,8 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                 if group.interface_group_api_num >0:
                     group.interface_group_api_num -=1
         except Exception as e:
-            log.error(f"remove_association error: {e}")
-            raise e
-
+            log.exception(f"remove_association error: {e}")
+            raise
     @classmethod
     async def reorder_interfaces(cls, group_id: int, interface_ids: List[int]) -> None:
         """
@@ -155,7 +152,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                 ]
                 await session.execute(insert(InterfaceGroupAPIAssociation).values(values))
         except Exception as e:
-            log.error(f"reorder_interfaces error: {e}")
+            log.exception(f"reorder_interfaces error: {e}")
             raise
 
     @classmethod
@@ -175,8 +172,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                 )
                 return result.scalars().all()
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def remove_group(cls, group_id: int) -> bool:
         """
@@ -202,8 +198,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                 await session.delete(group)
                 return True
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def get_last_index(cls, session: AsyncSession, group_id: int) -> int:
         """
@@ -218,8 +213,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
             last_step_order = result.scalar()  # Fetch the first (and only) result
             return last_step_order or 0
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def insert_association(cls, session: AsyncSession, group_id: int, interface_id: int, step_order: int) -> None:
         """
@@ -234,8 +228,7 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                 )
             )
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def insert_associations(cls, session: AsyncSession, group_id: int, interface_ids: list[int],
                                   last_index: int) -> None:
@@ -256,4 +249,4 @@ class InterfaceGroupMapper(Mapper[InterfaceGroup]):
                 insert(InterfaceGroupAPIAssociation).prefix_with("IGNORE").values(values)
             )
         except Exception as e:
-            raise e
+            raise

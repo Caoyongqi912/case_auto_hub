@@ -81,7 +81,7 @@ class RequirementMapper(Mapper[Requirement]):
                     await cls.add_flush_expunge(session=session, model=ass_instance)
         except Exception:
             # log.exception 自动带 stacktrace + 函数上下文, 排查时不用手抓 traceback
-            log.exception("RequirementMapper 异常")
+            log.exception(f"RequirementMapper 异常")
             raise
 
     @classmethod
@@ -106,7 +106,7 @@ class RequirementMapper(Mapper[Requirement]):
                 await session.execute(stmt)
         except Exception:
             # log.exception 自动带 stacktrace + 函数上下文, 排查时不用手抓 traceback
-            log.exception("RequirementMapper 异常")
+            log.exception(f"RequirementMapper 异常")
             raise
 
     @classmethod
@@ -131,7 +131,7 @@ class RequirementMapper(Mapper[Requirement]):
                 await session.execute(stmt)
         except Exception:
             # log.exception 自动带 stacktrace + 函数上下文, 排查时不用手抓 traceback
-            log.exception("RequirementMapper 异常")
+            log.exception(f"RequirementMapper 异常")
             raise
 
     @classmethod
@@ -167,7 +167,7 @@ class RequirementMapper(Mapper[Requirement]):
                 return requirement
         except Exception:
             # log.exception 自动带 stacktrace + 函数上下文, 排查时不用手抓 traceback
-            log.exception("RequirementMapper 异常")
+            log.exception(f"RequirementMapper 异常")
             raise
 
     @classmethod
@@ -237,5 +237,5 @@ class RequirementMapper(Mapper[Requirement]):
                 await cls.add_flush_expunge(session=session, model=requirement)
         except Exception:
             # log.exception 自动带 stacktrace + 函数上下文, 排查时不用手抓 traceback
-            log.exception("RequirementMapper 异常")
+            log.exception(f"RequirementMapper 异常")
             raise

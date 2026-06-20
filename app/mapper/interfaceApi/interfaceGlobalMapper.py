@@ -31,4 +31,4 @@ class InterfaceGlobalFuncMapper(Mapper[InterfaceGlobalFunc]):
                     insert(cls.__model__).values(methods)
                 )
         except Exception as e:
-            raise e
+            raise

@@ -38,8 +38,7 @@ class FileMapper(Mapper[FileModel]):
                 FileManager.delFile(path)
                 log.debug(f"删除 {path}")
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def insert_file(cls, filePath: Union[str], fileName: str) -> FileModel:
         try:
@@ -52,9 +51,8 @@ class FileMapper(Mapper[FileModel]):
                 await cls.add_flush_expunge(session, file)
                 return file
         except Exception as e:
-            log.error(e)
-            raise e
-
+            log.exception(f"error: {e}")
+            raise
     @classmethod
     async def insert_api_data_file(cls, file: UploadFile, interface_uid: str):
         try:
@@ -71,8 +69,7 @@ class FileMapper(Mapper[FileModel]):
                 await cls.add_flush_expunge(session, file)
                 return file
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def delete_api_data_file(cls, uid: str):
         from utils.fileManager import FileManager
@@ -84,10 +81,7 @@ class FileMapper(Mapper[FileModel]):
                 await session.delete(file)
                 FileManager.delFile(file_path)
         except Exception as e:
-            raise e
-
-
-
+            raise
     @classmethod
     async def save_avatar(cls,avatar: UploadFile,user:User):
         from utils.fileManager import FileManager
@@ -111,4 +105,4 @@ class FileMapper(Mapper[FileModel]):
                     update(User).where(User.id == user.id).values(avatar=Config.FILE_AVATAR_PATH + new_avatar.uid)
                 )
         except Exception as e:
-            raise e
+            raise

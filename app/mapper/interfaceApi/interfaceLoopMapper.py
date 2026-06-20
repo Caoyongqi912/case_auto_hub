@@ -95,7 +95,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
                         insert(InterfaceLoopAPIAssociation).values(values)
                     )
         except Exception as e:
-            log.error(f"associate_apis error: {e}")
+            log.exception(f"associate_apis error: {e}")
             raise
 
     @classmethod
@@ -123,7 +123,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
                 result = await session.scalars(stmt)
                 return result.all()
         except Exception as e:
-            log.error(f"query_interfaces_by_loop_id error: {e}")
+            log.exception(f"query_interfaces_by_loop_id error: {e}")
             raise
 
     @classmethod
@@ -153,7 +153,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
                     )
                 )
         except Exception as e:
-            log.error(f"disassociate_api error: {e}")
+            log.exception(f"disassociate_api error: {e}")
             raise
 
     @classmethod
@@ -194,7 +194,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
                         insert(InterfaceLoopAPIAssociation).values(values)
                     )
         except Exception as e:
-            log.error(f"reorder_loop_apis error: {e}")
+            log.exception(f"reorder_loop_apis error: {e}")
             raise
 
     @classmethod
@@ -229,7 +229,7 @@ class InterfaceLoopMapper(Mapper[InterfaceLoop]):
             await session.delete(loop)
             return True
         except Exception as e:
-            log.error(f"delete_loop error: {e}")
+            log.exception(f"delete_loop error: {e}")
             raise
 
     @classmethod

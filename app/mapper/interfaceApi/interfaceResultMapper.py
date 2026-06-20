@@ -76,7 +76,7 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
                 await cls.add_flush_expunge(session, caseResult)
             return True
         except Exception as e:
-            log.error(f"set_result_field case_result 失败: {e}")
+            log.exception(f"set_result_field case_result 失败: {e}")
             raise
 
 
@@ -153,7 +153,7 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
                     return await _do_query(session)
             return await _do_query(session)
         except Exception as e:
-            log.error(f"recompute_case_result_nums error: {e}")
+            log.exception(f"recompute_case_result_nums error: {e}")
             raise
 
 
@@ -169,9 +169,8 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
             async with cls.transaction() as session:
                 await cls.add_flush_expunge(session, result)
         except Exception as e:
-            log.error(e)
-            raise e
-
+            log.exception(f"error: {e}")
+            raise
     @classmethod
     async def get_by_content_result_id(
         cls,
@@ -196,7 +195,7 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
                 results = await session.scalars(stmt)
                 return results.all()
         except Exception as e:
-            log.error(f"get_by_content_result_id error: {e}")
+            log.exception(f"get_by_content_result_id error: {e}")
             raise
 
     @classmethod
@@ -244,7 +243,7 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
                 )
                 return result.rowcount or 0
         except Exception as e:
-            log.error(f"backfill_content_result_id_fk error: {e}")
+            log.exception(f"backfill_content_result_id_fk error: {e}")
             raise
 
     @classmethod
@@ -308,7 +307,7 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
             rows = result.mappings().all()
             return [dict(r) for r in rows]
         except Exception as e:
-            log.error(f"find_fk_inconsistencies error: {e}")
+            log.exception(f"find_fk_inconsistencies error: {e}")
             raise
 
     @classmethod
@@ -366,7 +365,7 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
                 )
                 return result.rowcount or 0
         except Exception as e:
-            log.error(f"reconcile_fk_from_polymorphic error: {e}")
+            log.exception(f"reconcile_fk_from_polymorphic error: {e}")
             raise
 
 
@@ -379,11 +378,8 @@ class InterfaceTaskResultMapper(Mapper[InterfaceTaskResult]):
             async with cls.transaction() as session:
                 await cls.add_flush_expunge(session, caseResult)
         except Exception as e:
-            log.error(e)
-            raise e
-    
-
-    
+            log.exception(f"error: {e}")
+            raise
 class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
     """
     步骤内容结果 Mapper
@@ -436,10 +432,8 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
                 result = await session.scalars(stmt)
                 return result.all()
         except Exception as e:
-            log.error(e)
-            raise e
-
-
+            log.exception(f"error: {e}")
+            raise
     @classmethod
     async def query_by_task_result_id(
         cls,
@@ -578,7 +572,7 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         
 
         except Exception as e:
-            log.error(f"insert_result {content_type} error: {e}")
+            log.exception(f"insert_result {content_type} error: {e}")
             raise
 
     @classmethod
@@ -609,7 +603,7 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
             else:
                 return await cls._do_update(session, result_id, **kwargs)
         except Exception as e:
-            log.error(f"update_result {result_id} error: {e}")
+            log.exception(f"update_result {result_id} error: {e}")
             raise
 
     @classmethod

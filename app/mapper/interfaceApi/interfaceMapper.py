@@ -62,7 +62,7 @@ class InterfaceMapper(Mapper[Interface]):
                 )
                 return interface
         except Exception as e:
-            log.error(f"create_interface error: {e}")
+            log.exception(f"create_interface error: {e}")
             raise
 
     @classmethod
@@ -102,7 +102,7 @@ class InterfaceMapper(Mapper[Interface]):
                 )
                 return new_interface
         except Exception as e:
-            log.error(f"update_interface error: {e}")
+            log.exception(f"update_interface error: {e}")
             raise
 
     @classmethod
@@ -160,7 +160,7 @@ class InterfaceMapper(Mapper[Interface]):
 
                 await session.delete(interface)
         except Exception as e:
-            log.error(f"remove_interface error: {e}")
+            log.exception(f"remove_interface error: {e}")
             raise
 
     @classmethod
@@ -193,7 +193,7 @@ class InterfaceMapper(Mapper[Interface]):
             await session.flush()
             return True
         except Exception as e:
-            log.error(f"remove_self_interface error: {e}")
+            log.exception(f"remove_self_interface error: {e}")
             raise
 
     @classmethod
@@ -231,7 +231,7 @@ class InterfaceMapper(Mapper[Interface]):
 
                 return await cls.add_flush_expunge(session, new_interface)
         except Exception as e:
-            log.error(f"copy_interface error: {e}")
+            log.exception(f"copy_interface error: {e}")
             raise
 
 
@@ -255,7 +255,7 @@ class InterfaceMapper(Mapper[Interface]):
                 copy_interface = await cls.add_flush_expunge(session=session, model=copy_interface)
                 log.info(copy_interface)
         except Exception as e:
-            log.error(f"copy_to_module error: {e}")
+            log.exception(f"copy_to_module error: {e}")
             raise
 
     # ==================== 批量导入 ====================
@@ -298,7 +298,7 @@ class InterfaceMapper(Mapper[Interface]):
                         module_map[module_names[idx]], creator, api["data"]
                     )
         except Exception as e:
-            log.error(f"upload error: {e}")
+            log.exception(f"upload error: {e}")
             raise
 
     @classmethod
@@ -335,7 +335,7 @@ class InterfaceMapper(Mapper[Interface]):
                 })
                 session.add(Interface(**api_data))
         except Exception as e:
-            log.error(f"_batch_insert_apis error: {e}")
+            log.exception(f"_batch_insert_apis error: {e}")
             raise
 
     @classmethod
@@ -387,7 +387,7 @@ class InterfaceMapper(Mapper[Interface]):
             await session.flush()
             return new_module.id
         except Exception as e:
-            log.error(f"_get_or_create_module error: {e}")
+            log.exception(f"_get_or_create_module error: {e}")
             raise
 
 
@@ -482,8 +482,7 @@ class FileManager:
                 log.info(f"删除文件成功: {filepath}")
                 return True
         except Exception as e:
-            log.error(f"删除文件失败: {filepath}, {e}")
-
+            log.exception(f"删除文件失败: {filepath}, {e}")
         return False
 
     @staticmethod
@@ -505,9 +504,7 @@ class FileManager:
                         os.rmdir(dir_path)
                         log.info(f"删除目录成功: {dir_path}")
         except Exception as e:
-            log.error(f"清理目录失败: {e}")
-
-
+            log.exception(f"清理目录失败: {e}")
 def async_remove_files(interface: Interface) -> None:
     """
     异步清理接口关联文件（后台任务）

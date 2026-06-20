@@ -43,10 +43,7 @@ class UserMapper(Mapper[User]):
                 else:
                     raise AuthError("密码错误")
         except Exception as e:
-            raise e
-
-
-
+            raise
     @classmethod
     async def get_avatar(cls, uid: str):
         """
@@ -60,8 +57,7 @@ class UserMapper(Mapper[User]):
                 user = await cls.get_by_uid(uid, session)
                 return user.avatar
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def filter_user_by_username(cls, username: str | None) -> List[User]:
         """
@@ -87,9 +83,8 @@ class UserMapper(Mapper[User]):
                 return data
 
         except Exception as e:
-            log.error(f"filter_user_by_username error: {e}")
-            raise e
-
+            log.exception(f"filter_user_by_username error: {e}")
+            raise
     @classmethod
     async def register(cls,
                        username: str,
@@ -130,8 +125,7 @@ class UserMapper(Mapper[User]):
                                  ))
 
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def register_admin(cls,
                              username: str, phone="99999999999"):
@@ -166,8 +160,7 @@ class UserMapper(Mapper[User]):
                 return admin.id
 
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def login(cls, username: str, password: str):
         """
@@ -197,8 +190,7 @@ class UserMapper(Mapper[User]):
                 else:
                     raise AuthError("用户不存在")
         except Exception as e:
-            raise e
-
+            raise
     @staticmethod
     async def set_password(password: str) -> str:
         """hash 密码"""

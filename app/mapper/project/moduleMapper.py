@@ -58,10 +58,8 @@ async def get_subtree_ids(session: AsyncSession, module_id: int,module_type:int)
         recursive_query = select(cte.c.id)
         return (await session.execute(recursive_query)).scalars().all()
     except Exception as e:
-        log.error(f"递归查询失败: {e}")
-        raise e
-
-
+        log.exception(f"递归查询失败: {e}")
+        raise
 class ModuleMapper(Mapper[Module]):
     __model__ = Module
 
@@ -155,7 +153,7 @@ class ModuleMapper(Mapper[Module]):
 
             return tree
         except Exception as e:
-            log.error(e)
+            log.exception(f"error: {e}")
             return []
 
 
@@ -171,11 +169,7 @@ class ModuleMapper(Mapper[Module]):
                             await session.execute(delete(Module).where(Module.id == i))
                 await session.delete(module)
         except Exception as e:
-            raise e
-
-
-
-
+            raise
     @classmethod
     async def find_path(
         cls,
@@ -299,4 +293,4 @@ class ModuleMapper(Mapper[Module]):
                     module.parent_id = None
                 session.add(module)
         except Exception as e:
-            raise e
+            raise

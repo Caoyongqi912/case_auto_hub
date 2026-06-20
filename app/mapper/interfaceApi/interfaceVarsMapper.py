@@ -73,7 +73,7 @@ class InterfaceVarsMapper(Mapper[InterfaceCaseVars]):
                 return await cls.add_flush_expunge(model=model, session=session)
 
         except Exception as e:
-            log.error(e)
+            log.exception(f"error: {e}")
             raise
 
     @classmethod
@@ -142,7 +142,7 @@ class InterfaceVarsMapper(Mapper[InterfaceCaseVars]):
 
                 return result.rowcount > 0
         except Exception as e:
-            log.error(e)
+            log.exception(f"error: {e}")
             raise
 
     @classmethod

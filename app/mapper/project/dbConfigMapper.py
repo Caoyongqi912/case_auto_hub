@@ -32,8 +32,7 @@ class DbConfigMapper(Mapper[DBConfig]):
                 dbConfig = await cls.get_by_id(db_id, session)
                 return await execScript.invoke(dbConfig.db_type, **dbConfig.config)
         except Exception as e:
-            raise e
-
+            raise
     @staticmethod
     async def test_connect(db_type: int, db_host, db_port, db_username, db_password, db_database, **kwargs):
         match db_type:
@@ -65,4 +64,4 @@ class DBExecuteMapper(Mapper[DBExecuteModel]):
                 async with session.begin():
                     return await cls.save(creator_user=creator_user, session=session)
         except Exception as e:
-            raise e
+            raise

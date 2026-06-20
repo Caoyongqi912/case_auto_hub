@@ -37,7 +37,7 @@ class PlanMapper(Mapper[CasePlan]):
                 plans = result.all()
                 return plans
         except Exception as e:
-            log.error(f"query_by_plan_name error: {e}")
+            log.exception(f"query_by_plan_name error: {e}")
             raise
     
     @classmethod
@@ -101,7 +101,7 @@ class PlanMapper(Mapper[CasePlan]):
                 log.info(f"init_module: {root_module}")
                 return plan
         except Exception as e:
-            log.error(f"add_plan error: {e}")
+            log.exception(f"add_plan error: {e}")
             raise
         
     
@@ -147,7 +147,7 @@ class PlanMapper(Mapper[CasePlan]):
                 # result.rowcount 在 MySQL + INSERT IGNORE 下返回实际影响的行数
                 return result.rowcount or 0
         except Exception as e:
-            log.error(f"associate_requirements error: plan_id={plan_id}, error={e}")
+            log.exception(f"associate_requirements error: plan_id={plan_id}, error={e}")
             raise
 
     @classmethod
@@ -325,7 +325,7 @@ class PlanMapper(Mapper[CasePlan]):
                     data=items, total_num=total, page_size=pageSize, current=current
                 )
         except Exception as e:
-            log.error(f"page_associated_requirements error: plan_id={plan_id}, error={e}")
+            log.exception(f"page_associated_requirements error: plan_id={plan_id}, error={e}")
             return await cls.map_page_data(
                 data=[], total_num=0, page_size=pageSize, current=current
             )

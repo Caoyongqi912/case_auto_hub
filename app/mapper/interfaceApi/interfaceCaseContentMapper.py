@@ -65,7 +65,7 @@ class InterfaceCaseContentMapper(Mapper):
                 return await cls.update_model(target=content, session=session, **kwargs)
 
         except Exception as e:
-            log.error(f"update_content {content_id} error: {e}")
+            log.exception(f"update_content {content_id} error: {e}")
             raise
 
     @classmethod
@@ -103,7 +103,7 @@ class InterfaceCaseContentMapper(Mapper):
             )
             return await cls.add_flush_expunge(session=session, model=content)
         except Exception as e:
-            log.error(f"insert_content {content_type} error: {e}")
+            log.exception(f"insert_content {content_type} error: {e}")
             raise
 
     @classmethod
@@ -140,7 +140,7 @@ class InterfaceCaseContentMapper(Mapper):
         """
         cls_model = cls.CONTENT_TYPE_MAP.get(CaseStepContentType(content.content_type))
         if not cls_model:
-            log.error(f"不支持的 content_type: {content.content_type}")
+            log.exception(f"不支持的 content_type: {content.content_type}")
             return False
 
         # BUG-D8 修复: 注释和字段名统一, 用 username= 而不是 creatorName=,
@@ -233,5 +233,5 @@ class InterfaceCaseContentMapper(Mapper):
             session.expunge(target)
             return target
         except Exception as e:
-            log.error(f"update_model error: {e}")
+            log.exception(f"update_model error: {e}")
             raise

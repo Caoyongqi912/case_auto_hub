@@ -140,7 +140,7 @@ class TestCaseMapper(Mapper[TestCase]):
                     "case_sub_steps": case_steps,
                 }
         except Exception as e:
-            log.error(f"case_info error: case_id={case_id}, error={e}")
+            log.exception(f"case_info error: case_id={case_id}, error={e}")
             raise
 
     @classmethod
@@ -222,7 +222,7 @@ class TestCaseMapper(Mapper[TestCase]):
                     for c in cases
                 ]
         except Exception as e:
-            log.error(f"query_cases_for_export error: project_id={project_id}, module_id={module_id}, error={e}")
+            log.exception(f"query_cases_for_export error: project_id={project_id}, module_id={module_id}, error={e}")
             raise
 
     @classmethod
@@ -268,7 +268,7 @@ class TestCaseMapper(Mapper[TestCase]):
                     )
                 )
         except Exception:
-            log.exception("update_cases_common 异常")
+            log.exception(f"update_cases_common 异常")
             raise
 
     @classmethod
@@ -313,7 +313,7 @@ class TestCaseMapper(Mapper[TestCase]):
                     .values({field_name: new_value})
                 )
         except Exception as e:
-            log.error(f"_update_association_field error: case_ids={case_ids}, field={field_name}, error={e}")
+            log.exception(f"_update_association_field error: case_ids={case_ids}, field={field_name}, error={e}")
             raise
 
 
@@ -722,7 +722,7 @@ class TestCaseMapper(Mapper[TestCase]):
                     # 非公共用例直接删除本体，数据库级联自动清理所有子表
                     await session.delete(case_obj)
         except Exception as e:
-            log.error(f"remove_case error: caseId={caseId}, requirement_id={requirement_id}, error={e}")
+            log.exception(f"remove_case error: caseId={caseId}, requirement_id={requirement_id}, error={e}")
             raise
 
     @classmethod
@@ -814,7 +814,7 @@ class TestCaseMapper(Mapper[TestCase]):
                 log.debug(f"query_tags: requirement_id={requirement_id}, tag_count={len(all_tags)}")
                 return set(all_tags) if all_tags else []
         except Exception as e:
-            log.error(f"query_tags error: requirement_id={requirement_id}, error={e}")
+            log.exception(f"query_tags error: requirement_id={requirement_id}, error={e}")
             raise
 
     @classmethod
@@ -859,7 +859,7 @@ class TestCaseMapper(Mapper[TestCase]):
 
                 return case_obj
         except Exception as e:
-            log.error(f"save_case error: kwargs={kwargs}, error={e}")
+            log.exception(f"save_case error: kwargs={kwargs}, error={e}")
             raise
     
     @classmethod
@@ -883,7 +883,7 @@ class TestCaseMapper(Mapper[TestCase]):
                 log.info(f"批量删除成功: 删除{delete_count}条用例")
                 return delete_count
         except Exception as e:
-            log.error(f"delete_batch_cases error: ids={delete_case_list}, error={e}")
+            log.exception(f"delete_batch_cases error: ids={delete_case_list}, error={e}")
             raise
     
     @classmethod
@@ -953,7 +953,7 @@ class TestCaseMapper(Mapper[TestCase]):
                 return result.rowcount
 
         except Exception as e:
-            log.error(f"update_batch_cases error: ids={update_case_list}, kwargs={kwargs}, error={e}")
+            log.exception(f"update_batch_cases error: ids={update_case_list}, kwargs={kwargs}, error={e}")
             raise
     
     @classmethod
@@ -981,7 +981,7 @@ class TestCaseMapper(Mapper[TestCase]):
                         session=session
                     )
         except Exception as e:
-            log.error(f"update_case error: kwargs={kwargs}, error={e}")
+            log.exception(f"update_case error: kwargs={kwargs}, error={e}")
             raise
 
     @classmethod
@@ -1117,7 +1117,7 @@ class TestCaseMapper(Mapper[TestCase]):
                     log.info(f"copy_cases success: case_ids={case_ids}, requirement_id={requirement_id}")
                     return new_case_list
         except Exception as e:
-            log.error(f"copy_cases error: case_ids={case_ids}, requirement_id={requirement_id}, error={e}")
+            log.exception(f"copy_cases error: case_ids={case_ids}, requirement_id={requirement_id}, error={e}")
             raise
 
     @classmethod
@@ -1150,7 +1150,7 @@ class TestCaseMapper(Mapper[TestCase]):
                 req.case_number += 1
                 await cls.add_flush_expunge(session=session, model=new_case)
         except Exception as e:
-            log.error(f"add_next_case error: requirement_id={requirement_id}, case_id={case_id}, error={e}")
+            log.exception(f"add_next_case error: requirement_id={requirement_id}, case_id={case_id}, error={e}")
             raise
 
     @classmethod
@@ -1205,6 +1205,6 @@ class TestCaseMapper(Mapper[TestCase]):
                     )
                 )
         except Exception as e:
-            log.error(f"add_default_case error: requirement_id={requirement_id}, error={e}")
+            log.exception(f"add_default_case error: requirement_id={requirement_id}, error={e}")
             raise
         

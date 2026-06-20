@@ -55,7 +55,7 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
                     session=session
                 )
         except Exception as e:
-            log.error(f"update_step error: id={id}, error={e}")
+            log.exception(f"update_step error: id={id}, error={e}")
             raise
 
     @classmethod
@@ -79,7 +79,7 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
                     .values(order=case_stmt)
                 )
         except Exception as e:
-            log.error(f"reorder_steps error: step_ids={step_ids}, error={e}")
+            log.exception(f"reorder_steps error: step_ids={step_ids}, error={e}")
             raise
 
     @classmethod
@@ -112,7 +112,7 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
 
                 await cls.save(session=session, **new_step_data)
         except Exception as e:
-            log.error(f"copy_step error: step_id={step_id}, error={e}")
+            log.exception(f"copy_step error: step_id={step_id}, error={e}")
             raise
 
     @classmethod
@@ -137,7 +137,7 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
                         )
                     )
         except Exception as e:
-            log.error(f"add_default_step error: caseId={caseId}, error={e}")
+            log.exception(f"add_default_step error: caseId={caseId}, error={e}")
             raise
 
 
@@ -154,7 +154,7 @@ class TestCaseStepMapper(Mapper[TestCaseStep]):
             async with cls.session_scope(session=session) as sess:
                 return await cls._query_steps(sess, case_id)
         except Exception as e:
-            log.error(f"query_sub_steps error: case_id={case_id}, error={e}")
+            log.exception(f"query_sub_steps error: case_id={case_id}, error={e}")
             raise
 
     @staticmethod

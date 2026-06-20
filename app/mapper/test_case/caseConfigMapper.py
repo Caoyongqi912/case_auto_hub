@@ -89,7 +89,7 @@ class CaseConfigMapper(Mapper[CaseConfig]):
 
                 return await cls.map_page_data(list(rows), total, pageSize, current)
         except Exception as err:
-            log.error(
+            log.exception(
                 "page_config error: config_key=%s, keyword=%s, error=%s",
                 config_key, keyword, err,
             )
@@ -118,7 +118,7 @@ class CaseConfigMapper(Mapper[CaseConfig]):
                 result = await session.execute(stmt)
                 return list(result.scalars().all())
         except Exception as err:
-            log.error(f"query_by_key error: config_key={config_key}, error={err}")
+            log.exception(f"query_by_key error: config_key={config_key}, error={err}")
             raise
 
     @classmethod
@@ -154,7 +154,7 @@ class CaseConfigMapper(Mapper[CaseConfig]):
         except (CommonError, ParamsError):
             raise
         except Exception as err:
-            log.error(f"add_config error: kwargs={kwargs}, error={err}")
+            log.exception(f"add_config error: kwargs={kwargs}, error={err}")
             raise
 
     @classmethod
@@ -221,7 +221,7 @@ class CaseConfigMapper(Mapper[CaseConfig]):
         except (CommonError, ParamsError):
             raise
         except Exception as err:
-            log.error(f"update_config error: kwargs={kwargs}, error={err}")
+            log.exception(f"update_config error: kwargs={kwargs}, error={err}")
             raise
 
     @classmethod
@@ -238,14 +238,14 @@ class CaseConfigMapper(Mapper[CaseConfig]):
         except (CommonError, ParamsError):
             raise
         except Exception as err:
-            log.error("remove_config 预查失败: uid=%s, error=%s", uid, err)
+            log.exception(f"remove_config 预查失败: uid=%s, error=%s", uid, err)
             raise
         if target.config_key == CASE_STATUS_KEY:
             raise ParamsError("CASE_STATUS 已 hardcode, 不支持删除; 如需调整请修改 app/constant/caseStatus.py")
         try:
             await cls.delete_by_uid(uid=uid)
         except Exception as err:
-            log.error("remove_config error: uid=%s, error=%s", uid, err)
+            log.exception(f"remove_config error: uid=%s, error=%s", uid, err)
             raise
 
     @classmethod
@@ -261,7 +261,7 @@ class CaseConfigMapper(Mapper[CaseConfig]):
                     insert(cls.__model__).values(configs)
                 )
         except Exception as e:
-            log.error(f"init_case_configs error: {e}")
+            log.exception(f"init_case_configs error: {e}")
             raise
 
     @classmethod

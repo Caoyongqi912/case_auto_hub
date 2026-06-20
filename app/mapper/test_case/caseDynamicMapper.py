@@ -128,8 +128,7 @@ class CaseDynamicRenderer:
                     config_key = row.config_key
                     mappings.setdefault(config_key, {})[row.value] = row.label
             except Exception as err:
-                log.error("CaseDynamicRenderer.from_db 加载失败, 将使用 hardcode + 空映射: %s", err)
-
+                log.exception(f"CaseDynamicRenderer.from_db 加载失败, 将使用 hardcode + 空映射: %s", err)
         return cls(mappings)
 
     def _resolve_config_key(self, field_key: str) -> Optional[str]:
@@ -276,7 +275,7 @@ class CaseDynamicMapper(Mapper[CaseStepDynamic]):
                 )
                 return dynamics.all()
         except Exception as e:
-            log.error("query_dynamic error: case_id=%s, error=%s", case_id, e)
+            log.exception(f"query_dynamic error: case_id=%s, error=%s", case_id, e)
             raise
 
     @classmethod

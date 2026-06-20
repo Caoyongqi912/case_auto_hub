@@ -305,7 +305,7 @@ class InterfaceDynamicMapper(Mapper[InterfaceDynamic]):
                 )
                 return dynamics.all()
         except Exception as e:
-            log.error(f'{cls.__name__}.query_dynamic error: {e}')
+            log.exception(f'{cls.__name__}.query_dynamic error: {e}')
             raise
 
     @classmethod
@@ -324,7 +324,7 @@ class InterfaceDynamicMapper(Mapper[InterfaceDynamic]):
                 **{cls.FK_FIELD: entity_id}
             )
         except Exception as e:
-            log.error(f'{cls.__name__}.new_dynamic error: {e}')
+            log.exception(f'{cls.__name__}.new_dynamic error: {e}')
             raise
 
     @classmethod
@@ -353,7 +353,7 @@ class InterfaceDynamicMapper(Mapper[InterfaceDynamic]):
             log.debug(f"{cls.__name__}.append_dynamic model: {model}")
             await cls.add_flush_expunge(session=session, model=model)
         except Exception as e:
-            log.error(f'{cls.__name__}.append_dynamic error: {e}')
+            log.exception(f'{cls.__name__}.append_dynamic error: {e}')
             raise
 
 
@@ -413,7 +413,7 @@ class InterfaceCaseDynamicMapper(Mapper[InterfaceCaseDynamic]):
                 )
                 return dynamics.all()
         except Exception as e:
-            log.error(f'{cls.__name__}.query_dynamic error: {e}')
+            log.exception(f'{cls.__name__}.query_dynamic error: {e}')
             raise
 
     @classmethod
@@ -432,7 +432,7 @@ class InterfaceCaseDynamicMapper(Mapper[InterfaceCaseDynamic]):
                 **{cls.FK_FIELD: entity_id}
             )
         except Exception as e:
-            log.error(f'{cls.__name__}.new_dynamic error: {e}')
+            log.exception(f'{cls.__name__}.new_dynamic error: {e}')
             raise
 
     @classmethod
@@ -461,7 +461,7 @@ class InterfaceCaseDynamicMapper(Mapper[InterfaceCaseDynamic]):
             log.debug(f"{cls.__name__}.append_dynamic model: {model}")
             await cls.add_flush_expunge(session=session, model=model)
         except Exception as e:
-            log.error(f'{cls.__name__}.append_dynamic error: {e}')
+            log.exception(f'{cls.__name__}.append_dynamic error: {e}')
             raise
 
     @classmethod
@@ -481,7 +481,7 @@ class InterfaceCaseDynamicMapper(Mapper[InterfaceCaseDynamic]):
             )
             await cls.add_flush_expunge(session=session, model=model)
         except Exception as e:
-            log.error(f'{cls.__name__}.append_dynamic_detail error: {e}')
+            log.exception(f'{cls.__name__}.append_dynamic_detail error: {e}')
             raise
 
 
@@ -556,7 +556,7 @@ class InterfaceTaskDynamicMapper(Mapper[InterfaceTaskDynamic]):
                 **{cls.FK_FIELD: entity_id}
             )
         except Exception as e:
-            log.error(f'{cls.__name__}.new_dynamic error: {e}')
+            log.exception(f'{cls.__name__}.new_dynamic error: {e}')
             raise
 
     @classmethod
@@ -585,5 +585,5 @@ class InterfaceTaskDynamicMapper(Mapper[InterfaceTaskDynamic]):
             log.debug(f"{cls.__name__}.append_dynamic model: {model}")
             await cls.add_flush_expunge(session=session, model=model)
         except Exception as e:
-            log.error(f'{cls.__name__}.append_dynamic error: {e}')
+            log.exception(f'{cls.__name__}.append_dynamic error: {e}')
             raise

@@ -834,7 +834,7 @@ class PlayCaseResultMapper(Mapper[PlayCaseResult]):
 
                 return await cls.add_flush_expunge(session, result)
         except Exception as e:
-            log.exception(e)
+            log.exception(f"error: {e}")
             raise
 
     @classmethod

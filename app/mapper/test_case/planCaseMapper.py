@@ -87,7 +87,7 @@ async def get_plan_module_subtree_ids(
         )
         return (await session.execute(select(cte.c.id))).scalars().all()
     except Exception as e:
-        log.error(
+        log.exception(
             f"PlanModule 递归查询失败: plan_id={plan_id}, "
             f"plan_module_id={plan_module_id}, error={e}"
         )
@@ -447,7 +447,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         except CommonError:
             raise
         except Exception as e:
-            log.error(f"insert_upload_case: 预查询 plan 失败 plan_id={plan_id}, error={e}")
+            log.exception(f"insert_upload_case: 预查询 plan 失败 plan_id={plan_id}, error={e}")
             raise
 
         # 1) 预校验 group_path -> module_id (用例库树, module_type=ModuleEnum.CASE=10).
@@ -663,7 +663,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
         except Exception as e:
             # 只记数量与前 3 条 case_name 避免日志爆 (全量 cases 可能很大且含 PII)
             sample_names = [c.get('case_name') for c in cases[:3]]
-            log.error(
+            log.exception(
                 f"insert_upload_case error: plan_id={plan_id}, "
                 f"case_count={len(cases)}, first_names={sample_names}, error={e}"
             )
@@ -910,7 +910,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 second_status=second_status,
             )
         except Exception as err:
-            log.error(
+            log.exception(
                 f"更新步骤结果失败: plan_id={plan_id}, step_id={step_id}, error={err}",
             )
             raise
@@ -2267,7 +2267,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     return await _execute_association(session)
         except Exception:
             # log.exception 自动带 stacktrace + 函数上下文
-            log.exception("associate_cases 异常")
+            log.exception(f"associate_cases 异常")
             raise
 
     @classmethod
@@ -2884,7 +2884,7 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                     for case, order, plan_module_id in rows
                 ]
         except Exception as e:
-            log.error(
+            log.exception(
                 f"query_plan_cases_for_export error: plan_id={plan_id}, "
                 f"plan_module_id={plan_module_id}, error={e}"
             )

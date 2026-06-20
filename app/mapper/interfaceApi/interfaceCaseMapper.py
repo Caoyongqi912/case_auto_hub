@@ -66,7 +66,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 )
                 return interface_case
         except Exception as e:
-            log.error(f"insert_interface_case error: {e}")
+            log.exception(f"insert_interface_case error: {e}")
             raise
 
     @classmethod
@@ -98,7 +98,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 )
                 return new_case
         except Exception as e:
-            log.error(f"update_interface_case error: {e}")
+            log.exception(f"update_interface_case error: {e}")
             raise
 
     # ==================== 关联操作 ====================
@@ -146,7 +146,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 )
                 return empty_interface
         except Exception as e:
-            log.error(f"associate_interface error: {e}")
+            log.exception(f"associate_interface error: {e}")
             raise
 
     @classmethod
@@ -224,7 +224,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 )
                 return contents
         except Exception as e:
-            log.error(f"associate_interfaces error: {e}")
+            log.exception(f"associate_interfaces error: {e}")
             raise
 
     @classmethod
@@ -285,7 +285,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
                 return case_step_content_group_apis
         except Exception as e:
-            log.error(f"associate_groups error {e}")
+            log.exception(f"associate_groups error {e}")
             raise
 
     @classmethod
@@ -332,7 +332,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     description=f"添加条件步骤  {content.dynamic}"
                 )
         except Exception as e:
-            log.error(f"associate_condition error {e}")
+            log.exception(f"associate_condition error {e}")
             raise
 
     @classmethod
@@ -385,7 +385,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     description=f"添加步骤  {content.dynamic}"
                 )
         except Exception as e:
-            log.error(f"associate_loop error : {e}")
+            log.exception(f"associate_loop error : {e}")
             raise
 
     @classmethod
@@ -419,7 +419,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     description=f"添加步骤  {content.dynamic}"
                 )
         except Exception as e:
-            log.error(f"associate_db error {e}")
+            log.exception(f"associate_db error {e}")
             raise
 
     @classmethod
@@ -475,7 +475,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 await cls._create_association(session, case_id, content.id, last_index + 1)
 
         except Exception as e:
-            log.error(f"associate_content error {e}")
+            log.exception(f"associate_content error {e}")
             raise
 
     # ==================== 步骤管理 ====================
@@ -526,7 +526,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     description=f"进行了排序"
                 )
         except Exception as e:
-            log.error(f"reorder_steps error: {e}")
+            log.exception(f"reorder_steps error: {e}")
             raise
 
     @classmethod
@@ -568,7 +568,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     description=f"复制了步骤 {origin_content.content_name}"
                 )
         except Exception as e:
-            log.error(f"copy_step error: {e}")
+            log.exception(f"copy_step error: {e}")
             raise
 
     @classmethod
@@ -623,7 +623,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 return new_case
 
         except Exception as e:
-            log.error(e)
+            log.exception(f"error: {e}")
             raise
 
     @classmethod
@@ -656,7 +656,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
                 await session.delete(case)
         except Exception as e:
-            log.error(f"remove_case error: {e}")
+            log.exception(f"remove_case error: {e}")
             raise
 
     @classmethod
@@ -697,7 +697,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 # BUG-M8: 兜底对账 (移除一个 step, 但 -1 不一定准, 比如批量内部)
                 await cls.recompute_case_api_num(case_id, session)
         except Exception as e:
-            log.error(f"remove_step error: {e}")
+            log.exception(f"remove_step error: {e}")
             raise
 
     # ==================== 查询操作 ====================

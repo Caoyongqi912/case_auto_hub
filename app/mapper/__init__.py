@@ -117,7 +117,7 @@ class Mapper(Generic[M]):
         except NotFind:
             raise
         except Exception as e:
-            log.error(f"获取{cls.__name__}对象失败，{field_name}: {value}, 错误: {e}")
+            log.exception(f"获取{cls.__name__}对象失败，{field_name}: {value}, 错误: {e}")
             raise
 
     @classmethod
@@ -141,7 +141,7 @@ class Mapper(Generic[M]):
             model = cls.__model__(**kwargs)
             return await cls._manage_session(session, model)
         except Exception as e:
-            log.error(f"保存{cls.__name__}失败: {e}")
+            log.exception(f"保存{cls.__name__}失败: {e}")
             raise
 
     @classmethod
@@ -181,7 +181,7 @@ class Mapper(Generic[M]):
         except NotFind:
             raise
         except Exception as e:
-            log.error(f"获取{cls.__name__}对象失败，id: {ident}, 错误: {e}")
+            log.exception(f"获取{cls.__name__}对象失败，id: {ident}, 错误: {e}")
             raise
 
     @classmethod
@@ -249,7 +249,7 @@ class Mapper(Generic[M]):
                     return result
                 return target
         except Exception as e:
-            log.exception(e)
+            log.exception(f"error: {e}")
             raise
 
     @classmethod
@@ -276,7 +276,7 @@ class Mapper(Generic[M]):
                 target = await cls.get_by_uid(uid, session)
                 return await cls.update_cls(target, session, **kwargs)
         except Exception as e:
-            log.error(f"update_by_uid error: {e}")
+            log.exception(f"update_by_uid error: {e}")
             raise
 
     @classmethod
@@ -299,7 +299,7 @@ class Mapper(Generic[M]):
             async with cls.transaction() as session:
                 await session.execute(delete(model).where(model.uid == uid))
         except Exception as e:
-            log.exception(e)
+            log.exception(f"error: {e}")
             raise
 
     @classmethod
@@ -330,7 +330,7 @@ class Mapper(Generic[M]):
                 async with cls.transaction() as session:
                     await session.execute(stmt)
         except Exception as e:
-            log.exception(e)
+            log.exception(f"error: {e}")
             raise
 
     @classmethod
@@ -347,7 +347,7 @@ class Mapper(Generic[M]):
                     log.debug(model)
                     await session.execute(delete(model).filter_by(**kwargs))
         except Exception as e:
-            log.error(f"delete_by error: {e}")
+            log.exception(f"delete_by error: {e}")
             raise
 
     @classmethod
@@ -718,7 +718,7 @@ class Mapper(Generic[M]):
                 result = await session.execute(text(sql))
                 return [row[0] for row in result.fetchall()]
         except Exception as e:
-            log.error(e)
+            log.exception(f"error: {e}")
             return []
 
     @classmethod
@@ -793,7 +793,7 @@ class Mapper(Generic[M]):
             async with cls.session_scope(session) as sess:
                 return await _execute_query(sess)
         except Exception as e:
-            log.error(f"page_by_module error: module_id={module_id}, module_ids={module_ids}, error={e}")
+            log.exception(f"page_by_module error: module_id={module_id}, module_ids={module_ids}, error={e}")
             return {"items": [], "pageInfo": {"total": 0, "pages": 0, "page": 0, "limit": page_size}}
 
     @classmethod
@@ -933,7 +933,7 @@ class Mapper(Generic[M]):
                 await session.flush()
                 return count
         except Exception as e:
-            log.error(f"bulk_update error: {e}")
+            log.exception(f"bulk_update error: {e}")
             raise
 
     @classmethod
@@ -966,7 +966,7 @@ class Mapper(Generic[M]):
                 await session.flush()
                 return result.rowcount
         except Exception as e:
-            log.error(f"bulk_delete error: {e}")
+            log.exception(f"bulk_delete error: {e}")
             raise
 
     @classmethod

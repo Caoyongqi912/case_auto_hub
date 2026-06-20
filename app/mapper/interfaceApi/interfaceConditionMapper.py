@@ -79,7 +79,7 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
             result = await session.scalars(stmt)
             return result.all()
         except Exception as e:
-            log.error(f"query_interfaces_by_condition_id error: {e}")
+            log.exception(f"query_interfaces_by_condition_id error: {e}")
             raise
         finally:
             if should_close:
@@ -116,7 +116,7 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
             await session.delete(condition)
             return True
         except Exception as e:
-            log.error(f"delete_condition error: {e}")
+            log.exception(f"delete_condition error: {e}")
             raise
 
     @classmethod
@@ -144,7 +144,7 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
 
 
         except Exception as e:
-            log.error(f"associate_self_interface error: {e}")
+            log.exception(f"associate_self_interface error: {e}")
             raise
 
     @classmethod
@@ -185,7 +185,7 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
                                                                                 condition_id=condition_id,
                                                                                 interface_id_list=interface_ids_to_add)
         except Exception as e:
-            log.error(f"associate_interfaces error: {e}")
+            log.exception(f"associate_interfaces error: {e}")
             raise
 
     @classmethod
@@ -210,7 +210,7 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
                     )
                 )
         except Exception as e:
-            log.error(f'remove_association_interface error: {e}')
+            log.exception(f'remove_association_interface error: {e}')
             raise
 
     @classmethod
@@ -249,7 +249,7 @@ class InterfaceConditionMapper(Mapper[InterfaceCondition]):
                     insert(InterfaceConditionAPIAssociation).values(values)
                 )
         except Exception as e:
-            log.error(f"reorder_condition_apis error: {e}")
+            log.exception(f"reorder_condition_apis error: {e}")
             raise
 
     @classmethod

@@ -49,7 +49,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                 )
                 return task
         except Exception as e:
-            log.error(f"insert_interface_case error: {e}")
+            log.exception(f"insert_interface_case error: {e}")
             raise
 
     @classmethod
@@ -74,7 +74,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                 )
                 return new_task
         except Exception as e:
-            log.error(f"update_interface_case error: {e}")
+            log.exception(f"update_interface_case error: {e}")
             raise
 
 
@@ -98,7 +98,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                 result = await session.scalars(stmt)
                 return result.all()
         except Exception as e:
-            log.error(f"query_association_interfaces error: {e}")
+            log.exception(f"query_association_interfaces error: {e}")
             raise
 
 
@@ -126,7 +126,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                 return result.all()
 
         except Exception as e:
-            log.error(f"query_association_interface_cases error: {e}")
+            log.exception(f"query_association_interface_cases error: {e}")
             raise
 
     @classmethod
@@ -196,7 +196,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                 task.interface_task_total_cases_num += len(case_ids)
                 return True
         except Exception as e:
-            log.error(f"association_interface_cases error: {e}")
+            log.exception(f"association_interface_cases error: {e}")
             raise
 
     @classmethod
@@ -230,7 +230,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                     task.interface_task_total_apis_num -= 1
                 return True
         except Exception as e:
-            log.error(f"remove_association_interface error: {e}")
+            log.exception(f"remove_association_interface error: {e}")
             raise
 
     @classmethod
@@ -264,7 +264,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                     task.interface_task_total_cases_num -= 1
                 return True
         except Exception as e:
-            log.error(f"remove_association_interface_case error: {e}")
+            log.exception(f"remove_association_interface_case error: {e}")
             raise
 
     @classmethod
@@ -302,7 +302,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                 await session.execute(insert(InterfaceAPITaskAssociation).values(values))
                 return True
         except Exception as e:
-            log.error(f"reorder_interface error: {e}")
+            log.exception(f"reorder_interface error: {e}")
             raise
 
     @classmethod
@@ -340,7 +340,7 @@ class InterfaceTaskMapper(Mapper[InterfaceTask]):
                 await session.execute(insert(InterfaceCaseTaskAssociation).values(values))
                 return True
         except Exception as e:
-            log.error(f"reorder_interface_case error: {e}")
+            log.exception(f"reorder_interface_case error: {e}")
             raise
 
     @staticmethod

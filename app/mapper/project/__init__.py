@@ -38,8 +38,7 @@ class ProjectMapper(Mapper[Project]):
                     chargeName=charger.username,
                 ))
         except Exception as e:
-            raise e
-
+            raise
     @classmethod
     async def query_info_count(cls, project_id: int, ):
         """
@@ -57,8 +56,7 @@ class ProjectMapper(Mapper[Project]):
                     "variable_count": len(variable_count) if variable_count else 0
                 }
         except Exception as e:
-            raise e
-
+            raise
 class GlobalVariableMapper(Mapper[GlobalVariable]):
     __model__ = GlobalVariable
 
@@ -71,4 +69,4 @@ class GlobalVariableMapper(Mapper[GlobalVariable]):
                 ))
                 return data
         except Exception as e:
-            raise e
+            raise
