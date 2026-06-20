@@ -14,6 +14,7 @@ from typing import Dict, Any, Tuple, Optional, List
 
 import aiofiles
 import mimetypes
+import urllib.parse
 from base64 import b64encode
 from httpx._utils import to_bytes
 from app.mapper.file import FileMapper
@@ -149,6 +150,32 @@ class RequestBuilder:
                     )
                     continue
                 headers[k] = v
+
+        # BUG-HDR-ASCII 修复: HTTP/1.1 header value 必须是 ASCII (RFC 7230),
+        # httpx 默认按 ascii 编码, 用户在 g_headers / interface_headers 里
+        # 配中文 / emoji / 重音字符等非 ASCII 值时会抛:
+        #   UnicodeEncodeError: 'ascii' codec can't encode characters ...
+        # 修: 在这里做一遍校验, 非 ASCII 值用 UTF-8 percent-encode (跟
+        # 标准 URL/header 编码规则一致), server 端用 urllib.parse.unquote
+        # 解码即可拿到原文。比静默跳过 / 抛 UnicodeEncodeError 都好:
+        # - 静默跳过: 用户不知情, 接口莫名少个 header
+        # - 抛 UnicodeEncodeError: 整个请求挂, 错误信息指向 httpx 内部
+        #   (用户看不懂, 不知道是 header 配错)
+        # - percent-encode: 自动透明处理, WARNING 留痕, 业务不挂
+        case_id = getattr(interface, "interface_case_id", "?")
+        for k, v in list(headers.items()):
+            if not isinstance(v, str):
+                continue
+            if v.isascii():
+                continue
+            # 非 ASCII: percent-encode UTF-8 字节
+            encoded = urllib.parse.quote(v, safe="")
+            log.warning(
+                f"[BUG-HDR-ASCII] header 值含非 ASCII 字符, 自动 percent-encode: "
+                f"{k!r}={v!r} -> {encoded!r} (case_id={case_id}). "
+                f"如需原样发, 请自行 base64 / 自定义编码后, server 端配合解码"
+            )
+            headers[k] = encoded
 
         return headers
 

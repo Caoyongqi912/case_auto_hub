@@ -341,3 +341,22 @@ BUG_P1_2 = "P1-2"
 # run_interface_by_task 风格不一致。修: 加 try/finally 调 aclose,
 # 4 个入口清理风格统一。
 BUG_P1_4 = "P1-4"
+
+# ---------------------------------------------------------------------------
+# BUG-HDR-ASCII: 非 ASCII header value 透传给 httpx 报 UnicodeEncodeError
+# ---------------------------------------------------------------------------
+# 根因: HTTP/1.1 spec (RFC 7230) header value 必须是 ASCII, httpx 默认按
+# ascii 编码。用户 g_headers / interface_headers 里配中文 / emoji 等时,
+# 进 httpx 会抛:
+#   UnicodeEncodeError: 'ascii' codec can't encode characters in position 1-8
+# 抛在 httpx._models._normalize_header_value 里, 错误信息指向 httpx 内部,
+# 用户看不出是 header 配错。
+#
+# 修法 (croe/interface/builder/request_builder.py:_prepare_headers):
+#   校验所有 header value, 非 ASCII 自动 UTF-8 percent-encode + WARNING 留痕。
+#   这样业务不挂, 用户能看出是哪个 header 触发的, server 端用
+#   urllib.parse.unquote 解码即可拿到原文。
+#
+# 回归测试: tests/croe/interface/test_bug_hdr_ascii_non_ascii_header_value.py
+#   锁住: 非 ASCII 值自动 percent-encode, ASCII 值不变, log 警告。
+BUG_HDR_ASCII = "BUG-HDR-ASCII"
