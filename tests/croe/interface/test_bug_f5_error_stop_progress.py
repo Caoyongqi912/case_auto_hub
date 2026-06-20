@@ -135,6 +135,12 @@ async def test_bug_f5_error_stop_progress_is_intermediate(bug_f5_marker):
     ), patch(
         "app.mapper.interfaceApi.interfaceResultMapper.InterfaceCaseResultMapper.insert",
         new=AsyncMock(side_effect=fake_init_case_result),
+    ), patch(
+        "app.mapper.interfaceApi.interfaceVarsMapper.InterfaceVarsMapper.query_by",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "app.mapper.interfaceApi.interfaceGlobalMapper.InterfaceGlobalHeaderMapper.query_all",
+        new=AsyncMock(return_value=[]),
     ):
         success, cr = await runner.run_interface_case(
             interface_case_id=3, env=1, error_stop=True, task_result=None
