@@ -146,7 +146,7 @@ class CeleryTrigger:
             return schedule(run_every=delta.total_seconds())
             
         except Exception as e:
-            log.error(f"解析执行时间失败: {run_date_str}, 错误: {e}")
+            log.exception(f"解析执行时间失败: {run_date_str}, 错误: {e}")
             return None
 
     def _create_cron_schedule(self, values: Dict[str, Any]) -> Optional[crontab]:
@@ -177,7 +177,7 @@ class CeleryTrigger:
                 day_of_week=fields[4],
             )
         except Exception as e:
-            log.error(f"解析 CRON 表达式失败: {cron_expression}, 错误: {e}")
+            log.exception(f"解析 CRON 表达式失败: {cron_expression}, 错误: {e}")
             return None
 
     def _create_interval_schedule(self, values: Dict[str, Any]) -> Optional[schedule]:

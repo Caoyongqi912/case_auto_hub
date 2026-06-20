@@ -405,7 +405,7 @@ class CeleryHubScheduler:
             
             log.info("[CeleryScheduler] 心跳任务设置完成")
         except Exception as e:
-            log.error(f"[CeleryScheduler] 设置心跳任务失败: {e}")
+            log.exception(f"[CeleryScheduler] 设置心跳任务失败: {e}")
 
     async def _setup_job_printer(self) -> None:
         """
@@ -427,7 +427,7 @@ class CeleryHubScheduler:
             
             log.info("[CeleryScheduler] 任务打印器设置完成")
         except Exception as e:
-            log.error(f"[CeleryScheduler] 设置任务打印器失败: {e}")
+            log.exception(f"[CeleryScheduler] 设置任务打印器失败: {e}")
 
     async def shutdown(self) -> None:
         """

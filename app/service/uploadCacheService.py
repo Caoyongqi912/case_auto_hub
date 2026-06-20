@@ -69,7 +69,7 @@ class UploadCacheService:
             )
             return True
         except Exception as e:
-            log.error(f"保存预览缓存失败: {key}, error: {e}")
+            log.exception(f"保存预览缓存失败: {key}, error: {e}")
             return False
 
     async def get_preview(self, file_md5: str, user_id: int) -> Optional[Dict[str, Any]]:
@@ -80,7 +80,7 @@ class UploadCacheService:
                 return json.loads(data)
             return None
         except Exception as e:
-            log.error(f"获取预览缓存失败: {key}, error: {e}")
+            log.exception(f"获取预览缓存失败: {key}, error: {e}")
             return None
 
     async def exists(self, file_md5: str, user_id: int) -> bool:
@@ -94,7 +94,7 @@ class UploadCacheService:
             log.info(f"删除预览缓存: {key}")
             return True
         except Exception as e:
-            log.error(f"删除预览缓存失败: {key}, error: {e}")
+            log.exception(f"删除预览缓存失败: {key}, error: {e}")
             return False
 
     async def mark_committed(self, file_md5: str, user_id: int) -> bool:
@@ -107,7 +107,7 @@ class UploadCacheService:
                 return True
             return False
         except Exception as e:
-            log.error(f"标记已提交失败: {key}, error: {e}")
+            log.exception(f"标记已提交失败: {key}, error: {e}")
             return False
 
     async def is_committed(self, file_md5: str, user_id: int) -> bool:

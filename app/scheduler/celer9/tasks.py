@@ -71,7 +71,7 @@ def celery_submit_interface_task(self: Task, job_data: Dict[str, Any]) -> Dict[s
                 )
                 results.append({"task_id": task_id, "status": "submitted"})
             except Exception as e:
-                log.error(f"[CeleryTask] 提交接口任务失败: {task_id}, 错误: {e}")
+                log.exception(f"[CeleryTask] 提交接口任务失败: {task_id}, 错误: {e}")
                 results.append({"task_id": task_id, "status": "failed", "error": str(e)})
 
         return {"job_name": job_name, "results": results}
@@ -83,7 +83,7 @@ def celery_submit_interface_task(self: Task, job_data: Dict[str, Any]) -> Dict[s
         log.info(f"[CeleryTask] 接口任务执行完成: {job_data.get('job_name')}")
         return result
     except Exception as e:
-        log.error(f"[CeleryTask] 接口任务执行失败: {job_data.get('job_name')}, 错误: {e}")
+        log.exception(f"[CeleryTask] 接口任务执行失败: {job_data.get('job_name')}, 错误: {e}")
         self.update_state(
             state="FAILURE",
             meta={"error": str(e), "job_name": job_data.get("job_name")}
@@ -142,7 +142,7 @@ def celery_submit_play_task(self: Task, job_data: Dict[str, Any]) -> Dict[str, A
                 )
                 results.append({"task_id": task_id, "status": "submitted"})
             except Exception as e:
-                log.error(f"[CeleryTask] 提交UI任务失败: {task_id}, 错误: {e}")
+                log.exception(f"[CeleryTask] 提交UI任务失败: {task_id}, 错误: {e}")
                 results.append({"task_id": task_id, "status": "failed", "error": str(e)})
 
         return {"job_name": job_name, "results": results}
@@ -154,7 +154,7 @@ def celery_submit_play_task(self: Task, job_data: Dict[str, Any]) -> Dict[str, A
         log.info(f"[CeleryTask] UI任务执行完成: {job_data.get('job_name')}")
         return result
     except Exception as e:
-        log.error(f"[CeleryTask] UI任务执行失败: {job_data.get('job_name')}, 错误: {e}")
+        log.exception(f"[CeleryTask] UI任务执行失败: {job_data.get('job_name')}, 错误: {e}")
         self.update_state(
             state="FAILURE",
             meta={"error": str(e), "job_name": job_data.get("job_name")}
@@ -190,7 +190,7 @@ def celery_heartbeat(self: Task) -> Dict[str, Any]:
     try:
         return asyncio.run(_execute())
     except Exception as e:
-        log.error(f"[CeleryScheduler] 心跳任务失败: {e}")
+        log.exception(f"[CeleryScheduler] 心跳任务失败: {e}")
         return {"status": "error", "error": str(e)}
 
 
@@ -265,7 +265,7 @@ def celery_custom_task(
         self.update_state(state="SUCCESS", meta={"status": "完成"})
         return result
     except Exception as e:
-        log.error(f"[CeleryTask] 自定义任务执行失败: {task_path}, 错误: {e}")
+        log.exception(f"[CeleryTask] 自定义任务执行失败: {task_path}, 错误: {e}")
         self.update_state(state="FAILURE", meta={"error": str(e)})
         raise
 

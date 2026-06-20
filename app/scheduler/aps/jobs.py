@@ -106,4 +106,4 @@ async def print_jobs():
 
         log.info(f"[Scheduler]: 共有 {len(job_ids)} 个调度任务")
     except Exception as e:
-        log.error(f"[Scheduler]: 打印任务失败: {e}")
+        log.exception(f"[Scheduler]: 打印任务失败: {e}")

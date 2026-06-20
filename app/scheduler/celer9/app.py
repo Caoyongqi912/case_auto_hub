@@ -130,7 +130,7 @@ class CeleryScheduleBuilder:
                 day_of_week=fields[4],
             )
         except Exception as e:
-            log.error(f"解析 CRON 表达式失败: {cron_expression}, 错误: {e}")
+            log.exception(f"解析 CRON 表达式失败: {cron_expression}, 错误: {e}")
             raise ValueError(f"无效的 CRON 表达式: {cron_expression}") from e
 
     @staticmethod
