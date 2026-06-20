@@ -1,13 +1,5 @@
-"""
-croe/play/executor/step_content_strategy/_base.py 单元测试覆盖
+"""croe/play/executor/step_content_strategy/_base.py 单元测试覆盖"""
 
-目标: StepBaseStrategy 的 _build_content_result, write_result, write_child_result
-等核心方法覆盖, 重点:
-- 步骤结果对象的构建 (id / name / type / time / extracts / asserts / screenshot)
-- 失败信息写入 (P-R5 修复: ignore 步骤也写错误信息)
-- 截图路径 (failure + STEP_PLAY + interaction_failed 排除)
-- to_screenshot 失败时返回 None
-"""
 import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -18,14 +10,12 @@ from croe.play.context import StepContentContext
 from croe.play.executor.play_method.result_types import StepExecutionResult
 from croe.play.executor.step_content_strategy._base import StepBaseStrategy
 
-
 # Helper: instantiate abstract class
 class _TestStrategy(StepBaseStrategy):
     """Concrete subclass for testing abstract StepBaseStrategy."""
 
     async def execute(self, step_context):
         return True
-
 
 # --------------------------------------------------------------------------- #
 # StepBaseStrategy._build_content_result
@@ -197,7 +187,6 @@ class TestBuildContentResult:
         )
         assert cr.content_target_result_id == 99
 
-
 # --------------------------------------------------------------------------- #
 # StepBaseStrategy.write_result
 # --------------------------------------------------------------------------- #
@@ -238,14 +227,14 @@ class TestWriteResult:
         ctx.play_case_result_writer = MagicMock()
         ctx.play_case_result_writer.set_error_step_info = AsyncMock()
         result = StepExecutionResult(success=False, message="失败", error_type="interaction_failed")
-        # ignore=True 也写错误信息 (修前会被过滤掉)
+        # ignore=True 也写错误信息
         await strategy.write_result(
             result=result,
             start_time=datetime.datetime.now(),
             step_context=ctx,
             ignore=True,
         )
-        # set_error_step_info 应被调 (修前不会)
+        # set_error_step_info 应被调
         ctx.play_case_result_writer.set_error_step_info.assert_called_once()
 
     @pytest.mark.asyncio
@@ -267,7 +256,6 @@ class TestWriteResult:
             step_context=ctx,
         )
         ctx.play_case_result_writer.set_error_step_info.assert_not_called()
-
 
 # --------------------------------------------------------------------------- #
 # StepBaseStrategy.write_child_result

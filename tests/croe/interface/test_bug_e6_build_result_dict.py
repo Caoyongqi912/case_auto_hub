@@ -1,25 +1,14 @@
-"""
-BUG-E6 回归测试: _build_result 返回 Dict, 不再 (Dict, bool) tuple。
+"""BUG-E6 回归测试: _build_result 返回 Dict, 不再 (Dict, bool) tuple。"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-
-根因: 旧签名 (Tuple[Dict, bool]) 把 success 单独返回, 但 result 字典里
-也有 'result' 字段 (Boolean), 两路来源存在歧义 — 改 ctx.success 后忘了
-同步 result['result'] 是常见 bug。
-
-修法: 改返 Dict[str, Any], 调用方用 result['result'] 拿成功标志。
-"""
 import pytest
 from unittest.mock import MagicMock
 
 from croe.interface.executor.interface_executor import InterfaceExecutor
 from tests.croe.interface._bug_ids import BUG_E6
 
-
 @pytest.fixture
 def bug_e6_marker():
     return BUG_E6
-
 
 def _make_ctx(success: bool = True) -> MagicMock:
     """构造一个 mock ExecutionContext, 包含 _build_result 需要的字段。"""
@@ -42,7 +31,6 @@ def _make_ctx(success: bool = True) -> MagicMock:
     ctx.asserts = []
     return ctx
 
-
 @pytest.mark.unit
 def test_bug_e6_build_result_returns_dict_not_tuple(bug_e6_marker):
     """[BUG-E6] _build_result 必须返回 Dict, 不再 (Dict, bool)。"""
@@ -56,7 +44,6 @@ def test_bug_e6_build_result_returns_dict_not_tuple(bug_e6_marker):
     assert not isinstance(result, tuple), (
         f"[{BUG_E6}] 不能再是 tuple, 那会回到 (Dict, bool) 歧义"
     )
-
 
 @pytest.mark.unit
 def test_bug_e6_build_result_contains_result_field(bug_e6_marker):
@@ -77,7 +64,6 @@ def test_bug_e6_build_result_contains_result_field(bug_e6_marker):
     assert result.get("result") is False, (
         f"[{BUG_E6}] success=False 时, result['result'] 应为 False, 实际 {result.get('result')}"
     )
-
 
 @pytest.mark.unit
 def test_bug_e6_execute_signature_returns_dict(bug_e6_marker):

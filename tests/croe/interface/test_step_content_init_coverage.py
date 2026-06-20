@@ -108,7 +108,7 @@ def test_get_step_strategy_map_covers_all_enum_values():
     防止新增 enum value 但忘了注册 strategy (这种 bug 跑业务时才会崩)。
     """
     # 直接 import strategy_map 不行, 它是局部变量; 走 introspect 路径
-    # 全部 enum 都应该成功 (不 raise ValueError)
+    # 全部 enum 都应该成功
     for step_type in CaseStepContentType:
         strategy = get_step_strategy(step_type, _executor_stub())
         assert isinstance(strategy, StepBaseStrategy)

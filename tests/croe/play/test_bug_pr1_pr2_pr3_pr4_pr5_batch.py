@@ -1,24 +1,5 @@
-"""
-[BUG-P-R1 + P-R2 + P-R3 + P-R4 + P-R5] 5 个 P0 隐藏 BUG 一锅端,
-来自 PLAY_REVIEW_2026_06_21。
+"""[BUG-P-R1 + P-R2 + P-R3 + P-R4 + P-R5] 5 个 P0 隐藏 BUG 一锅端,"""
 
-BUG-P-R1: play_runner.py:execute_case 之前 except 块 raise 抛回去,
-        任务级 retry 看不到 case_success=False, 整个 task 直接挂。
-        修: except 块只设 case_success=False, 不 raise; finally 仍写结果。
-
-BUG-P-R2: task_runner.py:execute_task 之前 query_case 调了 2 次 (第一次
-        结果被覆盖)。修: 删第一次 query。
-
-BUG-P-R3: task_runner.py:__execute_case 之前 init_case_variables 在 retry
-        loop 内, 每次 retry 都从 DB 拉同样的 case vars (多 1 次 DB/retry)。
-        修: 提到 retry loop 外。
-
-BUG-P-R4: task_runner.py:__execute_case 之前 error_continue 写死 False。
-        修: 加 error_continue 到 PlayTaskExecuteParams, 透传给 execute_case。
-
-BUG-P-R5: _base.py:write_result 之前 `if not result.success and not ignore`
-        过滤掉 ignore=True 时的失败信息。修: 失败就写错误信息到 case_result。
-"""
 import inspect
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -30,15 +11,11 @@ from tests.croe.play._bug_ids import (
     BUG_P_R1, BUG_P_R2, BUG_P_R3, BUG_P_R4, BUG_P_R5,
 )
 
-
 # --------------------------------------------------------------------------- #
-# BUG-P-R1: execute_case except 不 raise
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_r1_execute_case_except_does_not_raise():
-    """[BUG-P-R1] execute_case 的 except 块不应 raise, 任务级 retry 才能拿到
-    case_success=False 走重试路径。
-    """
+    """[    """
     from croe.play.play_runner import PlayRunner
 
     src = inspect.getsource(PlayRunner.execute_case)
@@ -64,9 +41,7 @@ def test_bug_p_r1_execute_case_except_does_not_raise():
         f"[{BUG_P_R1}] except 块应设 case_success = False"
     )
 
-
 # --------------------------------------------------------------------------- #
-# BUG-P-R2: execute_task 单一 query_case
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_r2_execute_task_no_duplicate_query_case():
@@ -83,15 +58,11 @@ def test_bug_p_r2_execute_task_no_duplicate_query_case():
         f"第一次结果被覆盖, 多 1 次 DB + 数据竞争风险"
     )
 
-
 # --------------------------------------------------------------------------- #
-# BUG-P-R3: init_case_variables 提到 retry loop 外
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_r3_init_case_vars_outside_retry_loop():
-    """[BUG-P-R3] __execute_case 中 init_case_variables 必须在 retry loop 外,
-    每次 retry 不再从 DB 拉 case vars。
-    """
+    """[    """
     from croe.play.task_runner import PlayTaskRunner
 
     src = inspect.getsource(PlayTaskRunner._PlayTaskRunner__execute_case)
@@ -114,9 +85,7 @@ def test_bug_p_r3_init_case_vars_outside_retry_loop():
         f"  case_pos={case_pos}, init_pos={init_pos}, retry_pos={retry_pos}"
     )
 
-
 # --------------------------------------------------------------------------- #
-# BUG-P-R4: error_continue 透传
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_r4_task_params_has_error_continue():
@@ -130,11 +99,8 @@ def test_bug_p_r4_task_params_has_error_continue():
         f"实际: {fields}"
     )
 
-
 def test_bug_p_r4_execute_case_called_with_error_continue_param():
-    """[BUG-P-R4] __execute_case 调 execute_case 时必须传 error_continue 参数,
-    不能写死 False。
-    """
+    """[    """
     from croe.play.task_runner import PlayTaskRunner
 
     src = inspect.getsource(PlayTaskRunner._PlayTaskRunner__execute_case)
@@ -148,7 +114,7 @@ def test_bug_p_r4_execute_case_called_with_error_continue_param():
     call_args = call_m.group(1)
 
     # 必须有 error_continue=... (不能是 error_continue=False 字面值, 因为
-    # 即便字面值跟修前一样, 也至少说明参数透传了, 跟 params 解耦)
+    # 即便字面值一样, 也至少说明参数透传了, 跟 params 解耦
     assert "error_continue" in call_args, (
         f"[{BUG_P_R4}] execute_case 调用应传 error_continue 参数, "
         f"不能写死 False。当前调用:\n{call_args}"
@@ -159,14 +125,11 @@ def test_bug_p_r4_execute_case_called_with_error_continue_param():
         f"不能写死 False"
     )
 
-
 # --------------------------------------------------------------------------- #
-# BUG-P-R5: ignore 步骤也写失败信息
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_r5_ignored_step_writes_error_info():
-    """[BUG-P-R5] write_result 失败时应写 set_error_step_info, 不管 ignore 标志。
-
+    """[
     修前: `if not result.success and not ignore` — ignore=True 失败信息丢失。
     修后: `if not result.success` — 失败就写, ignore 步骤也能查失败信息。
     """
@@ -200,12 +163,10 @@ def test_bug_p_r5_ignored_step_writes_error_info():
         f"写错误信息到 case_result"
     )
 
-
 class _TestStrategy(StepBaseStrategy):
     """P-R5 端到端用, 具体子类让 abstract 能实例化。"""
     async def execute(self, step_context):
         return True
-
 
 @pytest.mark.asyncio
 async def test_bug_p_r5_ignored_step_writes_error_info_end_to_end():

@@ -25,15 +25,12 @@ from croe.a_manager.variable_manager import VariableManager
 from enums import InterfaceAuthType, InterfaceRequestMethodEnum, InterfaceRequestTBodyTypeEnum,InterfaceDataValueType
 from utils import GenerateTools, log
 
-
-
 KEY_HEADERS = "headers"
 KEY_PARAMS = "params"
 KEY_JSON = "json"
 KEY_FORM_DATA = "data"
 KEY_FORM_FILES = "files"
 KEY_CONTENT = "content"
-
 
 class RequestBuilder:
     """
@@ -104,10 +101,7 @@ class RequestBuilder:
 
     # ==================== 私有方法 - 请求头处理 ====================
 
-    # BUG-S7 修复: 下游用户接口配置不能覆盖这些敏感 header。
-    # 否则恶意用户可配 Host: evil.com 改后端真实 host, 配
-    # Content-Length 改 body 大小让后端 parse 错, 配 Connection: keep-alive
-    # 维持长连接耗资源。httpx 也会自己设这些, 覆盖就打架。
+    # 拦截恶意/httpx 自管 header, 避免覆盖后端真实值
     BLOCKED_DOWNSTREAM_HEADERS = frozenset({
         "host",
         "content-length",
@@ -121,10 +115,6 @@ class RequestBuilder:
         准备请求头
 
         合并全局请求头和接口特定的请求头。
-
-        BUG-S7 修复: 下游 interface_headers 里的敏感 header (Host /
-        Content-Length / Connection / Transfer-Encoding / Upgrade) 被
-        拦截, WARNING 留痕, 不静默。
 
         Args:
             interface: 接口对象
@@ -151,29 +141,15 @@ class RequestBuilder:
                     continue
                 headers[k] = v
 
-        # BUG-HDR-ASCII 修复: HTTP/1.1 header value 必须是 ASCII (RFC 7230),
-        # httpx 默认按 ascii 编码, 用户在 g_headers / interface_headers 里
-        # 配中文 / emoji / 重音字符等非 ASCII 值时会抛:
-        #   UnicodeEncodeError: 'ascii' codec can't encode characters ...
-        # 修: 在这里做一遍校验, 非 ASCII 值用 UTF-8 percent-encode (跟
-        # 标准 URL/header 编码规则一致), server 端用 urllib.parse.unquote
-        # 解码即可拿到原文。比静默跳过 / 抛 UnicodeEncodeError 都好:
-        # - 静默跳过: 用户不知情, 接口莫名少个 header
-        # - 抛 UnicodeEncodeError: 整个请求挂, 错误信息指向 httpx 内部
-        #   (用户看不懂, 不知道是 header 配错)
-        # - percent-encode: 自动透明处理, WARNING 留痕, 业务不挂
+        # 非 ASCII header value 转 percent-encode
         case_id = getattr(interface, "interface_case_id", "?")
         for k, v in list(headers.items()):
-            if not isinstance(v, str):
+            if not isinstance(v, str) or v.isascii():
                 continue
-            if v.isascii():
-                continue
-            # 非 ASCII: percent-encode UTF-8 字节
             encoded = urllib.parse.quote(v, safe="")
             log.warning(
-                f"[BUG-HDR-ASCII] header 值含非 ASCII 字符, 自动 percent-encode: "
-                f"{k!r}={v!r} -> {encoded!r} (case_id={case_id}). "
-                f"如需原样发, 请自行 base64 / 自定义编码后, server 端配合解码"
+                f"[BUG-HDR-ASCII] header 值含非 ASCII, 自动 percent-encode: "
+                f"{k!r}={v!r} -> {encoded!r} (case_id={case_id})"
             )
             headers[k] = encoded
 
@@ -213,10 +189,6 @@ class RequestBuilder:
                     GenerateTools.list2dict(auth_data)
                 )
             else:
-                # BUG-RB1 修复: target 既不是 query 也不是 header 时不能静默
-                # 吞掉, Pydantic KVAuth 限制 target=Literal['query','header'],
-                # 但 DB 存的是 JSON, 旧数据 / 手工编辑可能绕过 schema 校验
-                # 落库, 执行时没线索。
                 log.warning(
                     f"[BUG-RB1] 未知的 KV Auth target: {target!r} "
                     f"(case_id={getattr(interface, 'interface_case_id', '?')}), "
@@ -319,13 +291,6 @@ class RequestBuilder:
         """
         准备原始请求体（JSON/Text）
 
-        BUG-S5 修复: raw text 模式不再对字符串 body 走 json.dumps。
-        旧版对 str body 走 json.dumps 会:
-          1) 整串加引号: "hello" -> '"hello"' (错, 实际想发 hello)
-          2) 反斜杠 double-escape: "C:\\path" -> '"C:\\\\path"'
-          3) 用户已有的 JSON 字符串被 re-encode, 变量替换后意义变
-        修: body 是 str 就直接用, 不是 str (dict/list/num) 才 json.dumps。
-
         Args:
             interface: 接口对象
 
@@ -339,7 +304,6 @@ class RequestBuilder:
                 "application/json"
             )
         # Text 类型 — body 是 str 直接用, 否则 (dict/list) 才 json.dumps
-        # BUG-S5: str 走 json.dumps 会破坏 (加引号 / double escape)
         return (
             {KEY_CONTENT: interface.interface_body
              if isinstance(interface.interface_body, str)
@@ -382,7 +346,6 @@ class RequestBuilder:
 
         files = {}
         data = {}
-
 
         for item in interface.interface_data:
             key = item["key"]
@@ -453,10 +416,6 @@ class RequestBuilder:
     async def _transform_request_data(self, request_data: Dict[str, Any]) -> None:
         """
         并行转换请求数据中的变量
-
-        BUG-E3 修复: 之前用 asyncio.TaskGroup (Python 3.11+), 3.10 上会
-        AttributeError。改用 asyncio.gather (Python 3.7+) 保证兼容性。
-        VariableTrans.trans 里同样的注释被注释掉, 这里照办。
 
         Args:
             request_data: 请求数据字典（会被修改）

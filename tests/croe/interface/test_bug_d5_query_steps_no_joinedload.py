@@ -1,14 +1,5 @@
-"""
-BUG-D5 回归测试: query_steps 不应有 5 个死 joinedload。
+"""BUG-D5 回归测试: query_steps 不应有 5 个死 joinedload。"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-
-根因: 5 个 .options(joinedload(...)) 没人用, 5 个 step strategy 都用
-step_content.target_id + Mapper.get_by_id 自行 fetch。
-旧实现让 SQL 多 5 个 LEFT JOIN, 5x 行宽膨胀, 0 收益。
-
-修法: 删 5 个 joinedload, 锁住"以后不要再加回来"。
-"""
 import inspect
 import re
 
@@ -17,11 +8,9 @@ import pytest
 from app.mapper.interfaceApi.interfaceCaseMapper import InterfaceCaseMapper
 from tests.croe.interface._bug_ids import BUG_D5
 
-
 @pytest.fixture
 def bug_d5_marker():
     return BUG_D5
-
 
 @pytest.mark.unit
 def test_bug_d5_query_steps_no_joinedload_options(bug_d5_marker):
@@ -41,7 +30,6 @@ def test_bug_d5_query_steps_no_joinedload_options(bug_d5_marker):
             f"5x LEFT JOIN 行宽膨胀, 应删"
         )
 
-
 @pytest.mark.unit
 def test_bug_d5_query_steps_no_joinedload_import(bug_d5_marker):
     """[BUG-D5] interfaceCaseMapper 不再 import joinedload (没人用了)。"""
@@ -51,7 +39,6 @@ def test_bug_d5_query_steps_no_joinedload_import(bug_d5_marker):
     assert "from sqlalchemy.orm import joinedload" not in src, (
         f"[{BUG_D5}] interfaceCaseMapper 不再需要 joinedload, 应删 import"
     )
-
 
 @pytest.mark.unit
 def test_bug_d5_query_steps_no_options_clause(bug_d5_marker):

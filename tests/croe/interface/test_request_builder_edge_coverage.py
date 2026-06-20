@@ -1,14 +1,5 @@
-"""
-request_builder.py 边角覆盖率补充 (目标 69% -> 80%+)。
+"""request_builder.py 边角覆盖率补充 (目标 69% -> 80%+)。"""
 
-针对未测的 45 行:
-1. set_req_info 主流程 (line 76-102) — GET 端到端一次
-2. _prepare_auth KV Auth 3 分支: query / header / 缺 target (line 174-187)
-3. _process_get_params 无 params (line 217-220)
-4. _filter_request_body 不支持的 body_type (line 277-278)
-5. _prepare_form_data file value_type (line 356-363) — file_record 存在/不存在
-6. _prepare_file_upload 4 个错误路径 (line 391-412) — 文件不存在 / 不可读 / 空 / 异常
-"""
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -148,24 +139,19 @@ async def test_prepare_auth_kv_auth_to_header():
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_prepare_auth_kv_auth_unknown_target_logs_warning_bug_rb1():
-    """[BUG-RB1] KV Auth target 既不是 query 也不是 header: 之前静默不报错,
-    现在 log.warning 含 target 值 + 允许值列表, 让用户能发现配错。
-    锁定: 不抛异常, 但有 warning 留痕; request_data 不被修改。
-    """
+    """[    """
     from tests.croe.interface._bug_ids import BUG_RB1
     builder = _builder()
     request_data = {KEY_PARAMS: {}, KEY_HEADERS: {}}
     iface = _build_interface(
         auth_type=InterfaceAuthType.KV_Auth,
         auth={"key": "X-Token", "value": "t1", "target": "body"},
-        # BUG-RB1 测试用: 加 case_id 让 warning 能关联到具体 case
     )
     iface.interface_case_id = 1234
 
     with patch("croe.interface.builder.request_builder.log") as mock_log:
         await RequestBuilder._prepare_auth(request_data, iface)
 
-    # BUG-RB1 修复后: warning 包含 BUG_ID 标签 + target 值 + 允许值列表
     mock_log.warning.assert_called_once()
     warn_msg = mock_log.warning.call_args.args[0]
     assert BUG_RB1 in warn_msg

@@ -1,19 +1,14 @@
-"""
-BUG-V1 回归测试:`__find_g_vars` 触发 name mangling,子类重写不会被调到。
+"""BUG-V1 回归测试:`__find_g_vars` 触发 name mangling,子类重写不会被调到。"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-"""
 import pytest
 from unittest.mock import AsyncMock, patch
 
 from utils.variableTrans import VariableTrans
 from tests.croe.interface._bug_ids import BUG_V1
 
-
 @pytest.fixture
 def bug_v1_marker():
     return BUG_V1
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -32,7 +27,6 @@ async def test_bug_v1_subclass_can_override_find_g_vars(bug_v1_marker):
         f"[{BUG_V1}] _resolve_vars 应调到子类 _find_g_vars,实际 {result!r}"
     )
 
-
 @pytest.mark.unit
 def test_bug_v1_no_dunder_find_g_vars_on_class(bug_v1_marker):
     """[BUG-V1] VariableTrans 不应再有 __find_g_vars 属性(name mangled 名字)。"""
@@ -43,7 +37,6 @@ def test_bug_v1_no_dunder_find_g_vars_on_class(bug_v1_marker):
     assert "_find_g_vars" in cls_dict, (
         f"[{BUG_V1}] VariableTrans.__dict__ 应有 _find_g_vars"
     )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio

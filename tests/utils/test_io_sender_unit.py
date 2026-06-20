@@ -1,16 +1,4 @@
-"""
-utils.io_sender SocketSender 单测覆盖
-
-目标: 锁定 SocketSender 的消息格式 + 异常兜底行为。
-- send: 拼 {code:0, data:msg} + 走 async_io.emit
-- over: 拼 {code:1, data:{rId:reportId}} 走 async_io.emit
-- push: 走 /api_perf_ns 性能测试 namespace
-- username: User 走 username / StarterEnum 走 name
-- clear_logs: 重置日志列表
-- send 异常: 内部吞掉 (不抛),记录 log
-
-约定: 不连真实 ws, 全部 patch app.ws.async_io.emit
-"""
+"""SocketSender 的 send/over/push/username/clear_logs 行为测试。"""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 

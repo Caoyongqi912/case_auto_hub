@@ -59,20 +59,12 @@ class PlayRunner:
         :param write_result_on_failure: 失败时是否写入结果（重试场景下设为False）
         :return: bool - 用例执行是否成功
         """
-        # BUG-P-2-3 修复: 之前 UI 业务流没有 trace_id, 多 case 并发时日志
-        # 串在一起无法定位"这条日志是哪条 case 跑的"。接口自动化 (interface
-        # runner) 已经有 OBS-2 trace_id, UI 一直缺。修: 跟接口风格统一,
-        # execute_case 进入时 set_trace_id (8 字符够区分并发, 短不抢眼),
-        # 在 finally 块 clear_trace_id 防泄漏到下一次 case。复用了 interface
-        # 已有 ContextVar, 不引入新机制。
         trace_id = set_trace_id()
         # 默认结果为成功
         page_manager = None
         case_success = True
-        # 默认 None, finally 用 isinstance 检查避免 NameError (早期 return 路径)
         content_writer = None
 
-        # 整个 case 执行 (含早期 return) 都在 try/finally 里, 保证 trace_id 清掉
         try:
             case_step_contents = await PlayCaseMapper.query_content_steps(case_id=play_case.id)
             case_step_content_length = len(case_step_contents)
@@ -124,14 +116,6 @@ class PlayRunner:
                     break
 
         except Exception as e:
-            # BUG-P-R1 修复: 之前 except 块调 raise 抛回去, 任务级 retry
-            # (__execute_case 的 for r in range(retry+1)) 看不到
-            # case_success=False, 整个 task 直接挂, 进度统计
-            # (success_number/fail_number) 不准。修: except 块只设
-            # case_success=False, 不 raise; finally 仍照常写入结果。
-            # 调用方 (task_runner) 拿到 case_success=False, 走 retry
-            # 路径。跟接口自动化的 run_interface_case 风格一致
-            # (那里也是 except 后只 log, finally 写, 不 raise)。
             log.exception(f"PlayRunner.execute_case 异常: {e}")
             case_success = False
         finally:
@@ -140,7 +124,6 @@ class PlayRunner:
             clear_trace_id()
             await self.starter.send(f'执行完成 >> {play_case}, 结果: {case_success}')
             # 只有成功时 或者 允许失败写入时 才写入结果
-            # BUG-P-2-3 配套: content_writer 默认 None (早期 return 路径),
             # 检查一下避免 NameError
             if content_writer is not None and (case_success or write_result_on_failure):
                 # 一次性写入 content results
@@ -181,19 +164,9 @@ class PlayRunner:
         Args:
             play_case: UI 用例模型
 
-        Returns:
-            None。失败不抛异常 (跟 error_continue 语义一致), 仅
-            log.exception + starter.send WARNING, 让 case 继续
-            跑 (变量缺失用空值/默认值兜底)。
-
         Notes:
-            - BUG-P-1-8 修复: 之前 except 块 `raise e` 抛回去, 调用方
-              (task_runner.__execute_case) 看到 Exception 走 retry 路径,
-              error_continue=True 也救不回来。修: 失败只 log + send warning,
-              跟 retry / error_continue 解耦。
-            - 为什么变量加载失败不致命: 变量是辅助数据 (e.g. token/host),
-              单个变量加载失败不应阻塞整 case 跑, 让用户在结果里看 warning
-              知道是哪个变量没加载成功。
+            失败不抛异常, 仅 log.exception + starter.send WARNING,
+            让 case 继续跑 (变量缺失用空值/默认值兜底)。
         """
         try:
             if variables := await PlayCaseVariablesMapper.query_by(play_case_id=play_case.id):
@@ -203,7 +176,6 @@ class PlayRunner:
                 await self.starter.send(
                     f"🫳🫳 初始化用例变量 = {json.dumps(self.variable_manager.variables, ensure_ascii=False)}")
         except Exception as e:
-            # BUG-P-1-8 修复: 之前 raise, error_continue 失效。修: 只 log + warning
             log.exception(f"PlayRunner.init_case_variables 加载变量失败, 跳过 (case 继续跑): {e}")
             await self.starter.send(
                 f"⚠️ 用例变量初始化失败, 跳过: {e}"

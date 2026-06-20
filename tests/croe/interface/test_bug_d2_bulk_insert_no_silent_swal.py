@@ -1,16 +1,5 @@
-"""
-BUG-D2 回归测试:`bulk_insert_results` 不应静默丢数据。
+"""BUG-D2 回归测试:`bulk_insert_results` 不应静默丢数据。"""
 
-原版对缺 content_type / 未知 content_type 的 item 静默 `continue`，
-调用方只看到 `total_inserted`，根本不知道丢了多少。
-
-修复后:
-- 缺 content_type 视为编程错误,直接抛 ValueError (跟 insert_result 一致)
-- 未知 content_type 走 skip,末尾 WARNING 输出原因 + 返回 (inserted, skipped) 元组
-- 调用方 (result_writer) 区分 inserted / skipped 并分别 log
-
-详见 docs/review/run_interface_case_deep_review.md。
-"""
 import contextlib
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -23,11 +12,9 @@ from tests.croe.interface._bug_ids import BUG_D2
 
 MAPPER_LOGGER = "app.mapper.interfaceApi.interfaceResultMapper"
 
-
 @pytest.fixture
 def bug_d2_marker():
     return BUG_D2
-
 
 def _valid_item(content_type=CaseStepContentType.STEP_API, content_id=100):
     return {
@@ -38,7 +25,6 @@ def _valid_item(content_type=CaseStepContentType.STEP_API, content_id=100):
         "interface_result_id": content_id,
     }
 
-
 def _fake_session():
     """返回一个 AsyncMock 的 session, 用于 D2 测试。"""
     s = AsyncMock()
@@ -46,14 +32,12 @@ def _fake_session():
     s.flush = AsyncMock()
     return s
 
-
 def _patch_transaction(fake_session):
     """把 cls.transaction() mock 成一个 async ctx mgr,内部 yield fake_session。"""
     @contextlib.asynccontextmanager
     async def _tx():
         yield fake_session
     return patch.object(InterfaceContentStepResultMapper, "transaction", _tx)
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -65,7 +49,6 @@ async def test_bug_d2_empty_returns_zero_zero(bug_d2_marker):
     assert inserted == 0, f"[{BUG_D2}] empty 应 inserted=0, 实际 {inserted}"
     assert skipped == 0, f"[{BUG_D2}] empty 应 skipped=0, 实际 {skipped}"
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d2_missing_content_type_raises(bug_d2_marker):
@@ -75,7 +58,6 @@ async def test_bug_d2_missing_content_type_raises(bug_d2_marker):
         await InterfaceContentStepResultMapper.bulk_insert_results(
             [bad], session=_fake_session()
         )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -102,7 +84,6 @@ async def test_bug_d2_unknown_content_type_is_counted_and_logged(bug_d2_marker):
     warn_msg = " ".join(str(c.args[0]) for c in mock_warn.call_args_list)
     assert "跳过" in warn_msg, f"[{BUG_D2}] WARNING 应含 '跳过', 实际: {warn_msg}"
     assert "alien" in warn_msg, f"[{BUG_D2}] WARNING 应含 content_name 'alien', 实际: {warn_msg}"
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -132,7 +113,6 @@ async def test_bug_d2_mix_valid_and_unknown(bug_d2_marker):
     assert total_added == 2, f"[{BUG_D2}] 只应 add_all 2 条合法 item, 实际 {total_added}"
     # 未知的那条也应被 WARNING
     assert mock_warn.called, f"[{BUG_D2}] mix 场景下未知 type 应触发 WARNING"
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio

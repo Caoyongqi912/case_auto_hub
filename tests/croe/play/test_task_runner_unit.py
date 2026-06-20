@@ -1,19 +1,10 @@
-"""
-task_runner.py 单元测试覆盖
+"""task_runner.py 单元测试覆盖"""
 
-目标: 覆盖 PlayTaskRunner 的 4 个核心路径, 全部用 mock 不打 DB:
-- execute_task 正常路径 (拿 task, 拿 cases, init_result, run cases, write_final)
-- execute_task 异常路径 (init_result 失败 / __execute_case 失败)
-- __execute_case 单 case / 多 case / retry / error_continue
-- __execute_case 统计 success_number / fail_number
-- __notify_report
-"""
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from croe.play.task_runner import PlayTaskRunner, PlayTaskExecuteParams
-
 
 # --------------------------------------------------------------------------- #
 # PlayTaskExecuteParams
@@ -48,7 +39,6 @@ class TestPlayTaskExecuteParams:
         """error_continue 应可设 True (P-R4 修复, 之前写死 False)。"""
         p = PlayTaskExecuteParams(task_id=1, error_continue=True)
         assert p.error_continue is True
-
 
 # --------------------------------------------------------------------------- #
 # PlayTaskRunner.execute_task
@@ -179,7 +169,6 @@ class TestExecuteTask:
             mock_notify.assert_called_once()
             args = mock_notify.call_args.args
             assert args[0] == 99
-
 
 # --------------------------------------------------------------------------- #
 # PlayTaskRunner.__notify_report

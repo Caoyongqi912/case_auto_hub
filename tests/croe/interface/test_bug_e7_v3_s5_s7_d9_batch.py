@@ -1,25 +1,12 @@
-"""
-[BUG-E7 + V3 + S5 + S7 + D9] 5 个 easy wins 回归测试。
+"""[BUG-E7 + V3 + S5 + S7 + D9] 5 个 easy wins 回归测试。"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-
-E7: extracts/asserts 默认值混乱
-V3: ScriptManager._variables 跨脚本累积 (改名 _script_locals + 注释)
-S5: _prepare_raw_body raw text 模式多余 json.dumps (str 不再 dump)
-S7: BLOCKED_DOWNSTREAM_HEADERS 黑名单 (Host / Content-Length / ...)
-D9: 2 个 pass 占位方法改 raise NotImplementedError
-
-测试不接真实 DB, mock + AST + 源码字符串检查。
-"""
 import inspect
 import json
 from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 
-
 # ============================================================
-# BUG-E7: extracts/asserts 默认值
 # ============================================================
 
 @pytest.mark.unit
@@ -42,9 +29,7 @@ def test_bug_e7_filter_none_in_asserts_and_extracts():
         f"[BUG-E7] 'asserts' 不应直接用 or [], 应改显式过滤 None 项"
     )
 
-
 # ============================================================
-# BUG-V3: ScriptManager._variables -> _script_locals 改名
 # ============================================================
 
 @pytest.mark.unit
@@ -61,12 +46,6 @@ def test_bug_v3_script_manager_renamed_variables():
     assert "self._script_locals" in src, (
         f"[BUG-V3] 新的 self._script_locals 必须有, 当前 src:\n{src[:300]}"
     )
-    # 注释里有 "跨 exec 累积" 之类说明
-    assert "BUG-V3" in src, (
-        f"[BUG-V3] ScriptManager 源码应含 BUG-V3 标记, 当前:\n{src[:300]}"
-    )
-
-
 @pytest.mark.unit
 def test_bug_v3_hub_variables_methods_use_script_locals():
     """[BUG-V3] _hub_variables_set/get/remove 必须用 _script_locals。"""
@@ -80,9 +59,7 @@ def test_bug_v3_hub_variables_methods_use_script_locals():
             f"[BUG-V3] {name} 不应再用 self._variables, 实际: {src}"
         )
 
-
 # ============================================================
-# BUG-S5: raw text body 模式
 # ============================================================
 
 @pytest.mark.unit
@@ -97,7 +74,7 @@ async def test_bug_s5_raw_text_with_str_body_not_dumped():
 
     body, ct = await RequestBuilder._prepare_raw_body(iface)
     assert ct == "text/plain"
-    # body 应该是 {"content": "hello {{user_name}}"} — 直接用, 不加引号
+    # body 应该是 {"content": "hello {{user_name}}"}, 不加引号
     assert body == {"content": "hello {{user_name}}"}, (
         f"[BUG-S5] raw text + str body 不应 json.dumps, 实际: {body!r}"
     )
@@ -106,7 +83,6 @@ async def test_bug_s5_raw_text_with_str_body_not_dumped():
     assert not (content_val.startswith('"') and content_val.endswith('"')), (
         f"[BUG-S5] str body 不应被 json.dumps 包引号, 实际: {content_val!r}"
     )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -124,7 +100,6 @@ async def test_bug_s5_raw_text_with_dict_body_still_dumped():
     assert body == {"content": '{"foo": "bar"}'}, (
         f"[BUG-S5] dict body 应 json.dumps, 实际: {body!r}"
     )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -145,7 +120,6 @@ async def test_bug_s5_raw_text_str_with_backslashes_not_double_escaped():
         f"[BUG-S5] 不应出现 \\\\\\\\, 实际: {body!r}"
     )
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_s5_json_raw_type_unchanged():
@@ -162,9 +136,7 @@ async def test_bug_s5_json_raw_type_unchanged():
         f"[BUG-S5] json raw_type 应走 KEY_JSON 返原 dict, 实际: {body!r}"
     )
 
-
 # ============================================================
-# BUG-S7: BLOCKED_DOWNSTREAM_HEADERS
 # ============================================================
 
 @pytest.mark.unit
@@ -180,7 +152,6 @@ def test_bug_s7_blocked_headers_constant_exists():
         assert h in blocked, (
             f"[BUG-S7] BLOCKED_DOWNSTREAM_HEADERS 必须含 {h!r}, 实际: {blocked}"
         )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -206,7 +177,6 @@ async def test_bug_s7_blocks_host_header_in_interface_headers():
     assert "User-Agent" in headers
     assert headers["User-Agent"] == "MyAgent"
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_s7_blocks_content_length():
@@ -226,7 +196,6 @@ async def test_bug_s7_blocks_content_length():
     assert "Content-Length" not in headers
     assert headers.get("X-Custom") == "ok"
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_s7_normal_headers_still_pass():
@@ -245,15 +214,12 @@ async def test_bug_s7_normal_headers_still_pass():
     assert headers["Authorization"] == "Bearer abc"
     assert headers["X-Request-Id"] == "12345"
 
-
 # ============================================================
-# BUG-D9: page_case_results / query_case_result 改 raise
 # ============================================================
 
 @pytest.mark.unit
 def test_bug_n2_page_case_results_removed_after_d9():
-    """[BUG-D9] 占位改 raise, [BUG-N2] 进一步删除 dead code。
-
+    """[
     历史: D9 把 page_case_results 从 `pass` 改成 raise NotImplementedError 防静默吞错。
     N2 进一步发现这两个方法 0 caller, 是真正的 dead code, 直接删了最干净。
     替代方案: 分页走 list_by_filter + 分页参数, 查单个走 get_by_id (D9 注释里给过指引)。
@@ -264,7 +230,6 @@ def test_bug_n2_page_case_results_removed_after_d9():
         "[BUG-N2] page_case_results 还在, 应该是 dead code 删了"
     )
 
-
 @pytest.mark.unit
 def test_bug_n2_query_case_result_removed_after_d9():
     """[BUG-D9 → BUG-N2] query_case_result dead code 已删 (理由同上)。"""
@@ -273,7 +238,6 @@ def test_bug_n2_query_case_result_removed_after_d9():
     assert not hasattr(InterfaceCaseResultMapper, "query_case_result"), (
         "[BUG-N2] query_case_result 还在, 应该是 dead code 删了"
     )
-
 
 @pytest.mark.unit
 def test_bug_n2_no_plain_pass_in_d9_methods():
@@ -284,5 +248,4 @@ def test_bug_n2_no_plain_pass_in_d9_methods():
         assert not hasattr(InterfaceCaseResultMapper, name), (
             f"[BUG-N2] {name} 应该被删 (N2 dead code 清理), 不应还在 mapper 上"
         )
-
 

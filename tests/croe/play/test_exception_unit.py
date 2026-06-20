@@ -1,12 +1,4 @@
-"""
-croe.play.exception 异常继承关系单测覆盖
-
-目标: 锁定异常的类层级,防止新增子类搞错基类导致 except 失效。
-- APIAssertException 必须继承 AssertionError (assert 协议兼容)
-- RetryException 必须继承 Exception 而非 PlayExecutionError (走"重试"特殊路径)
-- PlayExecutionError 是基础执行异常
-- ActionError / AssertionFailedError / VariableError 必须继承 PlayExecutionError
-"""
+"""croe.play.exception 异常类的继承层级测试。"""
 import pytest
 
 

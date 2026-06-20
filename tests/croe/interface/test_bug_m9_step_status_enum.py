@@ -1,7 +1,5 @@
-"""
-BUG-M9 回归测试: case step content 的 status 字段应走 StepStatusEnum,
-8 个 step_content 文件不应再写 status="SUCCESS"/"FAIL" 字面量。
-"""
+"""BUG-M9 回归测试: case step content 的 status 字段应走 StepStatusEnum,"""
+
 from enum import Enum
 from pathlib import Path
 
@@ -13,11 +11,9 @@ from tests.croe.interface._bug_ids import BUG_M9
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-
 @pytest.fixture
 def bug_m9_marker():
     return BUG_M9
-
 
 # --------------------------------------------------------------------------- #
 # M9.1 - 源码层: 0 处 status="SUCCESS"/"FAIL" 字面量
@@ -33,7 +29,6 @@ STEP_CONTENT_FILES = [
     "croe/interface/executor/step_content/step_content_wait.py",
 ]
 
-
 @pytest.mark.unit
 def test_bug_m9_step_status_enum_exists(bug_m9_marker):
     """[BUG-M9] enums.InterfaceEnum.StepStatusEnum 应是 enum.Enum 子类。"""
@@ -45,11 +40,9 @@ def test_bug_m9_step_status_enum_exists(bug_m9_marker):
     # 兼容历史 default='PENDING'
     assert StepStatusEnum.PENDING.value == "PENDING"
 
-
 @pytest.mark.unit
 def test_bug_m9_no_status_string_literal_in_step_content(bug_m9_marker):
-    """[BUG-M9] 8 个 step_content 文件不应再写 status="SUCCESS"/"FAIL" 字面量。
-
+    """[
     允许 StepStatusEnum.SUCCESS / .FAIL (枚举常量), 不允许直接字面量。
     """
     for rel in STEP_CONTENT_FILES:
@@ -62,7 +55,6 @@ def test_bug_m9_no_status_string_literal_in_step_content(bug_m9_marker):
                 f"[{BUG_M9}] {rel} 仍有字面量 {bad}, 应改用 StepStatusEnum.SUCCESS / .FAIL。"
             )
 
-
 @pytest.mark.unit
 def test_bug_m9_step_status_enum_imported_in_step_content(bug_m9_marker):
     """[BUG-M9] 8 个 step_content 文件应 import StepStatusEnum。"""
@@ -71,7 +63,6 @@ def test_bug_m9_step_status_enum_imported_in_step_content(bug_m9_marker):
         assert "StepStatusEnum" in src, (
             f"[{BUG_M9}] {rel} 没 import StepStatusEnum。"
         )
-
 
 # --------------------------------------------------------------------------- #
 # M9.2 / M9.3 - model 层: status 字段是 Enum(StepStatusEnum, ...)
@@ -99,7 +90,6 @@ def test_bug_m9_status_field_is_enum(bug_m9_marker):
         f"[{BUG_M9}] status 字段 length 应为 20, 实际 {col.type.length}。"
     )
 
-
 @pytest.mark.unit
 def test_bug_m9_status_default_is_pending_or_enum_member(bug_m9_marker):
     """[BUG-M9] status 字段 default 应是 StepStatusEnum 成员 (兼容 PENDING 历史值)。"""
@@ -113,7 +103,6 @@ def test_bug_m9_status_default_is_pending_or_enum_member(bug_m9_marker):
             f"[{BUG_M9}] status 字段 default 应是 StepStatusEnum 成员, 实际 {arg}。"
         )
 
-
 @pytest.mark.unit
 def test_bug_m9_status_only_accepts_enum_members(bug_m9_marker):
     """[BUG-M9] status 字段只接受 StepStatusEnum 已声明的成员, 写错字符串会报错。"""
@@ -124,5 +113,5 @@ def test_bug_m9_status_only_accepts_enum_members(bug_m9_marker):
     valid_values = {m.value for m in StepStatusEnum}
     assert "OK" not in valid_values, "StepStatusEnum 不应含 'OK', 老字面量错值应被拒"
     assert "DONE" not in valid_values
-    # 反向: SAEnum._valid_lookup 跟 StepStatusEnum 一致
+    # 反向: SAEnum._valid_lookup 走 StepStatusEnum
     assert col.type.length >= max(len(v) for v in valid_values)

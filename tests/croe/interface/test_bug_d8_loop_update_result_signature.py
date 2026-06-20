@@ -1,41 +1,15 @@
-"""
-[BUG-D8] APILoopContentStrategy._update_loop_result 漏收 step_context 参数
+"""[BUG-D8] APILoopContentStrategy._update_loop_result 漏收 step_context 参数"""
 
-根因: 函数体里直接 `await step_context.result_writer.update_step_result(...)`,
-但函数签名只有 (content_result, all_success, loop_count, success_count,
-fail_count, case_result, loop_items) — 没有 step_context。
-
-后果: 4 个调用点 (_execute_loop_times / _execute_loop_items /
-_execute_loop_items-empty / _execute_loop_condition) 全部传了
-content_result=content_result 但漏传 step_context,
-循环跑完一进入 _update_loop_result 就 NameError, 整 case 跑挂。
-
-生产 traceback:
-  File "step_content_loop.py", line 405, in _update_loop_result
-    await step_context.result_writer.update_step_result(...)
-NameError: name 'step_context' is not defined
-
-修复:
-  1. 函数签名加 step_context: CaseStepContext 作为第一个参数
-  2. 4 个调用点都加 step_context=step_context
-
-本测试 (3 个, 不接 DB):
-  1. AST 检查 _update_loop_result 签名包含 step_context
-  2. AST 检查 4 个调用点都传 step_context=step_context
-  3. 端到端 mock: 直接调 _update_loop_result 验证不再 NameError
-"""
 import ast
 import inspect
 import textwrap
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 
-
 def _parse_strategy_class():
     """从 source 解析 APILoopContentStrategy 类, 拿到方法定义列表"""
     from croe.interface.executor.step_content.step_content_loop import APILoopContentStrategy
     return APILoopContentStrategy
-
 
 def test_bug_d8_update_loop_result_signature_has_step_context():
     """核心回归: _update_loop_result 必须收 step_context 参数"""
@@ -47,7 +21,6 @@ def test_bug_d8_update_loop_result_signature_has_step_context():
         f"\n函数体内直接 await step_context.result_writer.update_step_result(...),"
         f"\n但调用方不传就 NameError 整 case 跑挂。"
     )
-
 
 def test_bug_d8_all_four_call_sites_pass_step_context():
     """
@@ -73,7 +46,6 @@ def test_bug_d8_all_four_call_sites_pass_step_context():
             f"[BUG-D8] 第 {i} 个 _update_loop_result 调用漏传 step_context=step_context\n"
             f"调用体:\n{textwrap.indent(body, '    ')}"
         )
-
 
 @pytest.mark.asyncio
 async def test_bug_d8_update_loop_result_actually_runs_without_nameerror():
@@ -106,7 +78,7 @@ async def test_bug_d8_update_loop_result_actually_runs_without_nameerror():
     mock_case_result.fail_num = 0
     mock_case_result.result = None
 
-    # 这条原本会 NameError, 现在应该正常走完
+    # 这条原本会 NameError, 修复后正常走完
     await strategy._update_loop_result(
         step_context=mock_step_context,
         content_result=mock_content_result,
@@ -128,5 +100,4 @@ async def test_bug_d8_update_loop_result_actually_runs_without_nameerror():
     assert call_kwargs["result"] is False
     # case_result 内存修改也对
     assert mock_case_result.fail_num == 1
-    # update_case_progress 也会被调 (BUG-D8 实际有两处 step_context 引用)
     mock_update_progress.assert_awaited_once_with(mock_case_result)

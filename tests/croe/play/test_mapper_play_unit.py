@@ -1,16 +1,8 @@
-"""
-app/mapper/play/* Mapper 单元测试覆盖
+"""app/mapper/play/* Mapper 单元测试覆盖"""
 
-目标: 验证 mapper 的核心方法 (静态源码 + 行为), 重点:
-- 业务方法签名存在 (query_case / init_case_result / set_result 等)
-- 业务方法调对的内部 API (Mapper 基类方法)
-- P-1-1 修复 (无 raise e) 仍被锁住
-- reload_content 仍是死代码 (无 caller)
-"""
 import inspect
 
 import pytest
-
 
 # --------------------------------------------------------------------------- #
 # playTaskMapper
@@ -52,7 +44,6 @@ class TestPlayTaskMapper:
         # 必有 taskId 参数 (无论大小写, 业务用驼峰 taskId)
         params = list(sig.parameters.keys())
         assert "taskId" in params, f"query_case 应有 taskId 参数, 实际 {params}"
-
 
 # --------------------------------------------------------------------------- #
 # playCaseMapper
@@ -113,7 +104,6 @@ class TestPlayCaseMapper:
         params = list(sig.parameters.keys())
         assert "case_id" in params
 
-
 # --------------------------------------------------------------------------- #
 # playResultMapper
 # --------------------------------------------------------------------------- #
@@ -158,7 +148,6 @@ class TestPlayResultMapper:
             f"playResultMapper.py 仍有 {len(matches)} 处 `raise e`, 应改 bare `raise`"
         )
 
-
 # --------------------------------------------------------------------------- #
 # playStepGroupMapper
 # --------------------------------------------------------------------------- #
@@ -176,7 +165,6 @@ class TestPlayStepGroupMapper:
         from app.mapper.play.playStepGroupMapper import PlayStepGroupMapper
         assert hasattr(PlayStepGroupMapper, "query_steps_by_group_id")
         assert inspect.iscoroutinefunction(PlayStepGroupMapper.query_steps_by_group_id.__func__)
-
 
 # --------------------------------------------------------------------------- #
 # playConditionMapper
@@ -203,7 +191,6 @@ class TestPlayConditionMapper:
         sig = inspect.signature(raw)
         assert "condition_id" in sig.parameters
 
-
 # --------------------------------------------------------------------------- #
 # playStepMapper
 # --------------------------------------------------------------------------- #
@@ -215,7 +202,6 @@ class TestPlayStepMapper:
         from app.mapper.play.playStepMapper import PlayStepV2Mapper
         from app.mapper import Mapper
         assert issubclass(PlayStepV2Mapper, Mapper)
-
 
 # --------------------------------------------------------------------------- #
 # playConfigMapper

@@ -120,7 +120,7 @@ class TestContentResultWriter:
 
     @pytest.mark.asyncio
     async def test_flush_log_inserted_count(self, caplog=None):
-        """flush 应 log 插入条数 (跟 mapper 返回值一致)。"""
+        """flush 应 log 插入条数。"""
         w = ContentResultWriter(play_case_result_id=1)
         cr = PlayStepContentResult(content_step=1)
         await w.add_content_result(step_index=1, content_result=cr)
@@ -145,7 +145,7 @@ class TestContentResultWriter:
         text = repr(w)
         # 应以 /> 收尾
         assert text.endswith(" />"), f"repr 应以 /> 收尾, 实际: {text!r}"
-        # 不应有 "> />" 双符号 (修前的 BUG)
+        # 不应有 "> />" 双符号
         assert "> />" not in text, f"repr 不应有 `> />` 双符号, 实际: {text!r}"
         # 应包含关键字段
         assert "42" in text

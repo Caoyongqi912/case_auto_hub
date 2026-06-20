@@ -1,15 +1,5 @@
-"""
-BUG-D4 回归测试:`bulk_insert_models` / `bulk_insert_results` 强制要求 session,
-杜绝隐式 commit 导致多张表批量操作不在同一事务。
+"""BUG-D4 回归测试:`bulk_insert_models` / `bulk_insert_results` 强制要求 session,"""
 
-修复要点:
-- `bulk_insert_models(session)` 和 `bulk_insert_results(session)` 都会在
-  session=None 时直接抛 ValueError,拒绝自开事务
-- writer 的 `_flush_cache` 改用 `InterfaceResultMapper.transaction()` 单一事务
-  包住两次 bulk,任一失败整体回滚
-
-详见 docs/review/run_interface_case_deep_review.md。
-"""
 import contextlib
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,11 +11,9 @@ from app.mapper.interfaceApi.interfaceResultMapper import (
 from croe.interface.writer.result_writer import ResultWriter
 from tests.croe.interface._bug_ids import BUG_D4
 
-
 @pytest.fixture
 def bug_d4_marker():
     return BUG_D4
-
 
 # ---- Mapper 侧: session=None 必须抛 ----
 
@@ -38,7 +26,6 @@ async def test_bug_d4_bulk_insert_models_rejects_none_session(bug_d4_marker):
         await InterfaceResultMapper.bulk_insert_models([fake_model])
     with pytest.raises(ValueError, match="external session"):
         await InterfaceResultMapper.bulk_insert_models([fake_model], session=None)
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -56,7 +43,6 @@ async def test_bug_d4_bulk_insert_results_rejects_none_session(bug_d4_marker):
         await InterfaceContentStepResultMapper.bulk_insert_results(
             [valid], session=None
         )
-
 
 # ---- Mapper 侧: 传了 session 就用传入的, 不自开事务 ----
 
@@ -83,7 +69,6 @@ async def test_bug_d4_bulk_insert_models_uses_passed_session_only(bug_d4_marker)
     fake_session.add_all.assert_called_once_with([fake_model])
     fake_session.flush.assert_awaited_once()
 
-
 # ---- Writer 侧: _flush_cache 用单事务, 失败整体回滚 ----
 
 @pytest.mark.unit
@@ -108,7 +93,6 @@ async def test_bug_d4_writer_flush_uses_single_transaction(bug_d4_marker):
     assert mock_tx.call_count == 1, (
         f"[{BUG_D4}] _flush_cache 应使用单事务, 实际 transaction() 被调 {mock_tx.call_count} 次"
     )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio

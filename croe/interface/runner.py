@@ -22,7 +22,7 @@ from croe.interface.executor.context import CaseStepContext, ExecutionContext
 from croe.interface.executor.interface_executor import InterfaceExecutor
 from croe.interface.executor.step_content import get_step_strategy
 from croe.a_manager import VariableManager
-from croe.interface.writer import ResultWriter  # BUG-D1:模块级单例已废弃,改用 self.result_writer
+from croe.interface.writer import ResultWriter
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.starter import APIStarter
 from croe.play.starter import UIStarter
@@ -33,11 +33,10 @@ from croe.interface.observability import (
 )
 from utils import log
 
-
 class InterfaceRunner:
     """接口执行入口类"""
 
-    __slots__ = ("starter", "variable_manager", "interface_executor", "result_writer")  # BUG-P1-2 修复: 删 global_headers 字段 (init_global_headers 只更新 executor.g_headers, self.global_headers 永为 stale 空 list)
+    __slots__ = ("starter", "variable_manager", "interface_executor", "result_writer")
 
     def __init__(
         self,
@@ -49,19 +48,10 @@ class InterfaceRunner:
 
         Args:
             starter: 启动器实例（UI或API）
-            variable_manager: 可选外部 VariableManager (BUG-T1 修复, 任务级共享
-                变量用)。None 时新建, 跟原来行为一致。
+            variable_manager: 可选外部 VariableManager。None 时新建。
         """
         self.starter = starter
-        # BUG-T1 修复: 接受外部 vm, 让 TaskRunner 共享 vm 跨 step;
-        # None 时新建, 不破坏现有调用方 (try_interface / try_group /
-        # run_interface_case 都走 None 路径)。
         self.variable_manager = variable_manager or VariableManager()
-        # BUG-P1-2 修复: 删 self.global_headers 实例字段, 只保留
-        # executor.g_headers 单一来源。self.global_headers 旧版永为
-        # stale 空 list (init_global_headers 只更新 executor.g_headers),
-        # 读 runner.global_headers 的代码拿到空 list 串号。
-        # 每个 runner 独立的 result_writer,避免并发时缓存互相污染 (BUG-D1)
         from croe.interface.writer import ResultWriter
         self.result_writer = ResultWriter()
         self.interface_executor = InterfaceExecutor(
@@ -76,8 +66,7 @@ class InterfaceRunner:
             env_id: int
     ) -> Dict[str, Any]:
         """
-        执行单个接口请求调试 (BUG-P1-4 修复: 加 try/finally 清理,
-        跟 run_interface_case / run_interface_by_task 风格对齐)。
+        执行单个接口请求调试
 
         Args:
             interface_id: 接口id
@@ -94,8 +83,6 @@ class InterfaceRunner:
                 interface=interface, env=env
             )
         finally:
-            # 跟 run_interface_case / run_interface_by_task 风格对齐
-            # (P1-4): UI 调试入口, 短跑, 但仍要释放 httpx 连接 (E1)
             try:
                 await self.interface_executor.aclose()
             except Exception:
@@ -107,8 +94,7 @@ class InterfaceRunner:
             env_id: int
     ) -> list:
         """
-        执行接口组 (BUG-P1-4 修复: 加 try/finally 清理,
-        跟 run_interface_case / run_interface_by_task 风格对齐)。
+        执行接口组
 
         Args:
             group_id: 组ID
@@ -133,7 +119,6 @@ class InterfaceRunner:
                 results.append(result)
             return results
         finally:
-            # 跟 run_interface_case / run_interface_by_task 风格对齐 (P1-4)
             try:
                 await self.interface_executor.aclose()
             except Exception:
@@ -170,10 +155,7 @@ class InterfaceRunner:
             await self.starter.send(
                 f"未通过{interface_case_id} 找到 相关业务流用例"
             )
-            # 不要直接 return await self.starter.over() —
-            # starter.over() 当前返回 None,task 模式调用方
-            # `success, _ = await runner.run_interface_case(...)` 会 TypeError。
-            # 显式返回 (False, None) 让调用方可以安全 unpack。
+            # 显式返回 (False, None) 让调用方可以安全 unpack
             await self.starter.over()
             return False, None
 
@@ -205,9 +187,7 @@ class InterfaceRunner:
             env=target_env,
             task_result=task_result
         )
-        # BUG-OBS-6 修复: 显式 log case_result_id, 不靠 trace_id 间接关联。
-        # trace_id 是跨多 case 时的 correlation, 但排查单 case 时直接 grep
-        # case_result_id 更直接 (trace_id 还要查 map 才知道是哪个 case)。
+        # 排查单 case 时 case_result_id 比 trace_id 更直接
         log.debug(
             f"[BUG-OBS-6] case_result 初始化完成: "
             f"case_id={interface_case_id} "
@@ -216,8 +196,7 @@ class InterfaceRunner:
         )
 
         try:
-            # BUG-F8 修复: 把 runner 自有 result_writer 注入上下文,
-            # 否则 step_content 仍走模块单例的 cache, 永远不被 flush
+            # 否则 step_content 走模块单例 cache, 永远不被 flush
             execution_context = ExecutionContext(
                 interface_case=interface_case,
                 env=target_env,
@@ -233,18 +212,17 @@ class InterfaceRunner:
                     f"{step_content} {'=' * 20}"
                 )
 
-                # enable 仅在调试模式下生效 任务执行默认开启
+                # enable 仅在调试模式下生效
                 if step_content.enable == 0 and not task_result:
                     await self.starter.send(
                         f"✍️✍️  EXECUTE_STEP {index} ： 调试禁用 跳过执行"
                     )
-                    # BUG-F6 修复: 用 round(index/total*100, 2) 替代整除截断,
-                    # 避免 total=4 index=3 仍算 75% 但用户读 int 字段看到 75.0 一致。
+            
                     case_result.progress = round(index / total_steps * 100, 2)
                     await self.result_writer.update_case_progress(case_result)
                     continue
 
-                # 执行步骤  
+                # 执行步骤
                 step_context = CaseStepContext(
                     index=index,
                     content=step_content,
@@ -261,16 +239,11 @@ class InterfaceRunner:
 
                 case_success = case_success and step_success
 
-                # BUG-F6 修复: 进度=已完成步数 / 总步数 * 100, 保留 2 位小数。
-                # 失败停在第 N 步时 progress 表示"跑到 N 步失败停了"的真实进度
-                # (F5 已修: 不再 force 100%)。
                 case_result.progress = round(index / total_steps * 100, 2)
 
                 # 用例执行失败 且 配置了错误停止
                 if not case_success and error_stop:
-                    # BUG-F5 修复: 不再 force 100%, 保留 (index*100)//total
-                    # 表示"跑到 N 步失败停了"的真实进度; finalize 用这个值写库。
-                    # 强制 100 会让前端误以为 case 跑完了。
+
                     await self.starter.send(
                         f"⏭️⏭️  SKIP_STEP {index} ： 遇到错误已停止 "
                         f"(progress={case_result.progress}%)"
@@ -285,9 +258,7 @@ class InterfaceRunner:
                 f"用例 {interface_case.case_title} 执行结束"
             )
             await self.starter.send(f"{'====' * 20}")
-            # 日志通过 finalize_case_result(logs=...) 写入 interface_log 列;
-            # 不要在这里给 case_result.interfaceLog (camelCase) 赋值 ——
-            # 那个名字不是列,只会在实例上挂一个不会被 flush 的野属性。
+            # 日志通过 finalize_case_result(logs=...) 写入 interface_log 列
             await self.result_writer.finalize_case_result(
                 case_result=case_result,
                 logs="".join(self.starter.logs)
@@ -303,9 +274,7 @@ class InterfaceRunner:
             # [OBS-2] 清掉 trace_id, 下次 case 重新设
             clear_trace_id()
             await self.variable_manager.clear()
-            # BUG-D1 修复:清空本 runner 的缓存,避免后续 runner 误用
             self.result_writer.clear_cache()
-            # BUG-E1 修复:释放 httpx 连接,避免长跑 / 多次执行时连接泄漏
             try:
                 await self.interface_executor.aclose()
             except Exception:
@@ -336,25 +305,15 @@ class InterfaceRunner:
         Returns:
             是否执行成功
         """
-        # BUG-RB2 修复: 跟另外 3 个入口 (try_interface / try_group / run_interface_case)
-        # 对齐, 调 init_global_headers 把全局 header 注入到 executor.g_headers。
-        # 旧版漏调, 任务执行时 g_headers 永远为 [], 用户配的全局 header (Authorization /
-        # X-Tenant-Id) 全部丢失, 业务流和任务模式行为不一致, 排查极难。
         await self.init_global_headers()
 
-        # BUG-T2 修复: 跟 run_interface_case 的 finally 清理风格对齐, 跑完整个
-        # task (含 retry) 后释放 httpx 连接 (E1) + 清空本 runner 的 variable (防
-        # 跨 interface 残留) + 清空 result_writer 缓存 (D1) + clear trace_id
-        # (OBS-2 跨并发 case 隔离)。修前 run_interface_by_task 整个函数没有
-        # try/finally, 一个 task 跑 N 个 interface 后 httpx 连接池不释放, 跨 task
-        # 累积泄漏; 失败时 vm/rw 缓存也残留, 下一个 task 串号。
+        # task 结束后释放 httpx 连接 + 清空 variable + 清空 result_writer 缓存 + clear trace_id
         try:
             for attempt in range(retry + 1):
                 result = await self.interface_executor.execute(
                     interface=interface,
                     env=env
                 )
-                # BUG-E6 修复: 第二个返回值 (success) 没了, 从 result['result'] 拿
                 success = result['result']
 
                 if success:
@@ -382,11 +341,7 @@ class InterfaceRunner:
 
             return False
         finally:
-            # 跟 run_interface_case 清理顺序对齐: aclose → rw clear → vm clear。
-            # 不调 starter.over() 是因为 _execute_api_steps 外层 finally 统一
-            # 调, 重复调会让前端收到 N+1 个 over 事件。
-            # 不调 clear_trace_id() 是因为本函数自己不设 trace_id (那是
-            # run_interface_case 的事), 清掉反而把外层设的 trace_id 误清。
+            # 清理顺序: aclose → rw clear → vm clear
             try:
                 await self.interface_executor.aclose()
             except Exception:
@@ -417,10 +372,6 @@ class InterfaceRunner:
                     f"{self.variable_manager.variables}"
                 )
         except Exception:
-            # BUG-F4 修复:原版用 log.error 不带 traceback,且不通知用户,
-            # 后续步骤继续用空变量跑,断言静默失败。
-            # 改为 log.exception 保留 traceback + starter.send 通知用户,
-            # 但不向外抛(让调用方可以选择继续或中止)。
             log.exception(f"初始化业务流用例变量失败 (case_id={interface_case_id})")
             try:
                 await self.starter.send(
@@ -428,7 +379,7 @@ class InterfaceRunner:
                     f"(case_id={interface_case_id})"
                 )
             except Exception:
-                # starter.send 自己挂了就别再吞,直接放过
+                # starter.send 自身异常直接放过
                 pass
 
     async def init_global_headers(self) -> List[InterfaceGlobalHeader]:
@@ -446,8 +397,6 @@ class InterfaceRunner:
         await self.starter.send(
             f"🫳🫳 全局Headers已加载: {len(global_headers)} 条"
         )
-        # 真正生效:注入到 executor.g_headers
-        # (旧版读 self.global_headers 实例字段做日志,恒为 0,造成显示与实际不一致)
         self.interface_executor.g_headers = list(global_headers)
         return global_headers
 

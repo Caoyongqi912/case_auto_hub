@@ -1,13 +1,5 @@
-"""
-step_content_condition.py 单测覆盖率补充 (目标 19% → 80%+)。
+"""step_content_condition.py 单测覆盖率补充 (目标 19% → 80%+)。"""
 
-测 APIConditionContentStrategy.execute 的 5 条主路径:
-1. condition 不存在: return False
-2. condition 通过, 无子 API: success_num +1, return True
-3. condition 通过, 子 API 全成功: success_num +1, return True
-4. condition 通过, 子 API 第 N 个失败: fail_num +1, return False
-5. condition 不通过: 跳过子步骤, success_num +1, return True
-"""
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -291,5 +283,4 @@ async def test_condition_step_task_result_id_passed(strategy):
         await strategy.execute(ctx)
     call_kwargs = ctx.result_writer.write_step_result.call_args.kwargs
     assert call_kwargs["task_result_id"] == 999
-    # assert_data 写入 (BUG-E11)
     assert call_kwargs["assert_data"] == {"key": "k", "value": "v", "operator": "eq"}

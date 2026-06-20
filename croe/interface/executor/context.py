@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     )
     from app.model.base import EnvModel
 
-
 @dataclass
 class ExecutionContext:
     """执行上下文"""
@@ -31,12 +30,9 @@ class ExecutionContext:
     interface_case: "InterfaceCase"
     env: "EnvModel"
     case_result: "InterfaceCaseResult"
-    # BUG-F8 修复: result_writer 注入上下文, 替代模块级单例
-    # (BUG-D1 修复不闭环: 8 个 step_content_*.py 仍用模块单例,
     # 导致 STEP_API content_result_cache 永远不被 flush, 案例拿不到数据)
     result_writer: "ResultWriter"
     task_result: Optional["InterfaceTaskResult"] = None
-
 
 @dataclass
 class CaseStepContext:

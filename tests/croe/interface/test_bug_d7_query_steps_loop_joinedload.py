@@ -1,39 +1,18 @@
-"""
-[BUG-D7] query_steps_result joinedload 漏 LoopStepContentResult.interface_results
+"""[BUG-D7] query_steps_result joinedload 漏 LoopStepContentResult.interface_results"""
 
-根因: M6-hotfix 修 detached instance 时, 给 query_steps_result 加了
-with_polymorphic + 3 个 joinedload (APIStepContentResult.interface_result,
-GroupStepContentResult.interface_results, ConditionStepContentResult.interface_results)
-但漏了 LoopStepContentResult.interface_results。
-
-后果: 前端 GET /api/interfaceResult/queryStepResult?case_result_id=X
-拿到循环步骤时, to_dict() 里 self.interface_results 触发 lazy-load,
-session 已关 → 静默返回空 list → data: [] (用户看到的现象)
-
-修复: 在 query_steps_result 的 joinedload 列表里补上
-joinedload(poly.LoopStepContentResult.interface_results)
-
-本测试不接真实 DB, 用 AST + 源码字符串检查锁住:
-1. query_steps_result 源码必须显式 joinedload Loop 的 relationship
-2. 列出所有"应被 joinedload 的 parent subtype relationship"以防再次漏
-3. LoopStepContentResult 本身必须有 interface_results relationship 配对
-"""
 import ast
 import inspect
 import re
 import pytest
 
-
 def _get_query_steps_result_src() -> str:
     from app.mapper.interfaceApi.interfaceResultMapper import InterfaceContentStepResultMapper
     return inspect.getsource(InterfaceContentStepResultMapper.query_steps_result)
-
 
 def _extract_joinedload_lines(src: str):
     """提取所有 joinedload(poly.X.Y) 子句里的 'X.Y' 标识"""
     pattern = re.compile(r"joinedload\(\s*poly\.(\w+)\.(\w+)\s*\)")
     return pattern.findall(src)
-
 
 def test_bug_d7_loop_joinedload_present_in_query():
     """
@@ -48,7 +27,6 @@ def test_bug_d7_loop_joinedload_present_in_query():
         f"\n→ 加上: joinedload(poly.LoopStepContentResult.interface_results),"
         f"\n  否则循环步骤的 to_dict() 拿不到 interface_results, data 永远是 []"
     )
-
 
 def test_bug_d7_all_parent_subtype_relationships_joinedload():
     """
@@ -106,7 +84,6 @@ def test_bug_d7_all_parent_subtype_relationships_joinedload():
             f"\n所有 parent subtype relationship: {expected}"
             f"\n当前 joinedload 列表: {joinedloads}"
         )
-
 
 def test_bug_d7_loop_model_has_interface_results_relationship():
     """

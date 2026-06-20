@@ -100,7 +100,7 @@ class InterfaceExecutor:
         Returns:
             Dict[str, Any]: 结果字典, 字段与 InterfaceResult 模型对齐,
             其中 'result' 字段 (bool) 表示执行是否成功。
-            调用方请用 result['result'] 代替旧的 success 返回值 (BUG-E6 修复)。
+            调用方请用 result['result'] 代替旧的 success 返回值 。
         """
         # 创建执行上下文
         ctx: ExecutionContext = ExecutionContext(
@@ -269,9 +269,6 @@ class InterfaceExecutor:
             return []
 
         # 变量替换 SQL 语句
-        # BUG-E5 修复: 显式处理 None + 提取常量, 避免在 ORM 字段上
-        # 直接调 .strip() 读起来像在修改字段; 上面的 if 已经过滤掉
-        # None/空, 这里 sql_text 一定非空, 防御性 `or ""` 多一层保险。
         sql_text = interface.interface_before_sql or ""
         db_script = await self.variable_manager.trans(sql_text.strip())
         log.info(f"执行前sql处理: {db_script}")
@@ -388,7 +385,7 @@ class InterfaceExecutor:
 
     def _build_result(self, ctx: ExecutionContext) -> Dict[str, Any]:
         """
-        构建接口执行结果 (BUG-E6 修复: 不再返回 Tuple, 改返 Dict,
+        构建接口执行结果
         调用方用 result['result'] 拿成功标志, 避免 dict 和 bool 两路来源歧义)。
 
         构建结果与 InterfaceResult 模型字段对齐
@@ -414,9 +411,6 @@ class InterfaceExecutor:
             'request_json': json.dumps(ctx.request_info.get('json')) if ctx.request_info.get('json') else None,
             'request_data': json.dumps(ctx.request_info.get('data')) if ctx.request_info.get('data') else None,
             'request_headers': ctx.request_info.get('headers') or None,
-            # BUG-E7 修复: 显式 list() 包一层 + 过滤 None 项。
-            # 旧版用 `or []` 只挡 None 不挡 [None] 等, 子策略可能传
-            # asserts=[None] 进来, 存到 DB 后 JSON 序列化失败。
             'extracts': [v for v in (ctx.extracted_vars or []) if v is not None],
             'asserts': [a for a in (ctx.asserts or []) if a is not None],
         }
@@ -439,8 +433,6 @@ class InterfaceExecutor:
             ctx.success = False
         # 正常响应处理
         elif isinstance(ctx.response, httpx.Response):
-            # BUG-P1-1 修复: 改用 InterfaceResponseStatusCodeEnum.SUCCESS (== "200"),
-            # 跟同文件 363 行的提取前判断风格一致, 避免魔法数字散落。
             is_success = ctx.response.status_code == InterfaceResponseStatusCodeEnum.SUCCESS
             result.update({
                 'response_status': ctx.response.status_code,
@@ -483,7 +475,7 @@ class InterfaceExecutor:
 
     async def aclose(self) -> None:
         """
-        释放底层 httpx 客户端连接 (BUG-E1 修复)。
+        释放底层 httpx 客户端连接 。
         应在每个 InterfaceRunner run_interface_case 的 finally 中调用,
         否则多次执行 / 并发会泄漏 httpx 连接。
         """

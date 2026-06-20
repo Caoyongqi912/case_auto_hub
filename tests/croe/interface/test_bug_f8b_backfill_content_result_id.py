@@ -1,19 +1,5 @@
-"""
-BUG-F8-followup 回归测试:finalize_case_result 末尾必须回填
-`interface_result.content_result_id` 反向 FK。
+"""BUG-F8-followup 回归测试:finalize_case_result 末尾必须回填"""
 
-直接证据 (F8 修复后暴露):
-- step_content_api.py: `write_interface_result(immediate=True)` 先入库, 当时
-  content_result_id 还是 NULL (cache 里的 content_result 还没 id)
-- finalize flush 完 cache 后, 正向关系 (子表 api) 已落盘, 但
-  interface_result.content_result_id 仍是 NULL
-- 业务影响: 详情页/详情查询拿不到反向关联
-
-本测试锁住:
-1. InterfaceResultMapper 有 backfill_content_result_id_fk 方法
-2. finalize_case_result 末尾调用 backfill
-3. 端到端: 跑一个真实 case, 验 interface_result.content_result_id 非 NULL
-"""
 import os
 import asyncio
 import inspect
@@ -24,14 +10,11 @@ from sqlalchemy import text
 
 from tests.croe.interface._bug_ids import BUG_F8B
 
-
 @pytest.fixture
 def bug_f8b_marker():
     return BUG_F8B
 
-
 REPO = Path(__file__).resolve().parents[3]
-
 
 # ---------- 1. mapper 暴露 backfill_content_result_id_fk ----------
 
@@ -45,7 +28,6 @@ def test_bug_f8b_mapper_has_backfill_method(bug_f8b_marker):
     assert "case_result_id" in sig.parameters, (
         f"[{BUG_F8B}] backfill 必须接 case_result_id 参数"
     )
-
 
 # ---------- 2. finalize_case_result 源码里调 backfill ----------
 
@@ -68,7 +50,6 @@ def test_bug_f8b_finalize_invokes_backfill(bug_f8b_marker):
         f"[{BUG_F8B}] backfill 调用顺序错: 必须在 _flush_cache() 之后"
     )
 
-
 # ---------- 3. UPDATE SQL 走正向关系 (子表 api) ----------
 
 def test_bug_f8b_backfill_sql_uses_forward_link(bug_f8b_marker):
@@ -90,16 +71,13 @@ def test_bug_f8b_backfill_sql_uses_forward_link(bug_f8b_marker):
         f"[{BUG_F8B}] backfill SQL 没加 NULL 守卫, 会反复 UPDATE 已回填的行"
     )
 
-
 # ---------- 4. 端到端: 跑一个真实 case 验反向 FK 被回填 ----------
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_bug_f8b_e2e_backfill_after_real_case_run(bug_f8b_marker):
     """
-    [BUG-F8B] 跑一个真实 case (用 case 3 'Case2(副本)'), 验
-    interface_result.content_result_id 已被回填, 不再是 NULL。
-    """
+    [    """
     if os.environ.get("SKIP_E2E"):
         pytest.skip("SKIP_E2E set")
 

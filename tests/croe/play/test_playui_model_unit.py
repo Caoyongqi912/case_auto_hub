@@ -1,10 +1,5 @@
-"""
-app/model/playUI/* 模型层单元测试覆盖
+"""app/model/playUI/* 模型层单元测试覆盖"""
 
-目标: 验证 SQLAlchemy 模型定义 + 字段类型 + P-1-2 修复 (ui_case_id property) +
-P-1-3 修复 (rate_number Float) + 计算属性 (PlayCase.desc, PlayTask.desc) +
-notify dict (PlayTaskResult.notify) + __repr__ 字符串。
-"""
 import datetime
 
 import pytest
@@ -16,7 +11,6 @@ from app.model.playUI import (
 from app.model.playUI.playAssociation import PlayCaseStepContentAssociation
 from app.model.playUI.playStepContent import PlayStepContent
 from app.model.playUI.PlayResult import PlayStepContentResult
-
 
 # --------------------------------------------------------------------------- #
 # PlayCase
@@ -62,7 +56,6 @@ class TestPlayCase:
         text = str(pc)
         assert "登录" in text
         assert "用户登录" in text
-
 
 # --------------------------------------------------------------------------- #
 # PlayCaseResult (P-1-2 修复重点)
@@ -116,7 +109,6 @@ class TestPlayCaseResult:
         assert "ui_case_err_step_msg" in cols
         assert "ui_case_err_step_pic_path" in cols
 
-
 # --------------------------------------------------------------------------- #
 # PlayTask
 # --------------------------------------------------------------------------- #
@@ -145,7 +137,6 @@ class TestPlayTask:
         """desc property 跟 PlayCase.desc 行为一致。"""
         pt = PlayTask(title="t", description="x" * 30, level="P1", module_id=1)
         assert pt.desc == "x" * 10 + "..."
-
 
 # --------------------------------------------------------------------------- #
 # PlayTaskResult (P-1-3 修复重点)
@@ -223,7 +214,6 @@ class TestPlayTaskResult:
         assert "登录任务" in text or "10" in text
         assert "DONE" in text
 
-
 # --------------------------------------------------------------------------- #
 # PlayCaseVariables
 # --------------------------------------------------------------------------- #
@@ -252,7 +242,6 @@ class TestPlayCaseVariables:
         assert "token" in text
         assert "abc" in text
         assert "10" in text
-
 
 # --------------------------------------------------------------------------- #
 # PlayStepContentResult

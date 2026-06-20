@@ -15,7 +15,6 @@ from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
-# BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums import (
     InterfaceAPIResultEnum,
@@ -138,7 +137,6 @@ class APILoopContentStrategy(StepBaseStrategy):
             interface=interface,
             env=step_context.execution_context.env
         )
-        # BUG-E6 修复: 第二个返回值 (success) 没了, 从 interface_result['result'] 拿
         success = interface_result['result']
 
         try:
@@ -399,7 +397,7 @@ class APILoopContentStrategy(StepBaseStrategy):
         更新循环步骤结果并更新用例执行结果
 
         Args:
-            step_context: 步骤执行上下文 (BUG-D8 修复: 原本漏传, 内部直接用 step_context 触发 NameError)
+            step_context: 步骤执行上下文
             content_result: 循环步骤结果对象
             all_success: 是否全部成功
             loop_count: 循环总次数

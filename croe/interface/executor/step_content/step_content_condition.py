@@ -12,7 +12,6 @@ from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 from croe.a_manager import ConditionManager
-# BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums import InterfaceAPIResultEnum, StepStatusEnum
 from enums.CaseEnum import CaseStepContentType
@@ -70,10 +69,6 @@ class APIConditionContentStrategy(StepBaseStrategy):
             condition_key=content_condition.get("key"),
             condition_value=content_condition.get("value"),
             condition_operator=content_condition.get("operator"),
-            # BUG-E11 修复: 模型有 assert_data JSON 列, 但写库漏了。
-            # 原 condition_manager 算出的 assert_data 含 key/value/operator/
-            # condition_result 完整字典, 拆列存了部分, 整体丢了, 不利于调试。
-            # 一并存原始 dict 进去, 前端 / 排查都能拿到完整信息。
             assert_data=content_condition,
         )
 
@@ -109,7 +104,6 @@ class APIConditionContentStrategy(StepBaseStrategy):
                     interface=interface,
                     env=step_context.execution_context.env,
                 )
-                # BUG-E6 修复: 第二个返回值 (success) 没了, 从 interface_result['result'] 拿
                 success = interface_result['result']
 
                 await step_context.result_writer.write_interface_result(

@@ -55,12 +55,6 @@ class StepBaseStrategy(ABC):
             content_result=content_result
         )
 
-        # BUG-P-R5 修复: 之前 `if not result.success and not ignore` —
-        # ignore=True 时失败信息 (msg/screenshot) 全部丢失, 排查
-        # ignored 步骤为什么失败无线索。修: 失败就写错误信息到
-        # case_result (不管 ignore), 但 ignore 步骤不会让 case 失败
-        # (在 step_strategy 里 success=True 返给 runner)。这样
-        # 前端 / 测试可以查到 ignored 步骤的失败信息, 排查快。
         if not result.success:
             await step_context.play_case_result_writer.set_error_step_info(content_result)
 

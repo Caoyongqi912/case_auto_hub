@@ -1,10 +1,5 @@
-"""
-BUG-E10 回归测试: step_content_db 异常应被 try/except 兜住, 跟 step_content_script 一致。
+"""BUG-E10 回归测试: step_content_db 异常应被 try/except 兜住, 跟 step_content_script 一致。"""
 
-E10 之前 db_script.invoke 裸调, 数据库连不上 / SQL 语法错 / 驱动异常会
-让整个 step 抛上来, 打断 case 循环。 修: try/except + success=False +
-starter.send 错误消息 + WARNING 留痕, step 失败但不让 case 中断。
-"""
 import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,15 +12,12 @@ from tests.croe.interface._bug_ids import BUG_E10
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-
 def _db_src() -> str:
     return (REPO_ROOT / "croe/interface/executor/step_content/step_content_db.py").read_text(encoding="utf-8")
-
 
 @pytest.fixture
 def bug_e10_marker():
     return BUG_E10
-
 
 # --------------------------------------------------------------------------- #
 # E10.1 - 源码层: try/except 应存在
@@ -46,7 +38,6 @@ def test_bug_e10_try_except_in_db_strategy(bug_e10_marker):
     assert try_idx < invoke_idx < except_idx, (
         f"[{BUG_E10}] try/except 顺序不对, 应 try 在 invoke 前, except 在 invoke 后。"
     )
-
 
 # --------------------------------------------------------------------------- #
 # E10.2 / E10.3 - 行为层: 异常被兜住, success=False, 仍写 result
@@ -73,7 +64,6 @@ def _build_ctx(content_id=1, db_id=1, sql_text="SELECT 1", sql_extracts=None):
     ctx.result_writer = MagicMock()
     ctx.result_writer.update_case_progress = AsyncMock()
     return ctx
-
 
 @pytest.mark.asyncio
 @pytest.mark.unit
@@ -103,7 +93,6 @@ async def test_bug_e10_db_invoke_exception_does_not_propagate(bug_e10_marker):
                 strategy = APIDBContentStrategy(MagicMock())
                 # 关键: step execute 不应抛
                 ret = await strategy.execute(ctx)
-                # 修: 应返回 False (success=False), 不再是返回 True
                 assert ret is False, (
                     f"[{BUG_E10}] 异常时 step 应返回 False (success=False), 实际 {ret}"
                 )
@@ -112,7 +101,6 @@ async def test_bug_e10_db_invoke_exception_does_not_propagate(bug_e10_marker):
                 call_kwargs = mock_insert.call_args.kwargs
                 assert call_kwargs["result"] is False, "result=False 应写入"
                 assert call_kwargs["status"] == StepStatusEnum.FAIL, "status='FAIL' 应写入"
-
 
 @pytest.mark.asyncio
 @pytest.mark.unit

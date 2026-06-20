@@ -1,10 +1,4 @@
-"""
-croe.play.starter.UIStarter 单测覆盖
-
-目标: 锁定 UIStarter 的 event / ns 常量 + send 行为。
-- UIStarter 继承 SocketSender,使用固定 event="ui_message",ns="/ui_namespace"
-- send 内部 catch 异常 (不抛) + 添加 timestamp 前缀 + 🤖 🤖 emoji
-"""
+"""UIStarter 的 event/ns 常量 + send/over/clear_logs 行为测试。"""
 import pytest
 from unittest.mock import AsyncMock, patch
 

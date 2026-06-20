@@ -20,14 +20,9 @@ from functools import lru_cache
 from faker import Faker
 from utils import log, GenerateTools
 
-
-
-
-
-
 # ==================== 安全配置 ====================
 MAX_SCRIPT_LENGTH = 10000  # 最大脚本长度
-SCRIPT_TIMEOUT = 5  # 脚本执行超时时间（秒）— 必须有真超时机制,否则死循环会阻塞 worker (BUG-S3)
+SCRIPT_TIMEOUT = 5
 
 # 允许的 AST 节点类型
 ALLOWED_NODE_TYPES = {
@@ -44,12 +39,10 @@ ALLOWED_NODE_TYPES = {
     ast.Return, ast.Assign, ast.AugAssign,
     ast.AnnAssign, ast.Subscript, ast.Attribute,
     ast.Call, ast.keyword,
-    # BUG-S2: 禁止 import 节点,杜绝通过 __import__('os') / from os import system 逃逸
     ast.Starred, ast.ListComp, ast.DictComp, ast.SetComp, ast.GeneratorExp,
 }
 
 # 不允许的属性访问 / 函数调用名
-# getattr/setattr 单看像无害内置,但配合 "__class__" 等字符串就成沙箱逃逸 (BUG-S1)
 DISALLOWED_ATTRS = {
     '__import__', '__globals__', '__locals__', '__builtins__',
     '__class__', '__bases__', '__subclasses__', '__mro__',
@@ -81,11 +74,9 @@ SAFE_BUILTINS = {
 # 允许的变量类型
 ALLOWED_TYPES = (int, float, str, bool, list, dict, tuple, set, type(None))
 
-
 class ScriptSecurityError(Exception):
     """脚本安全异常"""
     pass
-
 
 def _exec_in_subprocess(script_content: str, exec_globals: Dict[str, Any], q) -> None:
     """
@@ -102,7 +93,6 @@ def _exec_in_subprocess(script_content: str, exec_globals: Dict[str, Any], q) ->
             q.put(("err", e))
         except Exception:
             pass
-
 
 def _validate_ast(node: ast.AST) -> None:
     """
@@ -128,7 +118,6 @@ def _validate_ast(node: ast.AST) -> None:
 
         # 检查属性访问
         if isinstance(child, ast.Attribute):
-            # 任意双下划线属性都拒绝,防 dunder 链逃逸 (BUG-S1)
             if child.attr in DISALLOWED_ATTRS or child.attr.startswith("__"):
                 raise ScriptSecurityError(f"不允许的属性访问: {child.attr}")
 
@@ -142,11 +131,9 @@ def _validate_ast(node: ast.AST) -> None:
                 if child.func.attr in DISALLOWED_ATTRS:
                     raise ScriptSecurityError(f"不允许的链式调用: {child.func.attr}")
 
-
 def _check_ssrf(url: str) -> None:
     """
-    [BUG-S4] SSRF 防御: 校验 URL scheme + 解析 host 后 IP 黑名单。
-
+    [
     抛出 ValueError 走原有的 try/except, 调用方收到 None, 跟 "请求失败" 不可区分,
     攻击者通过观察响应时间 / 行为差分也无意义 (都是 None)。
 
@@ -190,11 +177,9 @@ def _check_ssrf(url: str) -> None:
                 f"hub_request 拒绝访问内网/loopback/link-local IP: {ip} (host={parsed.hostname!r})"
             )
 
-
 def _is_blocked_ip(ip) -> bool:
     """
-    [BUG-S4] 内网/loopback/link-local IP 黑名单。
-
+    [
     覆盖: 127.0.0.0/8 (loopback), 10.0.0.0/8 (private), 172.16.0.0/12 (private),
           192.168.0.0/16 (private), 169.254.0.0/16 (link-local + 云元数据),
           0.0.0.0/8, IPv6 ::1/128, fc00::/7 (IPv6 private), fe80::/10 (IPv6 link-local)
@@ -218,7 +203,6 @@ def _is_blocked_ip(ip) -> bool:
         or ip.is_unspecified
     )
 
-
 class ScriptManager:
     """
     脚本管理器
@@ -227,11 +211,7 @@ class ScriptManager:
     SCRIPT_TIMEOUT: int = SCRIPT_TIMEOUT  # 暴露给测试,便于断言
 
     def __init__(self):
-        # BUG-V3 修复: 重命名 _variables -> _script_locals, 注释清楚
-        # 语义: 单 ScriptManager 实例跨多次 exec 调用的 *本地上下文*, 跨
-        # 实例不共享。当前 interface_executor 每次都 ScriptManager() 新建,
-        # 不会跨 case 泄漏, 但万一以后加缓存 / 复用就立刻踩坑。改名 + 注释
-        # 让"故意累积"vs"应该新建"的语义边界清晰。
+        # 单实例内的本地上下文, 跨实例不共享
         self._script_locals: Dict[str, Any] = {}
         self._faker = Faker(locale="zh_CN")
 
@@ -252,13 +232,13 @@ class ScriptManager:
     def execute(self, script_content: str) -> Dict[str, Any]:
         """
         执行脚本
-        
+
         Args:
             script_content: 脚本内容
-            
+
         Returns:
             Dict[str, Any]: 执行结果变量
-            
+
         Raises:
             ScriptSecurityError: 脚本安全检查失败
             SyntaxError: 脚本语法错误
@@ -278,11 +258,7 @@ class ScriptManager:
         # 3. 安全验证 AST
         _validate_ast(tree)
 
-        # 4. 在子进程跑脚本,真超时 (BUG-S3)
-        # 用 multiprocessing.Process 隔离:
-        # - 即使脚本里写死循环 / 阻塞 syscall,主进程能在 SCRIPT_TIMEOUT
-        #   秒后用 proc.terminate()/kill() 强杀
-        # - 比 signal.alarm 更稳,signal 在某些环境(子线程/Windows)不可靠
+        # 用 multiprocessing 隔离执行, 子进程最多 SCRIPT_TIMEOUT 秒
         exec_globals = {**SAFE_BUILTINS, **self._allowed_functions}
         ctx = multiprocessing.get_context("spawn")  # macOS/Linux/Windows 行为一致
         q = ctx.Queue()
@@ -323,10 +299,7 @@ class ScriptManager:
 
     def _collect_results(self, local_vars: Dict[str, Any]) -> Dict[str, Any]:
         """收集执行结果 - 收集 local_vars 和 self._script_locals 中的变量。
-
-        BUG-V3 修复: 用 _script_locals (改名后的本地上下文), 注释清楚
-        跨 exec 累积是 *故意* 的, 因为是同一脚本里不同阶段共享变量。
-        """
+"""
         results: Dict[str, Any] = {}
 
         # 收集 local_vars 中的变量
@@ -334,7 +307,6 @@ class ScriptManager:
             if not name.startswith('_') and isinstance(value, ALLOWED_TYPES):
                 results[name] = value
                 self._script_locals[name] = value
-
 
         # 收集 self._script_locals 中的变量 (本地上下文跨 exec 累积)
         for name, value in self._script_locals.items():
@@ -359,26 +331,13 @@ class ScriptManager:
     @staticmethod
     def _hub_api_request(url: str, method: str = "GET", **kwargs) -> Any:
         """
-        发送 HTTP 请求 (BUG-V4 修复:改 httpx.AsyncClient,不再独占同步栈)。
+        发送 HTTP 请求 。
 
         子进程里没有现成 event loop,直接 asyncio.run 即可;主进程若将来
         在 async 上下文里调,需要再换成直接 await(本入口设计上仍是同步)。
-
-        BUG-S4 修复: 加 SSRF 防御。
-        背景: _hub_api_request 在沙箱里以 hub_request 名义暴露给用户脚本, 攻击者
-              可写 hub_request("http://169.254.169.254/latest/meta-data/")
-              偷云元数据凭证, 或 hub_request("file:///etc/passwd") 读本地文件,
-              或打内网服务 (localhost / 192.168.x.x / 10.x.x.x)。
-        防御:
-          1. Scheme 白名单: 只允许 http/https, 其它 (file/gopher/ftp/dict/ldap) 直接拒
-          2. DNS 解析后 IP 黑名单: 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12,
-             192.168.0.0/16, 169.254.0.0/16 (含云元数据), IPv6 loopback/private/link-local
-          3. 环境变量逃生口: HUB_REQUEST_ALLOW_PRIVATE=1 显式开 (内部测试需要打内网时)
-        """
+"""
         import asyncio
 
-        # BUG-S4 修复: SSRF 防御在请求发出前, ValueError 跟网络失败一起被外层
-        # try/except 兜住返回 None, 调用方不可区分 (防 SSRF 行为差分泄露)
         try:
             _check_ssrf(url)
         except ValueError as e:
@@ -397,7 +356,6 @@ class ScriptManager:
         try:
             return asyncio.run(_do_request())
         except Exception as e:  # noqa: BLE001 - 调用方按 None 处理
-            # 用 exception 而不是 error,把 traceback 落盘便于排查
             log.exception(f"hub_request error: {e}")
             return None
 
@@ -406,10 +364,10 @@ class ScriptManager:
     def _ts(t: Optional[str] = None) -> Optional[int]:
         """
         返回对应时间戳
-        
+
         Args:
             t: 时间偏移，如 "+1s"、"-2m"、"+3h"
-            
+
         Returns:
             时间戳（秒）
         """
@@ -450,11 +408,11 @@ class ScriptManager:
     def _date(t: Optional[str] = None, ft: str = "%Y-%m-%d") -> Optional[str]:
         """
         获取当前日期
-        
+
         Args:
             t: 日期偏移，如 "+1d"、"-2m"、"+3y"
             ft: 日期格式，默认 "%Y-%m-%d"
-            
+
         Returns:
             格式化的日期字符串
         """
@@ -481,14 +439,14 @@ class ScriptManager:
             ts = int(value_str)
             delta = delta_map[unit](ts)
             base_date = datetime.today()
-            
+
             if op == "+":
                 result = base_date + delta
             elif op == "-":
                 result = base_date - delta
             else:
                 return None
-                
+
             return result.strftime(ft)
         except Exception:
             return None
@@ -504,6 +462,5 @@ class ScriptManager:
         if not values:
             return None
         return random.choice(values)
-
 
 __all__ = ["ScriptManager", "ScriptSecurityError"]

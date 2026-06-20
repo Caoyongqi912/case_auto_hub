@@ -1,16 +1,11 @@
-"""
-play_runner.py 单元测试覆盖
+"""play_runner.py 单元测试覆盖"""
 
-目标: PlayRunner 的核心方法 (run_case, execute_case, init_case_variables,
-_clean, _init_page) 全部用 mock 覆盖, 不打 DB 不弹浏览器。
-"""
 import inspect
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from croe.play.play_runner import PlayRunner
-
 
 # --------------------------------------------------------------------------- #
 # PlayRunner 基础
@@ -26,7 +21,6 @@ class TestPlayRunnerInit:
         assert r.starter is starter
         assert r.variable_manager is not None
         assert r.browser is None
-
 
 # --------------------------------------------------------------------------- #
 # PlayRunner._init_page
@@ -58,7 +52,6 @@ class TestInitPage:
             mock_pm.set_page.assert_called_once()
             # result 是 PageManager 实例
             assert result is mock_pm
-
 
 # --------------------------------------------------------------------------- #
 # PlayRunner._clean
@@ -96,7 +89,6 @@ class TestClean:
         r.browser = mock_browser
         await r._clean(page_manager=None)
         mock_browser.close_all.assert_called_once()
-
 
 # --------------------------------------------------------------------------- #
 # PlayRunner.init_case_variables
@@ -157,7 +149,6 @@ class TestInitCaseVariables:
             await r.init_case_variables(play_case=play_case)
             # starter.send 应被调告知 WARNING
             assert any("⚠️" in str(call) for call in starter.send.call_args_list)
-
 
 # --------------------------------------------------------------------------- #
 # PlayRunner.run_case

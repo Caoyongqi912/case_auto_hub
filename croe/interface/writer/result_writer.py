@@ -26,15 +26,13 @@ from app.model.interfaceAPIModel.interfaceResultModel import (
 )
 from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
 from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
-from enums import InterfaceAPIStatusEnum, InterfaceAPIResultEnum, StepStatusEnum  # BUG-M9-2 修复: 写 status 也走 enum, 跟 8 个 step_content 统一
+from enums import InterfaceAPIStatusEnum, InterfaceAPIResultEnum, StepStatusEnum
 from enums.CaseEnum import CaseStepContentType
 from utils import GenerateTools, log
 from croe.interface.starter import APIStarter
 
-
 def _result_flag_to_bool(value: Any) -> bool:
     """
-    BUG-M7: 把"结果标志"统一归一成 bool, 防止"同名不同类型"陷阱。
 
     背景: InterfaceAPIResultEnum.SUCCESS=True / .ERROR=False (bool),
     旧 InterfaceCaseResultEnum.SUCCESS="SUCCESS" / .ERROR="ERROR" (str)
@@ -55,7 +53,6 @@ def _result_flag_to_bool(value: Any) -> bool:
             return False
         return bool(lowered)
     return bool(value)
-
 
 class ResultWriter:
     """
@@ -78,7 +75,6 @@ class ResultWriter:
     MAX_CACHE_SIZE = 1000
 
     def __init__(self):
-        # BUG-RED-D5 修复: 删 _progress_update_cache 死字段, 没有任何地方读写
         self.api_result_cache: List[InterfaceResult] = []
         self.content_result_cache: List[Dict[str, Any]] = []
 
@@ -88,7 +84,7 @@ class ResultWriter:
 
         之前用的是模块级单例 result_writer,缓存不会自动清,
         长跑 / 并发 case 会让 api_result_cache 越来越大、还会
-        把别人的数据 flush 走(BUG-D1)。
+        把别人的数据 flush 走。
         """
         self.api_result_cache.clear()
         self.content_result_cache.clear()
@@ -167,7 +163,6 @@ class ResultWriter:
 
         if task_result:
             case_result.interface_task_result_id = task_result.id
-            # BUG-F7 修复: 原版两条 log.info 一是标签写 task_result 但变量是 case_result,
             # 二是只 str(obj) 调试信息为零。case_result 还没 insert, 此刻日志没价值;
             # 等 insert 完再 log 更靠谱。
 
@@ -240,9 +235,6 @@ class ResultWriter:
         """
         is_parent_step = content_type in self.PARENT_STEP_TYPES
 
-        # BUG-M9-2 修复: status 跟 8 个 step_content_*.py 走 StepStatusEnum, 不写
-        # 字面量 "SUCCESS"/"FAIL"。M9 修了 step strategy 那一层, 但 result_writer
-        # 这条 cache flush 路径漏了, 当 status 列改成 enum 类型时会写错值。
         result_data = {
             'content_type': content_type,
             'case_result_id': case_result_id,
@@ -325,10 +317,7 @@ class ResultWriter:
         """
         await self._flush_cache()
 
-        # BUG-F8-followup: STEP_API 子步骤的 interface_result 在 cache flush 之前
-        # 已 immediate=True 入库, 当时 content_result_id 还是 NULL (cache 里的
-        # content_result 还没 id)。flush 完后正向关系 (子表 api) 已落盘,
-        # 这里用 UPDATE JOIN 一次性回填反向 FK。
+        # 回填反向 FK: immediate 写入时 content_result_id 还是 NULL
         backfilled = await InterfaceResultMapper.backfill_content_result_id_fk(
             case_result_id=case_result.id
         )
@@ -351,19 +340,6 @@ class ResultWriter:
         if logs:
             case_result.interface_log = logs
 
-        # BUG-F5 修复: progress 不再硬编码 100.0, 用 runner 算好的
-        # case_result.progress。正常全跑完的 case, runner 算到最后一步
-        # index=total 时已经 (total*100)//total = 100, 跟原来等价;
-        # error_stop break 的 case, 保留"跑到 N 步失败"的中间进度, 前端能
-        # 正确显示"未跑完"。
-
-        # BUG-E8 + E9 修复: 用 interface_result COUNT 覆写 total_num / success_num / fail_num
-        # - E8: init 时 total_num = case_api_num, 之后不再更新, 漂移无法纠正
-        # - E9: GROUP/LOOP/CONDITION 等 parent step case_result.success_num += 1
-        #   不对称, 实际跑 N 个 API 应该 +N
-        # 两者都用 interface_result 表的 COUNT 当权威源, 在 finalize 覆写一次,
-        # 保证 total_num = success_num + fail_num 恒成立。step strategy 的
-        # 手动维护保留 (不影响在线行为), 这里做最终对账。
         try:
             recomputed = await InterfaceCaseResultMapper.recompute_case_result_nums(
                 case_result_id=case_result.id,
@@ -378,7 +354,6 @@ class ResultWriter:
             case_result.total_num = recomputed["total"]
             case_result.success_num = recomputed["success"]
             case_result.fail_num = recomputed["fail"]
-            # 跟上面 result = SUCCESS/ERROR 一致
             if case_result.fail_num == 0:
                 case_result.result = InterfaceAPIResultEnum.SUCCESS
             else:
@@ -400,7 +375,7 @@ class ResultWriter:
 
     async def _flush_cache(self):
         """
-        刷新缓存，批量插入数据 (BUG-D4 修复)。
+        刷新缓存，批量插入数据 。
 
         事务策略：
         - 单一事务包住 api_result + content_result 两次 bulk, 任一失败整体回滚
@@ -442,7 +417,7 @@ class ResultWriter:
 
     async def _bulk_insert_api_results(self, session: AsyncSession) -> None:
         """
-        批量插入 API 结果 (BUG-D4: session 由外部事务传入, 本方法不自管 commit)。
+        批量插入 API 结果 。
 
         - 直接使用模型实例列表调用 bulk_insert_models
         - 缓存中已存储 InterfaceResult 模型实例
@@ -457,7 +432,7 @@ class ResultWriter:
 
     async def _bulk_insert_content_results(self, session: AsyncSession) -> None:
         """
-        批量插入步骤内容结果 (BUG-D4: session 由外部事务传入, 本方法不自管 commit)。
+        批量插入步骤内容结果 。
 
         - 使用 InterfaceContentStepResultMapper.bulk_insert_results 方法
         - 该方法支持 Joined Table Inheritance，按 content_type 分组后批量插入
@@ -466,7 +441,6 @@ class ResultWriter:
         if not self.content_result_cache:
             return
 
-        # BUG-D2 修复: bulk_insert_results 现在返回 (inserted, skipped)
         # skipped 由 mapper 内部统一 WARNING 输出,这里只记 inserted
         inserted, skipped = await InterfaceContentStepResultMapper.bulk_insert_results(
             self.content_result_cache, session=session

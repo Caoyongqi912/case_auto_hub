@@ -1,20 +1,5 @@
-"""
-[BUG-T1 + T2] 任务级 execution 2 个 P0 一锅端, 来自 EXECUTION_LAYERS_REVIEW_2026_06_20。
+"""[BUG-T1 + T2] 任务级 execution 2 个 P0 一锅端, 来自 EXECUTION_LAYERS_REVIEW_2026_06_20。"""
 
-BUG-T1: task.py:_init_task_variables 之前只 log.info 一行, 函数名说
-       "init task variables" 但实际 params.variables 永远不注入
-       VariableManager, 用户传的任务级变量静默丢失。
-       修: TaskRunner 自管 self._shared_vm, params.variables 走 trans 后
-       add_vars 进去, 后续每个 InterfaceRunner 共享这个 vm, 任务级
-       variables 跨 API/CASE step 全局可见。
-
-BUG-T2: runner.py:run_interface_by_task 之前整个函数没 try/finally,
-       跑完一个 task (N 个 interface) 后 httpx 连接池不释放 (E1 漏修到
-       这条路径), variable / result_writer 缓存跨 case 残留 (D1 / OBS-2
-       漏修到这条路径), 跨 task 累积泄漏 / 串号。
-       修: 加 try/finally 跟 run_interface_case 清理顺序对齐:
-       aclose → rw.clear_cache → vm.clear。
-"""
 import inspect
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -23,14 +8,11 @@ import pytest
 
 from tests.croe.interface._bug_ids import BUG_T1, BUG_T2
 
-
 # --------------------------------------------------------------------------- #
-# BUG-T1: _init_task_variables 真的注入变量
 # --------------------------------------------------------------------------- #
 
 def test_bug_t1_init_task_variables_actually_adds_to_vm():
-    """[BUG-T1] _init_task_variables 必须真的调 self._shared_vm.add_vars(...)。
-
+    """[
     修前: 函数体只 await self.starter.send(...), log.info 一行,
     params.variables 静默丢失。
     """
@@ -50,7 +32,7 @@ def test_bug_t1_init_task_variables_actually_adds_to_vm():
         f"不是 InterfaceRunner 的 vm"
     )
 
-    # 3. 不应再只 log.info 一行 (修前的"假函数"模式)
+    # 3. 不应再只 log.info 一行
     #    简化判断: 调 starter.send 之前/之后必须 add_vars
     add_vars_pos = src.find("add_vars")
     send_pos = src.find("starter.send")
@@ -62,7 +44,6 @@ def test_bug_t1_init_task_variables_actually_adds_to_vm():
         f"[{BUG_T1}] add_vars 必须在 starter.send 之前, "
         f"先 init 再 log, 不能 log 了再 init"
     )
-
 
 @pytest.mark.asyncio
 async def test_bug_t1_init_task_variables_end_to_end():
@@ -93,7 +74,6 @@ async def test_bug_t1_init_task_variables_end_to_end():
         f"{runner._shared_vm.variables.get('base_url')}"
     )
 
-
 @pytest.mark.asyncio
 async def test_bug_t1_init_task_variables_none_noop():
     """[BUG-T1] 传 None 不应崩, 也不应误注入。"""
@@ -115,11 +95,8 @@ async def test_bug_t1_init_task_variables_none_noop():
         f"[{BUG_T1}] None 输入时 vm 应仍空, 实际: {runner._shared_vm.variables}"
     )
 
-
 def test_bug_t1_interface_runner_accepts_optional_variable_manager():
-    """[BUG-T1] InterfaceRunner.__init__ 应接受 optional variable_manager 参数,
-    TaskRunner 注入 _shared_vm 时不报错。
-    """
+    """[    """
     from croe.interface.runner import InterfaceRunner
     from croe.a_manager import VariableManager
 
@@ -137,9 +114,7 @@ def test_bug_t1_interface_runner_accepts_optional_variable_manager():
         f"[{BUG_T1}] variable_manager 应该有 default=None, 实际: {vm_param.default!r}"
     )
 
-
 # --------------------------------------------------------------------------- #
-# BUG-T2: run_interface_by_task finally 清理
 # --------------------------------------------------------------------------- #
 
 def test_bug_t2_run_interface_by_task_has_try_finally():
@@ -154,8 +129,7 @@ def test_bug_t2_run_interface_by_task_has_try_finally():
         f"清理 httpx/vm/rw 缓存"
     )
     assert "finally:" in src, (
-        f"[{BUG_T2}] run_interface_by_task 必须有 finally 块, "
-        f"跟 run_interface_case 风格对齐"
+        f"[{BUG_T2}] run_interface_by_task 必须有 finally 块"
     )
 
     # 2. try 必须在 for attempt 之前 (包住整个重试循环)
@@ -173,11 +147,8 @@ def test_bug_t2_run_interface_by_task_has_try_finally():
         f"实际 finally_pos={finally_pos}, for_pos={for_pos}"
     )
 
-
 def test_bug_t2_finally_cleans_three_things():
-    """[BUG-T2] finally 块必须调 aclose + rw.clear_cache + vm.clear, 跟
-    run_interface_case 清理风格对齐。
-    """
+    """[    """
     from croe.interface.runner import InterfaceRunner
 
     src = inspect.getsource(InterfaceRunner.run_interface_by_task)
@@ -215,7 +186,6 @@ def test_bug_t2_finally_cleans_three_things():
         f"[{BUG_T2}] finally 不应调 clear_trace_id(), 那是 run_interface_case "
         f"设的, 本函数不设, 清会误伤"
     )
-
 
 @pytest.mark.asyncio
 async def test_bug_t2_finally_runs_even_on_exception():

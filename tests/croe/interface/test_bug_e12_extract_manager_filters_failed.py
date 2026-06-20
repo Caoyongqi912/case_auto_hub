@@ -1,25 +1,14 @@
-"""
-BUG-E12 回归测试: ExtractManager 应只返回成功提取 (含 value) 的 extract。
+"""BUG-E12 回归测试: ExtractManager 应只返回成功提取 (含 value) 的 extract。"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-
-根因: 旧实现失败/无 handler 的 extract 也放进返回 list, 'value' 键未设
-(永远不是 None, 是压根没这键)。下游日志把 value=None 打印, 且要靠
-list2dict 兜底 None 防御, 调用方心智负担重。
-
-修法: 只在 handler 返回有效 value (非 None) 时纳入 successful 列表。
-"""
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 
 from croe.interface.manager.extract_manager import ExtractManager
 from tests.croe.interface._bug_ids import BUG_E12
 
-
 @pytest.fixture
 def bug_e12_marker():
     return BUG_E12
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -34,7 +23,6 @@ async def test_bug_e12_no_handler_extract_dropped(bug_e12_marker):
     assert result == [], (
         f"[{BUG_E12}] 无 handler 的 extract 必须被过滤, 实际 {result}"
     )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -67,7 +55,6 @@ async def test_bug_e12_handler_exception_extract_dropped(bug_e12_marker):
         f"[{BUG_E12}] handler 抛异常的 extract 必须被过滤, 实际 {result}"
     )
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_e12_handler_returns_none_dropped(bug_e12_marker):
@@ -84,7 +71,6 @@ async def test_bug_e12_handler_returns_none_dropped(bug_e12_marker):
     assert result == [], (
         f"[{BUG_E12}] handler 返回 None 的 extract 必须被过滤, 实际 {result}"
     )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -103,7 +89,6 @@ async def test_bug_e12_successful_extract_kept(bug_e12_marker):
     assert result[0].get('value') == "hello", (
         f"[{BUG_E12}] result[0]['value'] 应为 'hello', 实际 {result[0].get('value')}"
     )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio

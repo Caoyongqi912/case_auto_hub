@@ -1,22 +1,5 @@
-"""
-interface_executor.py 单测覆盖率补充 (目标 0% -> 60%+)。
+"""interface_executor.py 单测覆盖率补充 (目标 0% -> 60%+)。"""
 
-测 InterfaceExecutor 的 11 个核心路径:
-1. __init__ + global_headers=None 兜底
-2. execute 正常路径 (200 OK)
-3. execute ctx.error 路径 (build raise 异常)
-4. execute 500 失败路径
-5. execute 断言失败 (asserts 含 result=False)
-6. _execute_before_params 3 分支 (None / 空 / 有值)
-7. _execute_before_script 2 分支 (None / 有值)
-8. _execute_before_sql 2 分支 (None / db_config 不存在)
-9. _execute_extract 非 200 状态码早返
-10. _build_result env=None 时 env_id 兜底
-11. _normalize_temp_variables 3 分支 + aclose
-
-锁住 BUG-E6 (_build_result 返 dict), BUG-E5 (before_sql 显式 None),
-BUG-E1 (aclose 释放 http), BUG-E7 (asserts 过滤 None)。
-"""
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,7 +14,6 @@ from enums import (
     InterfaceResponseStatusCodeEnum,
     InterfaceRequestMethodEnum,
 )
-
 
 # --------------------------------------------------------------------------- #
 # helpers
@@ -83,14 +65,12 @@ def _build_interface(
     iface.env_id = env_id
     return iface
 
-
 def _build_env(env_id=1, name="test_env", url="http://example.com"):
     env = MagicMock()
     env.id = env_id
     env.name = name
     env.url = url
     return env
-
 
 def _build_starter(user_id=10, username="alice"):
     s = MagicMock()
@@ -99,14 +79,12 @@ def _build_starter(user_id=10, username="alice"):
     s.send = AsyncMock()
     return s
 
-
 def _build_variable_manager():
     mgr = MagicMock()
     mgr.trans = AsyncMock(side_effect=lambda x: x)
     mgr.add_vars = AsyncMock()
     mgr.variables = []
     return mgr
-
 
 def _build_response(status=200, text='{"ok":true}', elapsed_ms=10):
     """Mock 一个 httpx.Response, 用真实 Response 不行 (需要 url+content)."""
@@ -118,7 +96,6 @@ def _build_response(status=200, text='{"ok":true}', elapsed_ms=10):
     resp.elapsed = MagicMock()
     resp.elapsed.total_seconds = MagicMock(return_value=elapsed_ms / 1000)
     return resp
-
 
 def _build_executor(starter=None, var_mgr=None, g_headers=None):
     if starter is None:
@@ -133,7 +110,6 @@ def _build_executor(starter=None, var_mgr=None, g_headers=None):
     executor.http.close = AsyncMock()
     executor.g_headers = g_headers or []
     return executor
-
 
 # --------------------------------------------------------------------------- #
 # 1) __init__: global_headers=None 兜底
@@ -150,7 +126,6 @@ def test_init_global_headers_none_defaults_to_empty_list():
     assert executor.starter is starter
     assert executor.variable_manager is var_mgr
 
-
 @pytest.mark.unit
 def test_init_global_headers_passed_through():
     """__init__: global_headers=[...] 透传。"""
@@ -160,7 +135,6 @@ def test_init_global_headers_passed_through():
     with patch("croe.interface.executor.interface_executor.HttpxClient"):
         executor = InterfaceExecutor(starter=starter, variable_manager=var_mgr, global_headers=g_headers)
     assert executor.g_headers is g_headers
-
 
 # --------------------------------------------------------------------------- #
 # 2) execute 正常路径: 200 OK
@@ -213,7 +187,6 @@ async def test_execute_success_path_returns_result_dict_with_result_true():
     # starter.send 至少被调一次 (EXECUTE API 起始日志)
     assert executor.starter.send.await_count >= 1
 
-
 # --------------------------------------------------------------------------- #
 # 3) execute ctx.error 路径: URLBuilder.build 抛异常 -> error 分支
 # --------------------------------------------------------------------------- #
@@ -222,8 +195,7 @@ async def test_execute_success_path_returns_result_dict_with_result_true():
 @pytest.mark.unit
 async def test_execute_error_path_records_ctx_error_and_returns_failure():
     """execute 异常路径: build raise -> ctx.error 填上, _build_result 走 error 分支。
-    锁定 BUG-E6: 返 dict (非 tuple), result['result']=False, response_text 含错误信息。
-    """
+    锁定     """
     executor = _build_executor()
     iface = _build_interface(extracts=None, asserts=None)
     env = _build_env()
@@ -243,7 +215,6 @@ async def test_execute_error_path_records_ctx_error_and_returns_failure():
     send_msgs = [c.args[0] for c in executor.starter.send.call_args_list]
     assert any("EXECUTE API" in m for m in send_msgs)
     assert any("Error occurred" in m for m in send_msgs)
-
 
 # --------------------------------------------------------------------------- #
 # 4) execute 500 失败路径: 响应状态码 500 -> success=False
@@ -285,7 +256,6 @@ async def test_execute_500_status_marks_result_false():
     # error 字段没填, 不应被填充
     assert result["use_time"] != "0"
 
-
 # --------------------------------------------------------------------------- #
 # 5) execute 断言失败: asserts 包含 result=False -> success=False
 # --------------------------------------------------------------------------- #
@@ -294,8 +264,7 @@ async def test_execute_500_status_marks_result_false():
 @pytest.mark.unit
 async def test_execute_assertion_failure_marks_result_false():
     """execute 断言失败: AssertManager 返含 result=False 的 asserts -> result['result']=False。
-    锁定 BUG-E7: 过滤 None 后还能识别失败。
-    """
+    锁定     """
     executor = _build_executor()
     iface = _build_interface(asserts=[{"key": "status", "value": 200, "assertOpt": 0}])
     env = _build_env()
@@ -327,7 +296,6 @@ async def test_execute_assertion_failure_marks_result_false():
     assert result["response_status"] == 200
     assert result["asserts"] == failed_asserts
 
-
 # --------------------------------------------------------------------------- #
 # 6) _execute_before_params 3 分支
 # --------------------------------------------------------------------------- #
@@ -341,7 +309,6 @@ async def test_execute_before_params_none_returns_empty_list():
     assert result == []
     executor.variable_manager.add_vars.assert_not_called()
 
-
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_execute_before_params_empty_list_returns_empty_list():
@@ -349,7 +316,6 @@ async def test_execute_before_params_empty_list_returns_empty_list():
     executor = _build_executor()
     result = await executor._execute_before_params([])
     assert result == []
-
 
 @pytest.mark.asyncio
 @pytest.mark.unit
@@ -368,7 +334,6 @@ async def test_execute_before_params_values_adds_and_tags():
     assert result[0][ExtractTargetVariablesEnum.Target] == ExtractTargetVariablesEnum.BeforeParams
     executor.variable_manager.add_vars.assert_awaited_once()
 
-
 # --------------------------------------------------------------------------- #
 # 7) _execute_before_script 2 分支
 # --------------------------------------------------------------------------- #
@@ -380,7 +345,6 @@ async def test_execute_before_script_none_returns_empty_list():
     executor = _build_executor()
     result = await executor._execute_before_script(None)
     assert result == []
-
 
 @pytest.mark.asyncio
 @pytest.mark.unit
@@ -401,7 +365,6 @@ async def test_execute_before_script_with_value_marks_before_script_source():
     assert result[0][ExtractTargetVariablesEnum.Target] == ExtractTargetVariablesEnum.BeforeScript
     executor.variable_manager.add_vars.assert_awaited_once()
 
-
 # --------------------------------------------------------------------------- #
 # 8) _execute_before_sql 2 分支
 # --------------------------------------------------------------------------- #
@@ -414,7 +377,6 @@ async def test_execute_before_sql_none_returns_empty_list():
     iface = _build_interface(before_sql=None, before_db_id=None)
     result = await executor._execute_before_sql(iface)
     assert result == []
-
 
 @pytest.mark.asyncio
 @pytest.mark.unit
@@ -433,7 +395,6 @@ async def test_execute_before_sql_db_config_not_found_warns_and_returns_empty():
     # starter.send 收到了 db 不存在警告
     send_msgs = [c.args[0] for c in executor.starter.send.call_args_list]
     assert any("数据库配置不存在" in m for m in send_msgs)
-
 
 # --------------------------------------------------------------------------- #
 # 9) _execute_extract: 非 200 状态码早返
@@ -454,7 +415,6 @@ async def test_execute_extract_non_200_skips_extraction():
     # ExtractManager 不应被实例化
     mock_em_cls.assert_not_called()
 
-
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_execute_extract_no_extracts_returns_empty():
@@ -465,7 +425,6 @@ async def test_execute_extract_no_extracts_returns_empty():
 
     result = await executor._execute_extract(response, iface)
     assert result == []
-
 
 # --------------------------------------------------------------------------- #
 # 10) _build_result: env=None 时 env_id 兜底
@@ -496,7 +455,6 @@ def test_build_result_env_none_falls_back_to_interface_env_id():
     assert "running_env_name" not in result
     assert result["result"] is True
 
-
 @pytest.mark.unit
 def test_build_result_env_set_uses_env_id_and_name():
     """_build_result: ctx.env 有值 -> running_env_id 走 env.id, name 走 env.name。"""
@@ -514,7 +472,6 @@ def test_build_result_env_set_uses_env_id_and_name():
     assert result["running_env_id"] == 99  # env.id 覆盖 interface.env_id
     assert result["running_env_name"] == "dev"
 
-
 # --------------------------------------------------------------------------- #
 # 11) _normalize_temp_variables 3 分支 + aclose
 # --------------------------------------------------------------------------- #
@@ -523,16 +480,13 @@ def test_build_result_env_set_uses_env_id_and_name():
 def test_normalize_temp_variables_none_returns_empty_list():
     assert InterfaceExecutor._normalize_temp_variables(None) == []
 
-
 @pytest.mark.unit
 def test_normalize_temp_variables_list_passthrough():
     assert InterfaceExecutor._normalize_temp_variables([{"k": "v"}]) == [{"k": "v"}]
 
-
 @pytest.mark.unit
 def test_normalize_temp_variables_dict_wrapped_in_list():
     assert InterfaceExecutor._normalize_temp_variables({"k": "v"}) == [{"k": "v"}]
-
 
 @pytest.mark.asyncio
 @pytest.mark.unit
@@ -541,7 +495,6 @@ async def test_aclose_calls_http_close():
     executor = _build_executor()
     await executor.aclose()
     executor.http.close.assert_awaited_once()
-
 
 @pytest.mark.asyncio
 @pytest.mark.unit

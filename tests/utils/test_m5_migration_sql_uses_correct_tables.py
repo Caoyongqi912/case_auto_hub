@@ -18,11 +18,9 @@ from app.model.interfaceAPIModel.interfaceResultModel import (
 )
 from tests.croe.interface._bug_ids import BUG_M5
 
-
 @pytest.fixture
 def bug_m5_marker():
     return BUG_M5
-
 
 def _read_migration_sql() -> str:
     """读 MANUAL_MIGRATION.sql 全文。"""
@@ -30,14 +28,12 @@ def _read_migration_sql() -> str:
     sql_path = repo_root / "docs" / "MANUAL_MIGRATION.sql"
     return sql_path.read_text(encoding="utf-8")
 
-
 def _extract_m5_section(sql: str) -> str:
     """从全文抽出 M5 章节(从 'M5 追加' 到文件末尾)。"""
     # 从 '-- M5 追加:' 一直取到末尾
     idx = sql.find("-- M5 追加:")
     assert idx >= 0, "M5 章节未找到, 文档结构被破坏"
     return sql[idx:]
-
 
 @pytest.mark.unit
 def test_m5_migration_targets_contents_table(bug_m5_marker):
@@ -51,11 +47,9 @@ def test_m5_migration_targets_contents_table(bug_m5_marker):
         f"[{BUG_M5}] M5 章节应有 `UPDATE {expected} SET content_type = ...`, 实际未找到"
     )
 
-
 @pytest.mark.unit
 def test_m5_migration_targets_result_table(bug_m5_marker):
-    """[BUG-M5] M5 迁移 SQL 必须 ALTER/UPDATE InterfaceCaseContentResult 对应的表。
-
+    """[
     不能写成 'interface_case_step_content_result' (多 _step_, 跟 contents 表重名),
     那会导致用户照文档跑迁移漏掉结果表。
     """
@@ -68,7 +62,6 @@ def test_m5_migration_targets_result_table(bug_m5_marker):
     assert f"UPDATE {expected}" in section, (
         f"[{BUG_M5}] M5 章节应有 `UPDATE {expected} SET content_type = ...`, 实际未找到"
     )
-
 
 @pytest.mark.unit
 def test_m5_migration_no_wrong_step_content_result_table(bug_m5_marker):

@@ -1,25 +1,14 @@
-"""
-BUG-S3 回归测试:`SCRIPT_TIMEOUT` 必须真生效,死循环脚本不能阻塞 worker。
+"""BUG-S3 回归测试:`SCRIPT_TIMEOUT` 必须真生效,死循环脚本不能阻塞 worker。"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-
-实现要点:在子进程跑脚本,主进程用 proc.join(timeout) 等待,超时就
-proc.terminate() -> proc.kill(),然后抛 ScriptSecurityError。
-
-测试用 pytest 自身 + 外层 `timeout 30` 命令保护,避免子进程清理失败时
-把整个 session 挂死。
-"""
 import time
 import pytest
 
 from croe.a_manager.script_manager import ScriptManager, ScriptSecurityError
 from tests.croe.interface._bug_ids import BUG_S3
 
-
 @pytest.fixture
 def bug_s3_marker():
     return BUG_S3
-
 
 @pytest.mark.security
 @pytest.mark.unit
@@ -35,7 +24,6 @@ def test_bug_s3_infinite_loop_terminates_within_timeout(bug_s3_marker):
         f"[{BUG_S3}] 死循环应在 SCRIPT_TIMEOUT ({sm.SCRIPT_TIMEOUT}s) 内终止,"
         f"实际 {elapsed:.2f}s"
     )
-
 
 @pytest.mark.unit
 def test_bug_s3_script_timeout_constant_defined(bug_s3_marker):

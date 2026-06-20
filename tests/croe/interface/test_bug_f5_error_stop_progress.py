@@ -1,27 +1,16 @@
-"""
-BUG-F5 回归测试: error_stop 触发时, case_result.progress 不应被强制 100,
-应保留 (index*100)//total_steps 的中间值, 让前端能看出"未跑完"。
+"""BUG-F5 回归测试: error_stop 触发时, case_result.progress 不应被强制 100,"""
 
-修复:
-- runner.py: 删除 error_stop break 前的 `case_result.progress = 100` +
-  `update_case_progress` 两行
-- result_writer.py: finalize_case_result 末尾 progress 写库改用
-  case_result.progress (不再硬编码 100.0)
-"""
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from tests.croe.interface._bug_ids import BUG_F5
 
-
 REPO = Path(__file__).resolve().parents[3]
-
 
 @pytest.fixture
 def bug_f5_marker():
     return BUG_F5
-
 
 def _make_starter():
     starter = MagicMock()
@@ -32,7 +21,6 @@ def _make_starter():
     starter.logs = []
     starter.over = AsyncMock()
     return starter
-
 
 # ---------- 1. runner 源码不再 force 100 ----------
 
@@ -49,7 +37,6 @@ def test_bug_f5_runner_does_not_force_progress_100(bug_f5_marker):
         f"前端会误以为跑完了"
     )
 
-
 # ---------- 2. finalize 写库用 case_result.progress ----------
 
 def test_bug_f5_finalize_uses_case_result_progress(bug_f5_marker):
@@ -57,7 +44,6 @@ def test_bug_f5_finalize_uses_case_result_progress(bug_f5_marker):
     src = (REPO / "croe/interface/writer/result_writer.py").read_text(encoding="utf-8")
     # 在 finalize_case_result 函数体里找 update_by_id
     finalize_idx = src.find("async def finalize_case_result")
-    # BUG-E8+E9 修复后 finalize 多了 recompute 块, body 变长, 扩到 6000 字符
     body = src[finalize_idx: finalize_idx + 6000]
     assert "progress=100.0" not in body, (
         f"[{BUG_F5}] finalize 还在写 progress=100.0, 应改用 case_result.progress"
@@ -66,16 +52,12 @@ def test_bug_f5_finalize_uses_case_result_progress(bug_f5_marker):
         f"[{BUG_F5}] finalize 没传 case_result.progress, error_stop 进度会丢"
     )
 
-
 # ---------- 3. 端到端: error_stop 触发时 progress 应是中间值 ----------
 
 @pytest.mark.asyncio
 async def test_bug_f5_error_stop_progress_is_intermediate(bug_f5_marker):
     """
-    [BUG-F5] 跑一个 4 步 case, 第 2 步失败 + error_stop=True:
-    - 修复前: progress 被 force 100
-    - 修复后: progress = (2*100)//4 = 50
-    """
+    [    """
     from croe.interface.runner import InterfaceRunner
     from croe.interface.executor.context import ExecutionContext
 

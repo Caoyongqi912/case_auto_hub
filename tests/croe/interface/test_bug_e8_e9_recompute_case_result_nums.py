@@ -1,24 +1,7 @@
-"""
-[BUG-E8 + E9] case_result.total_num 跟 success_num/fail_num 不一致
+"""[BUG-E8 + E9] case_result.total_num 跟 success_num/fail_num 不一致"""
 
-E8: total_num 在 init_case_result 时设一次 = case_api_num, 之后不再更新。
-    如果 case_api_num 跟实际跑的 API 数对不上 (或运行时漂移), total_num 永久错位。
-E9: GROUP/LOOP/CONDITION 等 parent step 在 step strategy 里
-    case_result.success_num += 1, 但实际跑了 N 个 API, 应该 +N。
-    多个 step strategy 行为不对称, 改全量成本高、易漏。
-
-修法: 在 finalize_case_result 末尾调一次 recompute_case_result_nums,
-      用 interface_result 表的 COUNT 当权威源, 覆写 case_result 三字段,
-      保证 total_num = success_num + fail_num 恒成立。
-      step strategy 的手动维护保留 (不影响在线行为), 这里做最终对账。
-
-测试 (5 个, 不接 DB 走 mock):
-  - 4 个 mapper 层: SQL 正确 (含 case/case 表达式) + session=None 抛 + 跟 update_by_id 联动
-  - 1 个 result_writer 集成: finalize 调 recompute
-"""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-
 
 def test_bug_e8_e9_recompute_uses_interface_result_count():
     """核心: recompute SQL 必须 COUNT interface_result 表 + SUM(result=True/False)"""
@@ -31,12 +14,8 @@ def test_bug_e8_e9_recompute_uses_interface_result_count():
     # 必须按 result (True/False) 分桶
     assert "True" in src and "False" in src, "[BUG-E8] 应按 result True/False 分桶"
 
-
 def test_bug_e8_e9_recompute_session_none_no_longer_raises():
-    """[BUG-DOC 修复] 之前 session=None 抛 ValueError, 但调用方
-    (result_writer.py:367) 注释写 "自管事务", 实际静默 except 丢对账。
-    改: session=None 时开自己的 transaction()。
-
+    """[
     测试: 不接 DB, 用 inspect.getsource 检查源码, 锁住
     1. 不再 raise ValueError
     2. 走 if session is None 分支调 cls.transaction()
@@ -60,7 +39,6 @@ def test_bug_e8_e9_recompute_session_none_no_longer_raises():
     assert "cls.transaction()" in src, (
         "[BUG-DOC 修复后] session=None 走 cls.transaction() 自管事务"
     )
-
 
 @pytest.mark.asyncio
 async def test_bug_e8_e9_recompute_updates_case_result_fields():
@@ -95,9 +73,8 @@ async def test_bug_e8_e9_recompute_updates_case_result_fields():
     assert kwargs["total_num"] == 5
     assert kwargs["success_num"] == 3
     assert kwargs["fail_num"] == 2
-    # session 必须传进 update_by_id (D4 风格)
+    # session 必须传进 update_by_id
     assert kwargs.get("session") is mock_session, "[BUG-E8] update_by_id 必须复用同 session"
-
 
 @pytest.mark.asyncio
 async def test_bug_e8_e9_recompute_handles_zero_results():
@@ -126,7 +103,6 @@ async def test_bug_e8_e9_recompute_handles_zero_results():
     kwargs = mock_update.await_args.kwargs
     assert kwargs["total_num"] == 0
 
-
 @pytest.mark.asyncio
 async def test_bug_e8_e9_recompute_failure_does_not_break_finalize():
     """recompute 失败时, finalize 不应崩 (主流程有 try/except 兜底)"""
@@ -141,7 +117,6 @@ async def test_bug_e8_e9_recompute_failure_does_not_break_finalize():
             case_result_id=1,
             session=mock_session,
         )
-
 
 def test_bug_e8_e9_finalize_invokes_recompute():
     """集成: finalize_case_result 源码里必须调 recompute_case_result_nums"""

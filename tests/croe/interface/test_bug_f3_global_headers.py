@@ -1,11 +1,5 @@
-"""
-BUG-F3 回归测试:`init_global_headers` 成功分支:
-1. 日志里显示的 header 数量是错的(用 self.global_headers 实例字段,初始为 0)
-2. 接口执行真正读的是 self.interface_executor.g_headers,这才是
-   应当被赋值的字段。
+"""BUG-F3 回归测试:`init_global_headers` 成功分支:"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-"""
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -13,11 +7,9 @@ from app.model.interfaceAPIModel.interfaceGlobalModel import InterfaceGlobalHead
 from croe.interface.runner import InterfaceRunner
 from tests.croe.interface._bug_ids import BUG_F3
 
-
 @pytest.fixture
 def bug_f3_marker():
     return BUG_F3
-
 
 def _make_starter():
     starter = MagicMock()
@@ -27,7 +19,6 @@ def _make_starter():
     starter.uid = "u-1"
     starter.logs = []
     return starter
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -51,7 +42,6 @@ async def test_bug_f3_global_headers_actually_applied_to_executor(bug_f3_marker)
     )
     keys = {h.key for h in runner.interface_executor.g_headers}
     assert keys == {"X-Token", "X-App"}, f"keys 错了: {keys}"
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -77,7 +67,6 @@ async def test_bug_f3_global_headers_log_message_uses_actual_count(bug_f3_marker
         f"[{BUG_F3}] send 出去的日志应反映实际加载 1 条 header,"
         f"实际调用: {runner.starter.send.call_args_list}"
     )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio

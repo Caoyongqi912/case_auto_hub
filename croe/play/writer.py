@@ -33,7 +33,7 @@ class ContentResultWriter:
         - 步骤组3-1
         - 步骤组3-2
     - 步骤4
-    
+
     存储结构:
     {
         1: {"result": step1_result, "children": []},
@@ -70,14 +70,6 @@ class ContentResultWriter:
             success (bool): 主步骤的执行结果
 
         Notes:
-            - BUG-P-1-6 修复: 之前只更新 content_result 字段, use_time 是
-              占位时的初值(几乎为 0)。修: 重新计算 use_time = now - start_time,
-              让步骤组耗时反映真实执行时间 (子步骤总和)。跟 add_content_result
-              设的初值语义一致 (即步骤组"创建时" → "子步骤跑完时")。
-            - 为什么不在调用方 (group_strategy/condition_strategy) 算好传过来:
-              1) 调用方已经有 use_time 局部变量, 但跟 content_result 的 start_time
-                 不一定同步 (group 创建时算的 start_time, 但 use_time 是子步骤结
-                 束后算的); 2) writer 拿 start_time 自己重算最一致。
         """
         if step_index in self.content_results:
             content_result = self.content_results[step_index]["result"]

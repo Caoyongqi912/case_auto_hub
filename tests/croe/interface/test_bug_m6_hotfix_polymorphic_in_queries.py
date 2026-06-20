@@ -1,20 +1,5 @@
-"""
-BUG-M6-hotfix 回归测试: 需要子类列的查询必须显式 with_polymorphic。
+"""BUG-M6-hotfix 回归测试: 需要子类列的查询必须显式 with_polymorphic。"""
 
-详见 docs/review/BUG_M6_E6_E12_FIX_REPORT.md。
-
-背景:
-- M6 删了 InterfaceCaseContentResult.__mapper_args__['with_polymorphic'] = '*'
-  (8x 行宽浪费)
-- 但 BaseModel.to_dict() 用 self_and_descendants 反射访问子类列
-  (如 APIStepContentResult.interface_result_id)
-- 没有 with_polymorphic 时, 这些列没在 SELECT 里, 访问时 SQLAlchemy 想
-  lazy-load / refresh, session 已关就报:
-  "Instance is not bound to a Session; attribute refresh operation cannot proceed"
-
-修法: 需要子类列的查询显式 with_polymorphic(InterfaceCaseContentResult, [8 subclasses])。
-本测试锁住: query_steps_result 和 query_with_interface_results 都用 with_polymorphic。
-"""
 import pytest
 import re
 from pathlib import Path
@@ -32,7 +17,6 @@ from app.model.interfaceAPIModel.interfaceResultModel import (
 )
 from tests.croe.interface._bug_ids import BUG_M6
 
-
 ALL_8_SUBCLASSES = [
     APIStepContentResult,
     GroupStepContentResult,
@@ -44,11 +28,9 @@ ALL_8_SUBCLASSES = [
     LoopStepContentResult,
 ]
 
-
 @pytest.fixture
 def bug_m6_marker():
     return BUG_M6
-
 
 @pytest.mark.unit
 def test_bug_m6_base_model_no_wildcard(bug_m6_marker):
@@ -58,7 +40,6 @@ def test_bug_m6_base_model_no_wildcard(bug_m6_marker):
         f"[{BUG_M6}] InterfaceCaseContentResult 仍带 with_polymorphic='*', "
         f"应删, 改在需要的查询里显式 with_polymorphic"
     )
-
 
 @pytest.mark.unit
 def test_bug_m6_query_steps_result_uses_with_polymorphic(bug_m6_marker):
@@ -72,13 +53,10 @@ def test_bug_m6_query_steps_result_uses_with_polymorphic(bug_m6_marker):
         f"'is not bound to a Session'"
     )
 
-
 @pytest.mark.unit
 def test_bug_m6_query_steps_result_lists_all_subclasses(bug_m6_marker):
     """
-    [BUG-M6-hotfix] with_polymorphic 必须列出所有 8 个子类,
-    漏一个对应类型的 step_result 就会触发 refresh 失败。
-    """
+    [    """
     import inspect
     from app.mapper.interfaceApi.interfaceResultMapper import InterfaceContentStepResultMapper
     src = inspect.getsource(InterfaceContentStepResultMapper.query_steps_result)
@@ -89,17 +67,14 @@ def test_bug_m6_query_steps_result_lists_all_subclasses(bug_m6_marker):
             f"{cls.__name__}, 漏掉的话该类型 step 的 to_dict() 会失败"
         )
 
-
 @pytest.mark.unit
 def test_bug_m6_query_steps_result_joinedload_uses_poly(bug_m6_marker):
     """
-    [BUG-M6-hotfix] joinedload 必须用 poly.X 而不是原 class X,
-    否则报 "Mapped class ... does not apply to any of the root entities"。
-    """
+    [    """
     import inspect
     from app.mapper.interfaceApi.interfaceResultMapper import InterfaceContentStepResultMapper
     src = inspect.getsource(InterfaceContentStepResultMapper.query_steps_result)
-    # 应该用 poly.APIStepContentResult 形式
+    # 用 poly.APIStepContentResult 形式
     assert "poly.APIStepContentResult" in src, (
         f"[{BUG_M6}] joinedload 必须用 poly.APIStepContentResult, "
         f"不能用原 APIStepContentResult, 否则根实体不对会报错"
@@ -112,14 +87,10 @@ def test_bug_m6_query_steps_result_joinedload_uses_poly(bug_m6_marker):
         f"必须用 poly.APIStepContentResult.interface_result"
     )
 
-
 @pytest.mark.unit
 def test_bug_m6_to_dict_needs_subclass_columns(bug_m6_marker):
     """
-    [BUG-M6-hotfix] BaseModel.to_dict() 反射访问子类列,
-    这是 to_dict() 设计的固有行为, 无法在 to_dict() 层面修。
-    锁住这个事实: 如果未来想优化 to_dict 不访问子类列, 这个测试需要重写。
-    """
+    [    """
     import inspect
     from app.model.interfaceAPIModel.interfaceResultModel import InterfaceCaseContentResult
     src = inspect.getsource(InterfaceCaseContentResult.to_dict)

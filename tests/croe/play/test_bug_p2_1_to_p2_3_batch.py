@@ -1,16 +1,5 @@
-"""
-[BUG-P-2-1 + P-2-2 + P-2-3] 3 个 P2 修复一锅端, 来自 PLAY_REVIEW_2026_06_21 §5。
+"""[BUG-P-2-1 + P-2-2 + P-2-3] 3 个 P2 修复一锅端, 来自 PLAY_REVIEW_2026_06_21 §5。"""
 
-BUG-P-2-1: playCaseMapper.py:association_groups / copy_content 函数体内
-        有内联 `from app.mapper.play.playStepGroupMapper import ...`, 应
-        放文件顶部。修: 移到顶部, 删内联 import。
-
-BUG-P-2-2: playCaseMapper.py:reload_content 是死代码, 全仓无 caller。
-        修: 加 deprecation docstring 标记, 不删 (接口稳定, 留着无害)。
-
-BUG-P-2-3: play_runner.py:execute_case 之前没 trace_id, 多 case 并发
-        日志串在一起。修: set_trace_id (8 字符) + finally clear_trace_id。
-"""
 import inspect
 import re
 
@@ -20,15 +9,11 @@ from tests.croe.play._bug_ids import (
     BUG_P_2_1, BUG_P_2_2, BUG_P_2_3,
 )
 
-
 # --------------------------------------------------------------------------- #
-# BUG-P-2-1: 内联 import 提到顶部
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_2_1_no_inline_play_step_group_mapper_import_in_play_case_mapper():
-    """[BUG-P-2-1] playCaseMapper.py 不应有内联 import
-    `from app.mapper.play.playStepGroupMapper import PlayStepGroupMapper`。
-    应在文件顶部 import。"""
+    """[    应在文件顶部 import。"""
     with open("app/mapper/play/playCaseMapper.py", "r", encoding="utf-8") as fp:
         src = fp.read()
     # 排除注释行
@@ -45,7 +30,6 @@ def test_bug_p_2_1_no_inline_play_step_group_mapper_import_in_play_case_mapper()
         f"`from app.mapper.play.playStepGroupMapper import ...`, 应放文件顶部"
     )
 
-
 def test_bug_p_2_1_play_step_group_mapper_imported_at_top():
     """[BUG-P-2-1] playCaseMapper.py 顶部应 import PlayStepGroupMapper。"""
     with open("app/mapper/play/playCaseMapper.py", "r", encoding="utf-8") as fp:
@@ -56,9 +40,7 @@ def test_bug_p_2_1_play_step_group_mapper_imported_at_top():
         f"[{BUG_P_2_1}] playCaseMapper.py 顶部未 import PlayStepGroupMapper"
     )
 
-
 # --------------------------------------------------------------------------- #
-# BUG-P-2-2: reload_content 标为 deprecation
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_2_2_reload_content_has_deprecation_note():
@@ -66,16 +48,11 @@ def test_bug_p_2_2_reload_content_has_deprecation_note():
     from app.mapper.play.playCaseMapper import PlayCaseMapper
 
     src = inspect.getsource(PlayCaseMapper.reload_content)
-    assert "BUG-P-2-2" in src, (
-        f"[{BUG_P_2_2}] reload_content docstring 缺 BUG-P-2-2 标记"
-    )
     assert "死代码" in src or "caller" in src, (
         f"[{BUG_P_2_2}] reload_content docstring 缺 deprecation 说明"
     )
 
-
 # --------------------------------------------------------------------------- #
-# BUG-P-2-3: execute_case 有 trace_id
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_2_3_execute_case_sets_trace_id():
@@ -95,7 +72,6 @@ def test_bug_p_2_3_execute_case_sets_trace_id():
         f"(trace_id 提前注入日志, 后面的 query 日志才有 trace) "
         f"(set_pos={set_pos}, fetch_pos={fetch_pos})"
     )
-
 
 def test_bug_p_2_3_execute_case_clears_trace_id_in_finally():
     """[BUG-P-2-3] execute_case 的 finally 块应 clear_trace_id 防泄漏。"""
@@ -117,7 +93,6 @@ def test_bug_p_2_3_execute_case_clears_trace_id_in_finally():
     assert clear_pos > finally_pos, (
         f"[{BUG_P_2_3}] clear_trace_id 应在 finally 块里 (finally_pos={finally_pos}, clear_pos={clear_pos})"
     )
-
 
 def test_bug_p_2_3_execute_case_imports_trace_id_helpers():
     """[BUG-P-2-3] play_runner.py 应 import set_trace_id / clear_trace_id。"""

@@ -21,7 +21,6 @@ from common.notifyManager import NotifyManager
 from enums import InterfaceAPIResultEnum
 from croe.interface.runner import InterfaceRunner
 from croe.interface.starter import APIStarter, log
-# BUG-F8 修复: 改用 TaskRunner 实例的 self.result_writer
 from croe.interface.writer import ResultWriter
 
 
@@ -64,13 +63,8 @@ class TaskRunner:
         self.progress = 0
         self._last_progress_update = 0.0
         self._progress_update_interval = 0.5
-        # BUG-F8 修复: TaskRunner 自有 result_writer, 替代模块级单例
-        # (原单例 finalize_task_result 调 _flush_cache 时, 会把其他并发 case 的
-        #  数据冲掉; 自有实例隔离)
+        # 任务级共享变量, 跨 API/CASE step 复用
         self.result_writer = ResultWriter()
-        # BUG-T1 修复: TaskRunner 自有 _shared_vm, 任务级 variables 注入到这里,
-        # 后续每个 InterfaceRunner 用这个 vm 而不是新建一个, 让 params.variables
-        # 跨 API/CASE step 共享 (任务级"全局变量"语义)。
         from croe.a_manager import VariableManager
         self._shared_vm = VariableManager()
 
@@ -149,7 +143,6 @@ class TaskRunner:
             await self._init_task_variables(params.variables)
 
         try:
-            # BUG-T1 修复: 把 _shared_vm 注入 InterfaceRunner, 任务级 variables
             # 跨 API step 共享
             interface_runner = InterfaceRunner(self.starter, variable_manager=self._shared_vm)
 
@@ -180,11 +173,8 @@ class TaskRunner:
 
     async def _init_task_variables(self, variables: Any) -> None:
         """
-        初始化任务变量 (BUG-T1 修复: 之前只 log.info 一行, params.variables 静默丢失)
+        初始化任务变量
 
-        修法: 在 TaskRunner 自管一个 VariableManager, 把 params.variables 走
-        trans 变量替换后 add_vars, 后续每个 InterfaceRunner 共享这个 vm,
-        跨 API/CASE step 共享变量 (类似"任务级 variables 全局可见"语义)。
 
         Args:
             variables: 变量配置, dict 或 list[dict]
@@ -199,7 +189,6 @@ class TaskRunner:
                 f"🫳🫳 初始化任务变量 = {self._shared_vm.variables}"
             )
         except Exception as e:
-            # BUG-F4 风格对齐: log.exception 保留 traceback + starter.send 通知
             log.exception(f"初始化任务变量失败: {e}")
             try:
                 await self.starter.send(

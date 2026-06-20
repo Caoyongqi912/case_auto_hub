@@ -1,24 +1,9 @@
-"""
-[BUG-P-4-1] OBS-4 测试改 SocketSender.send 类属性污染所有后续测试的回归。
-
-原写法 (test_bug_d10_e11_obs_4_5_6.py:test_bug_obs_4_send_typed_prepends_type_marker):
-    starter.__class__.__bases__[0].send = AsyncMock(side_effect=fake_super_send)
-    # 直接改 SocketSender.send 类属性, 用完不还原
-
-后果: 之后所有用 SocketSender 的测试 (无论哪个文件) 拿到的 .send 是
-AsyncMock, 没有真实的 self.logs.append / super().send 调用链。
-
-本测试锁住:
-1. SocketSender.send 始终是 async 协程 (基线不被污染)
-2. patch.object 临时改能正确还原
-3. OBS-4 测试源码不再用 __bases__[0].send = 这种污染写法
-"""
+"""OBS-4 测试改 SocketSender.send 类属性污染的回归测试。"""
 import inspect
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from utils.io_sender import SocketSender
-
 
 def _is_async_send():
     """验证 SocketSender.send 是 async 协程函数 (非 Mock)。"""
@@ -31,17 +16,14 @@ def _is_async_send():
         return False
     return inspect.iscoroutinefunction(raw)
 
-
 def test_p_4_1_socket_sender_send_is_async_coroutine():
     """基线: 在没有任何 patch 的情况下, SocketSender.send 必须是 async 协程函数。"""
     assert _is_async_send(), (
         "[BUG-P-4-1] SocketSender.send 已被污染成非 async 协程"
     )
 
-
 def test_p_4_1_patch_object_temporary_replaces_and_restores():
-    """[BUG-P-4-1] patch.object 临时改 send, with 退出后必须还原成原 coroutine。
-
+    """[
     用 MagicMock 替换 (不是 AsyncMock), 避免 iscoroutinefunction 误判。
     """
     with patch.object(SocketSender, "send", MagicMock()):
@@ -56,10 +38,8 @@ def test_p_4_1_patch_object_temporary_replaces_and_restores():
         "说明测试在用类似 `__bases__[0].send = ...` 的污染写法"
     )
 
-
 def test_p_4_1_obs4_test_source_no_longer_uses_bases_pollution():
-    """[BUG-P-4-1] OBS-4 测试源码里不能有 `.__class__.__bases__[0].send = ` 这种类属性污染写法。
-
+    """[
     实现: 去掉注释行 + 去掉字符串字面量, 再 grep 是否还有 `__bases__[0].send = `。
     """
     obs4_path = os.path.join(
@@ -97,7 +77,6 @@ def test_p_4_1_obs4_test_source_no_longer_uses_bases_pollution():
         + "\n".join(code_lines)
     )
 
-
 def test_p_4_1_socket_sender_send_signature_unchanged():
     """[BUG-P-4-1] SocketSender.send 应是 `async def send(self, msg: str)`, 签名不能被改。"""
     sig = inspect.signature(SocketSender.send)
@@ -105,7 +84,6 @@ def test_p_4_1_socket_sender_send_signature_unchanged():
     assert params == ["self", "msg"], (
         f"[BUG-P-4-1] SocketSender.send 签名变了: {params}"
     )
-
 
 def test_p_4_1_socket_sender_has_no_mock_in_dict():
     """[BUG-P-4-1] SocketSender.__dict__ 里不能有 Mock 类型的 send。"""

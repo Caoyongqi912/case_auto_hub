@@ -1,38 +1,19 @@
-"""
-BUG-F8 回归测试:`result_writer` 必须从 ExecutionContext 拿,不能再用模块级单例。
+"""BUG-F8 回归测试:`result_writer` 必须从 ExecutionContext 拿,不能再用模块级单例。"""
 
-直接证据 (case_result=42): 8 个 step_content_*.py + task.py 仍
-`from croe.interface.writer import result_writer` 拿模块单例, 写 STEP_API 时
-数据进单例的 content_result_cache, 但 finalize_case_result flush 的是 runner
-实例的空 cache, 单例 cache 永远不被 flush -> 案例拿不到 step_result。
-
-本测试锁住:
-1. writer/__init__.py 不再导出模块级 result_writer 单例
-2. step_content_*.py / task.py / play_interface_strategy.py 没有
-   `from croe.interface.writer import result_writer`
-3. ExecutionContext 包含 result_writer 字段
-4. CaseStepContext 提供 .result_writer 便捷 property
-5. Runner 注入 ExecutionContext 时传 self.result_writer
-6. TaskRunner 自有 self.result_writer
-"""
 import ast
 from pathlib import Path
 import pytest
 
 from tests.croe.interface._bug_ids import BUG_F8
 
-
 @pytest.fixture
 def bug_f8_marker():
     return BUG_F8
 
-
 REPO = Path(__file__).resolve().parents[3]
-
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
-
 
 # ---------- 1. writer/__init__.py 不再导出 result_writer 单例 ----------
 
@@ -56,7 +37,6 @@ def test_bug_f8_writer_init_does_not_export_singleton(bug_f8_marker):
         f"(匹配到 {bad}), 删掉即可"
     )
 
-
 # ---------- 2. step_content_*.py / task.py / play_interface_strategy.py
 #     不能 `from croe.interface.writer import result_writer` ----------
 
@@ -73,7 +53,6 @@ FILES_MUST_NOT_IMPORT_SINGLETON = [
     "croe/play/executor/step_content_strategy/play_interface_strategy.py",
 ]
 
-
 @pytest.mark.parametrize("rel_path", FILES_MUST_NOT_IMPORT_SINGLETON)
 def test_bug_f8_no_module_singleton_import(bug_f8_marker, rel_path):
     """[BUG-F8] 这些文件不能 `import result_writer` 模块单例"""
@@ -88,7 +67,6 @@ def test_bug_f8_no_module_singleton_import(bug_f8_marker, rel_path):
             f"应改用 step_context.result_writer 或 self.result_writer"
         )
 
-
 # ---------- 3. ExecutionContext 包含 result_writer 字段 ----------
 
 def test_bug_f8_execution_context_has_result_writer(bug_f8_marker):
@@ -100,7 +78,6 @@ def test_bug_f8_execution_context_has_result_writer(bug_f8_marker):
         f"[{BUG_F8}] ExecutionContext 缺 result_writer 字段, "
         f"实际字段: {names}"
     )
-
 
 # ---------- 4. CaseStepContext 提供 .result_writer 便捷 property ----------
 
@@ -115,7 +92,6 @@ def test_bug_f8_case_step_context_has_result_writer_property(bug_f8_marker):
         f"[{BUG_F8}] CaseStepContext.result_writer 应是 property"
     )
 
-
 # ---------- 5. Runner 注入 ExecutionContext 时传 self.result_writer ----------
 
 def test_bug_f8_runner_injects_result_writer_into_context(bug_f8_marker):
@@ -124,7 +100,6 @@ def test_bug_f8_runner_injects_result_writer_into_context(bug_f8_marker):
     assert "result_writer=self.result_writer" in src, (
         f"[{BUG_F8}] runner.py 未把 self.result_writer 注入 ExecutionContext"
     )
-
 
 # ---------- 6. TaskRunner 自有 self.result_writer ----------
 
@@ -142,8 +117,7 @@ def test_bug_f8_task_runner_has_own_result_writer(bug_f8_marker):
     ):
         assert call in src, f"[{BUG_F8}] task.py 缺 {call}"
 
-
-# ---------- 7. 端到端: runner 用的 result_writer 跟注入到 context 的一致 ----------
+# ---------- 7. 端到端: runner 用的 result_writer 跟 context 注入 ----------
 
 def test_bug_f8_runner_result_writer_is_same_as_context(bug_f8_marker):
     """[BUG-F8] ExecutionContext.result_writer 必须 === runner.result_writer"""

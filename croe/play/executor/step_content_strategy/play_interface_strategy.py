@@ -18,10 +18,6 @@ class PlayInterfaceContentStrategy(StepBaseStrategy):
     async def execute(self, step_context: StepContentContext) -> bool:
         start_time = datetime.datetime.now()
 
-        # BUG-F8 修复: 局部 ResultWriter 替代模块级单例
-        # (play 路径只有 write_interface_result(immediate=True) 一处,
-        #  即便用单例 immediate=True 也走直接 insert 不进 cache,
-        #  但单例已被删, 这里用局部实例最干净)
         rw = ResultWriter()
 
         try:

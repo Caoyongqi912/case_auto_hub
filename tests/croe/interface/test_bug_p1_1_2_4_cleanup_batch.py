@@ -1,19 +1,5 @@
-"""
-[BUG-P1-1 + P1-2 + P1-4] 3 个 P1 一锅端, 来自 EXECUTION_LAYERS_REVIEW_2026_06_20。
+"""[BUG-P1-1 + P1-2 + P1-4] 3 个 P1 一锅端, 来自 EXECUTION_LAYERS_REVIEW_2026_06_20。"""
 
-BUG-P1-1: interface_executor.py:_build_result 硬编码 status_code == 200,
-        同文件 363 行用 InterfaceResponseStatusCodeEnum.SUCCESS, 风格不一致。
-        修: 改用 enum。
-
-BUG-P1-2: runner.py:InterfaceRunner.__slots__ 之前含 "global_headers" 字段,
-        init_global_headers 只更新 self.interface_executor.g_headers, 旧
-        self.global_headers 永为 stale 空 list。修: __slots__ 删字段, 单一
-        来源 executor.g_headers。
-
-BUG-P1-4: runner.py:try_interface + try_group 之前没有 try/finally,
-        UI 调试入口用完不释放 httpx 连接, 跟 run_interface_case /
-        run_interface_by_task 风格不一致。修: 加 try/finally 调 aclose。
-"""
 import inspect
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -22,14 +8,11 @@ import pytest
 
 from tests.croe.interface._bug_ids import BUG_P1_1, BUG_P1_2, BUG_P1_4
 
-
 # --------------------------------------------------------------------------- #
-# BUG-P1-1: status_code 走 enum, 不用魔法数字
 # --------------------------------------------------------------------------- #
 
 def test_bug_p1_1_no_magic_200_in_build_result():
-    """[BUG-P1-1] _build_result 不应硬编码 200, 改用 InterfaceResponseStatusCodeEnum.SUCCESS。
-
+    """[
     修前: `is_success = ctx.response.status_code == 200`
     修后: `is_success = ctx.response.status_code == InterfaceResponseStatusCodeEnum.SUCCESS`
     """
@@ -54,14 +37,11 @@ def test_bug_p1_1_no_magic_200_in_build_result():
         f"InterfaceResponseStatusCodeEnum.SUCCESS"
     )
 
-
 # --------------------------------------------------------------------------- #
-# BUG-P1-2: __slots__ 删 global_headers stale 字段
 # --------------------------------------------------------------------------- #
 
 def test_bug_p1_2_slots_no_global_headers():
-    """[BUG-P1-2] InterfaceRunner.__slots__ 不应含 'global_headers'。
-
+    """[
     修前: __slots__ = ("starter", "variable_manager", "interface_executor",
                        "global_headers", "result_writer")
     修后: __slots__ = ("starter", "variable_manager", "interface_executor",
@@ -94,9 +74,7 @@ def test_bug_p1_2_slots_no_global_headers():
         f"字段已删, 单一来源 executor.g_headers"
     )
 
-
 # --------------------------------------------------------------------------- #
-# BUG-P1-4: try_interface + try_group 加 try/finally aclose
 # --------------------------------------------------------------------------- #
 
 def test_bug_p1_4_try_interface_has_try_finally():
@@ -107,8 +85,7 @@ def test_bug_p1_4_try_interface_has_try_finally():
 
     assert "try:" in src and "finally:" in src, (
         f"[{BUG_P1_4}] try_interface 必须有 try/finally 调 aclose, "
-        f"跟 run_interface_case / run_interface_by_task 风格对齐"
-    )
+        )
 
     # finally 必须调 aclose
     finally_m = re.search(r"finally:\s*\n(.*?)(?=\n    (?:async )?def |\Z)", src, re.DOTALL)
@@ -121,7 +98,6 @@ def test_bug_p1_4_try_interface_has_try_finally():
         f"[{BUG_P1_4}] try_interface finally 必须调 interface_executor.aclose()"
     )
 
-
 def test_bug_p1_4_try_group_has_try_finally():
     """[BUG-P1-4] try_group 函数体必须有 try/finally, finally 调 aclose。"""
     from croe.interface.runner import InterfaceRunner
@@ -130,8 +106,7 @@ def test_bug_p1_4_try_group_has_try_finally():
 
     assert "try:" in src and "finally:" in src, (
         f"[{BUG_P1_4}] try_group 必须有 try/finally 调 aclose, "
-        f"跟 run_interface_case / run_interface_by_task 风格对齐"
-    )
+        )
 
     # finally 必须调 aclose
     finally_m = re.search(r"finally:\s*\n(.*?)(?=\n    (?:async )?def |\Z)", src, re.DOTALL)
@@ -143,7 +118,6 @@ def test_bug_p1_4_try_group_has_try_finally():
     assert "interface_executor.aclose" in finally_block, (
         f"[{BUG_P1_4}] try_group finally 必须调 interface_executor.aclose()"
     )
-
 
 @pytest.mark.asyncio
 async def test_bug_p1_4_try_interface_finally_runs_on_exception():
@@ -188,7 +162,6 @@ async def test_bug_p1_4_try_interface_finally_runs_on_exception():
 
     # finally 跑了 aclose
     runner.interface_executor.aclose.assert_awaited()
-
 
 @pytest.mark.asyncio
 async def test_bug_p1_4_try_group_finally_runs_on_exception():

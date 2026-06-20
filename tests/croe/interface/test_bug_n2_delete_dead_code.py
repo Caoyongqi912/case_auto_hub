@@ -1,15 +1,5 @@
-"""
-BUG-N2 回归测试: page_case_results / query_case_result 是 dead code, 删了不破坏。
+"""BUG-N2 回归测试: page_case_results / query_case_result 是 dead code, 删了不破坏。"""
 
-D9 把它们从 `pass` 改成 raise NotImplementedError 防静默吞错, N2 进一步
-删掉 — 真要分页走 list_by_filter + 分页参数, 查单个走 get_by_id (D9 注释
-里已经给了指引)。
-
-测试锁住:
-1. 这两个方法已从 InterfaceCaseResultMapper 删除
-2. 全项目 0 caller (用 grep 源码, 不调用任何运行时 API)
-3. 0 个测试文件调用它们 (防止测试 mock 后调)
-"""
 import re
 from pathlib import Path
 
@@ -20,15 +10,12 @@ from tests.croe.interface._bug_ids import BUG_N2
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-
 def _src(rel: str) -> str:
     return (REPO_ROOT / rel).read_text(encoding="utf-8")
-
 
 @pytest.fixture
 def bug_n2_marker():
     return BUG_N2
-
 
 # --------------------------------------------------------------------------- #
 # N2.1 - 源码层: 这两个方法不存在了
@@ -41,7 +28,6 @@ def test_bug_n2_page_case_results_removed_from_mapper(bug_n2_marker):
         f"[{BUG_N2}] page_case_results 还在, 应删除 (dead code)。"
     )
 
-
 @pytest.mark.unit
 def test_bug_n2_query_case_result_removed_from_mapper(bug_n2_marker):
     """[BUG-N2] InterfaceCaseResultMapper.query_case_result 已删。"""
@@ -49,15 +35,13 @@ def test_bug_n2_query_case_result_removed_from_mapper(bug_n2_marker):
         f"[{BUG_N2}] query_case_result 还在, 应删除 (dead code)。"
     )
 
-
 # --------------------------------------------------------------------------- #
 # N2.2 - 源码层: 全项目 0 caller (除已删的定义本身)
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.unit
 def test_bug_n2_no_caller_in_croe_app(bug_n2_marker):
-    """[BUG-N2] croe/ + app/ 源码里 0 处调用 page_case_results / query_case_result。
-
+    """[
     例外: 删掉的方法定义本身 (interfaceResultMapper.py) 跟本测试文件
     (BUD-N2 自己提的回归) 不算 caller。
     """
@@ -74,7 +58,6 @@ def test_bug_n2_no_caller_in_croe_app(bug_n2_marker):
             rel = str(py.relative_to(REPO_ROOT))
             if rel in skip_files:
                 continue
-            # 跳过 interfaceResultMapper.py (BUG-N2 注释里提及, 不是 caller)
             if rel == "app/mapper/interfaceApi/interfaceResultMapper.py":
                 continue
             src = py.read_text(encoding="utf-8")
@@ -88,7 +71,6 @@ def test_bug_n2_no_caller_in_croe_app(bug_n2_marker):
         f"[{BUG_N2}] 发现 caller, dead code 删了会破坏它们: {bad_callers}"
     )
 
-
 # --------------------------------------------------------------------------- #
 # N2.3 - 文档层: D9 注释里还提到, 但功能已切到 get_by_id, 锁住不回归
 # --------------------------------------------------------------------------- #
@@ -97,8 +79,6 @@ def test_bug_n2_no_caller_in_croe_app(bug_n2_marker):
 def test_bug_n2_d9_comment_still_recommends_get_by_id(bug_n2_marker):
     """[BUG-N2] 删方法后, 注释仍指引"请用 get_by_id 替代", 防止新代码误加。"""
     src = _src("app/mapper/interfaceApi/interfaceResultMapper.py")
-    # BUG-N2 注释里应有指引
-    assert "BUG-N2" in src, "[BUG-N2] 应保留 BUG-N2 注释说明删的原因"
     assert "list_by_filter" in src or "get_by_id" in src, (
         "[BUG-N2] 注释里应指引替代方案 (get_by_id / list_by_filter)。"
     )

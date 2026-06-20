@@ -1,14 +1,5 @@
-"""
-BUG-M5 回归测试:`content_type` 列必须存 enum NAME 而不是 int value,
-避免重排枚举值时所有旧数据全错。
+"""BUG-M5 回归测试:`content_type` 列必须存 enum NAME 而不是 int value,"""
 
-原版 `content_type = Column(INTEGER)` 存 enum 的 .value (1/2/3...)。
-任何重排 CaseStepContentType (增删 / 改顺序) 都会让旧数据立刻指错类型。
-改用 `Column(Enum(CaseStepContentType, native_enum=False, length=20))` 后,
-DB 存的是 'STEP_API' / 'STEP_API_GROUP' 等字符串, 跟枚举值解耦。
-
-详见 docs/review/run_interface_case_deep_review.md。
-"""
 import inspect
 
 import pytest
@@ -23,18 +14,15 @@ from app.model.interfaceAPIModel.interfaceResultModel import (
 )
 from tests.croe.interface._bug_ids import BUG_M5
 
-
 @pytest.fixture
 def bug_m5_marker():
     return BUG_M5
-
 
 def _content_type_column(model):
     """从模型上拿 content_type Column 对象, 不用走 SQLAlchemy inspect, 直接读 attribute。"""
     from sqlalchemy import inspect as sa_inspect
     mapper = sa_inspect(model)
     return mapper.columns["content_type"]
-
 
 @pytest.mark.unit
 def test_bug_m5_contents_uses_enum_type_not_integer(bug_m5_marker):
@@ -53,7 +41,6 @@ def test_bug_m5_contents_uses_enum_type_not_integer(bug_m5_marker):
         f"实际 {col.type.enum_class!r}"
     )
 
-
 @pytest.mark.unit
 def test_bug_m5_result_uses_enum_type_not_integer(bug_m5_marker):
     """[BUG-M5] InterfaceCaseContentResult.content_type 必须用 Enum, 不能是 Integer。"""
@@ -63,7 +50,6 @@ def test_bug_m5_result_uses_enum_type_not_integer(bug_m5_marker):
         f"实际是 {type(col.type).__name__}"
     )
     assert col.type.enum_class is CaseStepContentType
-
 
 @pytest.mark.unit
 def test_bug_m5_enum_uses_native_enum_false_for_portability(bug_m5_marker):
@@ -75,7 +61,6 @@ def test_bug_m5_enum_uses_native_enum_false_for_portability(bug_m5_marker):
     assert col.type.length is not None and col.type.length > 0, (
         f"[{BUG_M5}] Enum 必须 length>0 供 VARCHAR 存储, 实际 length={col.type.length}"
     )
-
 
 @pytest.mark.unit
 def test_bug_m5_polymorphic_on_still_uses_content_type(bug_m5_marker):

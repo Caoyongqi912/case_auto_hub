@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_smoke_run_interface_case_returns_tuple_when_case_missing():
-    """用例不存在时,返回 (False, None) 二元组(BUG-F2 修复 + 接口形状)。"""
+    """用例不存在时,返回 (False, None) 二元组。"""
     from croe.interface.runner import InterfaceRunner
     starter = MagicMock()
     starter.send = AsyncMock()
@@ -40,7 +40,7 @@ async def test_smoke_run_interface_case_returns_tuple_when_case_missing():
 
 @pytest.mark.integration
 def test_smoke_runner_holds_independent_result_writer():
-    """每个 InterfaceRunner 持有独立 ResultWriter (BUG-D1 修复)。"""
+    """每个 InterfaceRunner 持有独立 ResultWriter 。"""
     from croe.interface.runner import InterfaceRunner
     starter = MagicMock()
     starter.send = AsyncMock()

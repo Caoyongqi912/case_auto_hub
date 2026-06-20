@@ -1,24 +1,5 @@
-"""
-[BUG-D6] InterfaceResult <-> APIStepContentResult 双向 FK 漂移检测 + reconcile
+"""[BUG-D6] InterfaceResult <-> APIStepContentResult 双向 FK 漂移检测 + reconcile"""
 
-根因: InterfaceResult.content_result_id 跟 APIStepContentResult.interface_result_id
-是同一 1:1 关系的两个方向, 任何一边漏更新就漂。F8B 只处理
-'ir_missing_fk' (ir.content_result_id IS NULL) 这一种, 还有
-'mismatch' 跟 'api_missing_fk' 两种漂移没处理。
-
-修法: 加 2 个 mapper 方法 (不删 FK, 那是大改), 一查一修:
-  - find_fk_inconsistencies: 扫出 3 种 mismatch_reason
-  - reconcile_fk_from_polymorphic: 用 polymorphic 子类 FK 覆写 IR.content_result_id
-
-本测试不接真实 DB, 用 mock + AST 锁住:
-1. session=None 必须抛 (D4 风格)
-2. find_fk_inconsistencies 的 SQL 含 3 种 mismatch_reason
-3. find_fk_inconsistencies 返回的 dict 字段名跟 SQL 一致
-4. reconcile_fk_from_polymorphic 的 SQL 是 UPDATE JOIN
-5. reconcile 返回 rowcount
-6. case_result_id 过滤: :case_result_id IS NULL 兜底 + 子查询
-7. 异常路径: DB 异常往外冒
-"""
 import ast
 import inspect
 import re
@@ -29,13 +10,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.mapper.interfaceApi.interfaceResultMapper import InterfaceResultMapper
 from tests.croe.interface._bug_ids import BUG_D6
 
-
 @pytest.fixture
 def bug_d6_marker():
     return BUG_D6
 
-
-# ---- session=None 强制 (D4 风格) ----
+# ---- session=None 强制 ----
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -44,7 +23,6 @@ async def test_bug_d6_find_fk_inconsistencies_requires_session(bug_d6_marker):
     with pytest.raises(ValueError, match="external session"):
         await InterfaceResultMapper.find_fk_inconsistencies(session=None)
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d6_reconcile_fk_requires_session(bug_d6_marker):
@@ -52,12 +30,10 @@ async def test_bug_d6_reconcile_fk_requires_session(bug_d6_marker):
     with pytest.raises(ValueError, match="external session"):
         await InterfaceResultMapper.reconcile_fk_from_polymorphic(session=None)
 
-
 # ---- SQL 形状锁住 ----
 
 def _get_src(method):
     return inspect.getsource(method)
-
 
 @pytest.mark.unit
 def test_bug_d6_find_sql_has_three_mismatch_reasons(bug_d6_marker):
@@ -69,7 +45,6 @@ def test_bug_d6_find_sql_has_three_mismatch_reasons(bug_d6_marker):
             f"[{BUG_D6}] find_fk_inconsistencies SQL CASE WHEN 漏 {reason!r}。"
             f"\n当前 3 种漂移原因: ir_missing_fk / api_missing_fk / mismatch + ok 兜底"
         )
-
 
 @pytest.mark.unit
 def test_bug_d6_find_sql_joins_polymorphic_subtype(bug_d6_marker):
@@ -84,7 +59,6 @@ def test_bug_d6_find_sql_joins_polymorphic_subtype(bug_d6_marker):
     assert "LEFT JOIN" in src, (
         f"[{BUG_D6}] find SQL 必须 LEFT JOIN, 否则 api_missing_fk 永远不会出现"
     )
-
 
 @pytest.mark.unit
 def test_bug_d6_find_sql_returns_dict_with_4_fields(bug_d6_marker):
@@ -101,7 +75,6 @@ def test_bug_d6_find_sql_returns_dict_with_4_fields(bug_d6_marker):
             f"[{BUG_D6}] find_fk_inconsistencies SQL 缺字段 {field!r}"
         )
 
-
 @pytest.mark.unit
 def test_bug_d6_find_sql_case_result_id_filter_with_is_null_escape(bug_d6_marker):
     """[BUG-D6] find_fk_inconsistencies 必须支持 case_result_id=None 扫全表 (用 IS NULL 兜底)。"""
@@ -111,7 +84,6 @@ def test_bug_d6_find_sql_case_result_id_filter_with_is_null_escape(bug_d6_marker
         f"[{BUG_D6}] find SQL 必须用 :case_result_id IS NULL 兜底, "
         f"允许 None=全表扫 / int=精确过滤"
     )
-
 
 @pytest.mark.unit
 def test_bug_d6_reconcile_sql_is_update_join(bug_d6_marker):
@@ -128,7 +100,6 @@ def test_bug_d6_reconcile_sql_is_update_join(bug_d6_marker):
         f"[{BUG_D6}] reconcile 必须 JOIN interface_case_content_result_api 当 source of truth"
     )
 
-
 @pytest.mark.unit
 def test_bug_d6_reconcile_sql_case_result_id_filter(bug_d6_marker):
     """[BUG-D6] reconcile SQL 也必须支持 case_result_id 过滤 + IS NULL 兜底。"""
@@ -136,7 +107,6 @@ def test_bug_d6_reconcile_sql_case_result_id_filter(bug_d6_marker):
     assert ":case_result_id IS NULL" in src, (
         f"[{BUG_D6}] reconcile 也必须支持 case_result_id=None 全表 / int 过滤"
     )
-
 
 # ---- 端到端 mock ----
 
@@ -175,7 +145,6 @@ async def test_bug_d6_find_returns_list_of_dicts(bug_d6_marker):
         f"[{BUG_D6}] case_result_id 应作为参数传入 (允许 None 全表)"
     )
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d6_find_returns_empty_list_when_no_drift(bug_d6_marker):
@@ -190,19 +159,15 @@ async def test_bug_d6_find_returns_empty_list_when_no_drift(bug_d6_marker):
     rows = await InterfaceResultMapper.find_fk_inconsistencies(session=mock_session)
     assert rows == []
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d6_reconcile_returns_rowcount(bug_d6_marker):
-    """[BUG-D6 + D4-V2] reconcile_fk_from_polymorphic 端到端: 返 rowcount,
-    且 caller 传 session 进来时不再中途 commit (D4-V2 修)。
-    """
+    """[    """
     mock_session = AsyncMock()
     mock_result = MagicMock()
     mock_result.rowcount = 5
     mock_session.execute = AsyncMock(return_value=mock_result)
 
-    # BUG-D4-V2 修复: 改 mock transaction, 不是 session_scope
     from contextlib import asynccontextmanager
 
     @asynccontextmanager
@@ -215,16 +180,12 @@ async def test_bug_d6_reconcile_returns_rowcount(bug_d6_marker):
         )
 
     assert fixed == 5, f"[{BUG_D6}] reconcile 应返 rowcount, 实际: {fixed}"
-    # BUG-D4-V2 修复: caller 传 session 时, 函数不调 commit, 让 caller 控制
     mock_session.commit.assert_not_awaited()
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d6_reconcile_handles_zero_fixes(bug_d6_marker):
-    """[BUG-D6 + D4-V2] reconcile 没找到漂移 (rowcount=0) 时返 0 不崩,
-    且 caller 传 session 时不调 commit (D4-V2 修)。
-    """
+    """[    """
     mock_session = AsyncMock()
     mock_result = MagicMock()
     mock_result.rowcount = 0
@@ -242,9 +203,7 @@ async def test_bug_d6_reconcile_handles_zero_fixes(bug_d6_marker):
         )
 
     assert fixed == 0
-    # BUG-D4-V2 修复: 没 UPDATE 也照样不调 commit, caller 控制
     mock_session.commit.assert_not_awaited()
-
 
 # ---- 异常路径 ----
 
@@ -257,7 +216,6 @@ async def test_bug_d6_find_propagates_db_errors(bug_d6_marker):
 
     with pytest.raises(RuntimeError, match="connection lost"):
         await InterfaceResultMapper.find_fk_inconsistencies(session=mock_session)
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -278,19 +236,12 @@ async def test_bug_d6_reconcile_propagates_db_errors(bug_d6_marker):
                 session=mock_session
             )
 
-
-
 # ---- BUG-D4-V2: partial commit 修 ----
 
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d4_v2_backfill_no_explicit_commit(bug_d6_marker):
-    """[BUG-D4-V2] backfill_content_result_id_fk 不再调 await session.commit()。
-
-    修法: 把 session_scope(session) + 显式 commit() 换成 transaction(session),
-    transaction() 在 session=None 时 session.begin() 自动 commit, session 传
-    进来时 caller 控制事务边界, 不中途 commit 破坏 bulk 业务流。
-    """
+    """["""
     src = inspect.getsource(InterfaceResultMapper.backfill_content_result_id_fk)
     # 1. 源码里不能有显式 commit (去掉注释行再查, 避免误命中修复注释里
     #    "await session.commit() 会"中途提交"" 这种描述性引用)
@@ -311,7 +262,6 @@ async def test_bug_d4_v2_backfill_no_explicit_commit(bug_d6_marker):
         f"[BUG-D4-V2] backfill_content_result_id_fk 不应再用 session_scope(session)"
     )
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d4_v2_reconcile_no_explicit_commit(bug_d6_marker):
@@ -328,12 +278,10 @@ async def test_bug_d4_v2_reconcile_no_explicit_commit(bug_d6_marker):
         f"[BUG-D4-V2] reconcile_fk_from_polymorphic 不应再用 session_scope(session)"
     )
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d4_v2_backfill_session_none_still_works(bug_d6_marker):
-    """[BUG-D4-V2] backfill session=None 时也能返 rowcount, transaction() 自管事务。
-
+    """[
     用 mock 模拟 transaction() 自管路径 (创建新 session + session.begin())。
     """
     from contextlib import asynccontextmanager

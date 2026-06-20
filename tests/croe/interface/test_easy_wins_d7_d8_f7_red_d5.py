@@ -11,7 +11,6 @@ import pytest
 from croe.interface.writer.result_writer import ResultWriter
 from tests.croe.interface._bug_ids import BUG_D1  # 借用 marker, 避免 _bug_ids 散乱
 
-
 # ===========================================================
 # D7: InterfaceGroupMapper.copy_interface 不再有死代码 if not group
 # ===========================================================
@@ -27,7 +26,6 @@ def test_bug_d7_copy_interface_no_dead_group_check():
     assert "if not interface:" not in src, (
         f"[BUG-D7] copy_interface 还有 if not interface 死代码, 同上"
     )
-
 
 # ===========================================================
 # D8: InterfaceCaseContentMapper.copy_content 用 username= 字段
@@ -54,7 +52,6 @@ def test_bug_d8_copy_content_uses_username_kwarg():
     assert "creatorName=" not in code_text, (
         f"[BUG-D8] 实际代码里仍出现 creatorName= kwarg, 应删"
     )
-
 
 # ===========================================================
 # F7: init_case_result 不再有误导性 log.info
@@ -106,7 +103,6 @@ async def test_bug_f7_init_case_result_does_not_log_obj_directly():
                 "task_result {" in msg or "task_result{}" in msg
             ), f"[BUG-F7] 仍然有误导性 log.info: {msg!r}"
 
-
 # ===========================================================
 # RED-D5: ResultWriter 不再有 _progress_update_cache 死字段
 # ===========================================================
@@ -118,7 +114,6 @@ def test_bug_red_d5_no_progress_update_cache():
     assert not hasattr(rw, "_progress_update_cache"), (
         f"[RED-D5] _progress_update_cache 仍是死字段, 应删除"
     )
-
 
 @pytest.mark.unit
 def test_bug_red_d5_clear_cache_does_not_touch_dead_field():

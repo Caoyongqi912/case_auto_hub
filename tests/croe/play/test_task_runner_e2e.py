@@ -1,15 +1,4 @@
-"""
-PlayTaskRunner.execute_task 端到端单测 (高 mock 模式)。
-
-策略: mock PlayTaskMapper / PlayCaseMapper / PlayTaskResultWriter,
-验证 execute_task 的核心编排:
-- 拿 task + 拿 case list
-- init_result 失败时不能挂整 task (P-3-1 修复锁)
-- __execute_case 异常时仍调 write_final_result + notify
-- retry 透传
-
-不验证 case 内部执行 (那由 PlayRunner / step_content 测覆盖)。
-"""
+"""PlayTaskRunner.execute_task 核心编排的端到端测试 (高 mock)。"""
 import asyncio
 import pytest
 from datetime import datetime

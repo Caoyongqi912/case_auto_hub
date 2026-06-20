@@ -1,13 +1,5 @@
-"""
-BUG-F1 回归测试:runner 不应给 `case_result.interfaceLog` (camelCase) 赋值,
-应通过 `finalize_case_result(logs=...)` 写入 `interface_log` 字段。
+"""BUG-F1 回归测试:runner 不应给 `case_result.interfaceLog` (camelCase) 赋值,"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-
-`InterfaceCaseResult.interface_log` 是 SQLAlchemy TEXT 列(snake_case),
-runner.py:225 写成 `case_result.interfaceLog = ...` 会在实例上挂一个
-"野"属性,既不写库、也不会和列字段同步,极易在调试时被误以为是真字段。
-"""
 import re
 from pathlib import Path
 
@@ -15,11 +7,9 @@ import pytest
 
 from tests.croe.interface._bug_ids import BUG_F1
 
-
 @pytest.fixture
 def bug_f1_marker():
     return BUG_F1
-
 
 @pytest.mark.unit
 def test_bug_f1_runner_no_camelcase_log_assignment(bug_f1_marker):
@@ -39,7 +29,6 @@ def test_bug_f1_runner_no_camelcase_log_assignment(bug_f1_marker):
         f"`case_result.interfaceLog = ...` 赋值,应改为通过 "
         f"`result_writer.finalize_case_result(logs=...)` 写入 `interface_log` 列"
     )
-
 
 @pytest.mark.unit
 def test_bug_f1_interface_log_column_exists():

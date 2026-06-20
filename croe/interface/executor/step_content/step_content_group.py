@@ -13,7 +13,6 @@ from app.mapper.interfaceApi.interfaceGroupMapper import InterfaceGroupMapper
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
-# BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums import InterfaceAPIResultEnum, StepStatusEnum
 from enums.CaseEnum import CaseStepContentType
@@ -80,7 +79,6 @@ class APIGroupContentStrategy(StepBaseStrategy):
                 interface=interface,
                 env=step_context.execution_context.env,
             )
-            # BUG-E6 修复: 第二个返回值 (success) 没了, 从 interface_result['result'] 拿
             success = interface_result['result']
 
             await step_context.result_writer.write_interface_result(

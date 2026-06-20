@@ -1,17 +1,5 @@
-"""
-BUG-M7 回归测试: result 列 enum/bool 类型安全。
+"""BUG-M7 回归测试: result 列 enum/bool 类型安全。"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-
-根因:
-- `InterfaceAPIResultEnum.SUCCESS=True` / `ERROR=False` (bool), 写 Boolean 列 OK
-- 旧 `InterfaceCaseResultEnum.SUCCESS="SUCCESS"` / `ERROR="ERROR"` (str)
-  同名不同值, 写 Boolean 列时 `bool("ERROR")=True` 静默写反
-- 全仓 0 引用 (grep 0 命中), 已删
-
-防御:
-- `croe.interface.writer.result_writer._result_flag_to_bool` 统一归一 bool
-"""
 import pytest
 
 from enums.InterfaceEnum import (
@@ -20,11 +8,9 @@ from enums.InterfaceEnum import (
 )
 from tests.croe.interface._bug_ids import BUG_M7
 
-
 @pytest.fixture
 def bug_m7_marker():
     return BUG_M7
-
 
 @pytest.mark.unit
 def test_bug_m7_interface_case_result_enum_removed(bug_m7_marker):
@@ -35,7 +21,6 @@ def test_bug_m7_interface_case_result_enum_removed(bug_m7_marker):
         "跟 InterfaceAPIResultEnum (bool 值) 同名不同值, 会导致 result 列静默写反"
     )
 
-
 @pytest.mark.unit
 def test_bug_m7_api_result_enum_values_are_bool(bug_m7_marker):
     """[BUG-M7] InterfaceAPIResultEnum 成员值必须为 bool, 跟 Boolean 列对得上。"""
@@ -44,7 +29,6 @@ def test_bug_m7_api_result_enum_values_are_bool(bug_m7_marker):
     # 防回归: 不允许赋值成 str
     assert isinstance(InterfaceAPIResultEnum.SUCCESS, bool)
     assert isinstance(InterfaceAPIResultEnum.ERROR, bool)
-
 
 @pytest.mark.unit
 def test_bug_m7_result_flag_helper_normalizes(bug_m7_marker):
@@ -71,7 +55,6 @@ def test_bug_m7_result_flag_helper_normalizes(bug_m7_marker):
     assert _result_flag_to_bool(0) is False
     assert _result_flag_to_bool(1) is True
     assert _result_flag_to_bool(["x"]) is True
-
 
 @pytest.mark.unit
 def test_bug_m7_status_enum_unchanged(bug_m7_marker):

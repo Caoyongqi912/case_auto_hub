@@ -1,23 +1,14 @@
-"""
-BUG-F4 回归测试:`init_interface_case_vars` 不应静默吞错。
-原代码整个方法 try/except Exception 只 log.error,失败时:
-- 用户看不到(只 log,不 starter.send)
-- 没有 traceback (用 .error 而非 .exception)
-- 后续步骤继续用空变量跑,断言静默失败
+"""BUG-F4 回归测试:`init_interface_case_vars` 不应静默吞错。"""
 
-修复后:失败要可见 + 有 traceback,但不抛(后续步骤仍跑)。
-"""
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from croe.interface.runner import InterfaceRunner
 from tests.croe.interface._bug_ids import BUG_F4
 
-
 @pytest.fixture
 def bug_f4_marker():
     return BUG_F4
-
 
 def _make_starter():
     starter = MagicMock()
@@ -28,7 +19,6 @@ def _make_starter():
     starter.logs = []
     starter.over = AsyncMock()
     return starter
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -56,7 +46,6 @@ async def test_bug_f4_mapper_error_does_not_silently_sink(bug_f4_marker):
         f"实际 send 调用: {send_msgs}"
     )
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_f4_mapper_error_does_not_crash_subsequent_steps(bug_f4_marker):
@@ -75,7 +64,6 @@ async def test_bug_f4_mapper_error_does_not_crash_subsequent_steps(bug_f4_marker
                 f"[{BUG_F4}] init_interface_case_vars 不应向外抛错,"
                 f"这样后续步骤无法继续。实际抛: {type(e).__name__}: {e}"
             )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio

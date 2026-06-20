@@ -1,14 +1,5 @@
-"""
-[BUG-D10 + E11 + OBS-4 + OBS-5 + OBS-6] 5 easy wins 回归测试。
+"""[BUG-D10 + E11 + OBS-4 + OBS-5 + OBS-6] 5 easy wins 回归测试。"""
 
-D10:  update_by_id 后 to_dict() 的 snapshot 时机 — 加 post_update_hook callback
-E11:  condition_step 写库漏 assert_data JSON — 加 assert_data 写
-OBS-4: starter.send emoji 协议无类型安全 — 加 STARTER_MSG_TYPE + send_typed
-OBS-5: set_result_field 不返成功状态 — 改返 bool
-OBS-6: log 只有 trace_id 没 case_result_id — 显式 log
-
-测试不接真实 DB, mock + AST + 源码字符串检查。
-"""
 import inspect
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -17,9 +8,7 @@ from loguru import logger as loguru_logger
 
 from croe.interface.observability import install_patchers
 
-
 # ============================================================
-# BUG-D10: post_update_hook callback
 # ============================================================
 
 @pytest.mark.unit
@@ -30,7 +19,6 @@ def test_bug_d10_update_by_id_accepts_post_update_hook():
     assert "post_update_hook" in sig_src, (
         f"[BUG-D10] update_by_id 缺 post_update_hook 参数, 当前源码:\n{sig_src[:500]}"
     )
-
 
 @pytest.mark.unit
 def test_bug_d10_update_cls_keeps_target_attached_for_hook():
@@ -53,12 +41,10 @@ def test_bug_d10_update_cls_keeps_target_attached_for_hook():
         f"update_cls pos={update_cls_call_pos}, hook pos={hook_call_pos}"
     )
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d10_post_update_hook_receives_target_before_expunge():
-    """[BUG-D10] post_update_hook 接收 target 时 target 还 attached (未 expunge)。
-
+    """[
     端到端 mock: 用 update_by_id 跑一次, hook 拿到 target 时验证它未被 expunge。
     """
     from app.mapper import Mapper
@@ -102,7 +88,6 @@ async def test_bug_d10_post_update_hook_receives_target_before_expunge():
     # hook 返回值被透传
     assert result == {"snap": {"id": 42, "name": "after"}}
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d10_no_hook_returns_target_as_before():
@@ -129,7 +114,6 @@ async def test_bug_d10_no_hook_returns_target_as_before():
         f"[BUG-D10] 不传 hook 时必须返 target, 实际: {result!r}"
     )
 
-
 @pytest.mark.unit
 def test_bug_d10_update_interface_case_uses_post_update_hook():
     """[BUG-D10] update_interface_case 必须用 post_update_hook 拿 to_dict 快照。"""
@@ -145,7 +129,6 @@ def test_bug_d10_update_interface_case_uses_post_update_hook():
         f"应在 post_update_hook 里调 (target 还 attached)"
     )
 
-
 @pytest.mark.unit
 def test_bug_d10_update_interface_uses_post_update_hook():
     """[BUG-D10] update_interface 必须用 post_update_hook 拿 to_dict 快照。"""
@@ -158,9 +141,7 @@ def test_bug_d10_update_interface_uses_post_update_hook():
         f"[BUG-D10] update_interface 不应在 update_by_id 后调 to_dict()"
     )
 
-
 # ============================================================
-# BUG-E11: assert_data 写库
 # ============================================================
 
 @pytest.mark.unit
@@ -173,14 +154,8 @@ def test_bug_e11_condition_step_writes_assert_data():
     assert "assert_data=content_condition" in src, (
         f"[BUG-E11] step_content_condition 写库漏 assert_data 字段, 应加 assert_data=content_condition, 当前 src:\n{src[:800]}"
     )
-    # 注释里必须有 BUG-E11 标记
-    assert "BUG-E11" in src, (
-        f"[BUG-E11] 源码应含 BUG-E11 标记"
-    )
-
 
 # ============================================================
-# BUG-OBS-4: STARTER_MSG_TYPE + send_typed
 # ============================================================
 
 @pytest.mark.unit
@@ -193,7 +168,6 @@ def test_bug_obs_4_starter_msg_type_constant_exists():
             f"[BUG-OBS-4] STARTER_MSG_TYPE 缺 {t}"
         )
 
-
 @pytest.mark.unit
 def test_bug_obs_4_starter_has_send_typed_method():
     """[BUG-OBS-4] APIStarter 必须有 send_typed(type, msg) 方法。"""
@@ -203,7 +177,6 @@ def test_bug_obs_4_starter_has_send_typed_method():
     )
     src = inspect.getsource(APIStarter.send_typed)
     assert "msg_type" in src, "send_typed 必须有 msg_type 参数"
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -218,8 +191,6 @@ async def test_bug_obs_4_send_typed_prepends_type_marker():
     # mock super().send 抓消息
     async def fake_super_send(msg):
         captured.append(msg)
-    # BUG-P-4-1 修复: 用 patch.object 临时改 SocketSender.send, 不直接改类属性
-    # (原写法 `__bases__[0].send = ...` 会污染所有后续测试)
     from utils.io_sender import SocketSender
     with patch.object(SocketSender, "send", AsyncMock(side_effect=fake_super_send)):
         await starter.send_typed(STARTER_MSG_TYPE.TYPE_EXTRACT, "变量 x = 1")
@@ -228,9 +199,7 @@ async def test_bug_obs_4_send_typed_prepends_type_marker():
         f"[BUG-OBS-4] send_typed 没传 [TYPE_xxx] 前缀, 实际: {captured!r}"
     )
 
-
 # ============================================================
-# BUG-OBS-5: set_result_field 返 bool
 # ============================================================
 
 @pytest.mark.unit
@@ -250,9 +219,7 @@ def test_bug_obs_5_set_result_field_returns_bool():
     # 但允许 log.error + raise 模式
     assert "raise" in src, "set_result_field 失败路径必须 raise"
 
-
 # ============================================================
-# BUG-OBS-6: log 含 case_result_id
 # ============================================================
 
 @pytest.mark.unit
@@ -264,11 +231,6 @@ def test_bug_obs_6_runner_logs_case_result_id():
     assert "case_result_id=" in src, (
         f"[BUG-OBS-6] run_interface_case 应显式 log case_result_id, 当前:\n{src[:1000]}"
     )
-    # 注释应有 BUG-OBS-6 标记
-    assert "BUG-OBS-6" in src, (
-        f"[BUG-OBS-6] 源码应含 BUG-OBS-6 标记"
-    )
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio

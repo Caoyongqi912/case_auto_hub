@@ -16,13 +16,11 @@ from app.mapper.project.dbConfigMapper import DbConfigMapper, DBExecuteMapper
 from app.model.interfaceAPIModel.contents import InterfaceCaseContents
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
-# BUG-F8 修复: result_writer 改从 step_context.execution_context 拿
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums import ExtractTargetVariablesEnum, StepStatusEnum
 from enums.CaseEnum import CaseStepContentType
 from utils import log
 from utils.execDBScript import ExecDBScript
-
 
 class APIDBContentStrategy(StepBaseStrategy):
     """数据库步骤执行策略"""
@@ -69,10 +67,6 @@ class APIDBContentStrategy(StepBaseStrategy):
             extracts=content_sql.sql_extracts
         )
 
-        # BUG-E10 修复: 跟 step_content_script.py 一致, 把 db_script.invoke 用
-        # try/except 包起来, 失败时 success=False + starter.send 错误消息 +
-        # WARNING 留痕, 不让数据库报错拖垮整个 step loop (E10 之前是裸调,
-        # 数据库连不上 / SQL 语法错 / 驱动异常会让 step 抛上来, 整个 case 中断)。
         result = {}
         try:
             result = await db_script.invoke(
@@ -116,10 +110,6 @@ class APIDBContentStrategy(StepBaseStrategy):
             interface_task_result_id=task_result_id,
         )
 
-        # BUG-E10 修复: 跟其他 step_content (script/group/loop) 一致,
-        # 成功时 success_num +1, 失败时 fail_num +1; return 改 return success,
-        # 异常 step 真正标记为失败 (旧逻辑写死 return True + 永远 +1 success_num,
-        # 让 fail step 也被记成 success, case 计数全错)。
         case_result = step_context.execution_context.case_result
         if success:
             case_result.success_num += 1
@@ -128,7 +118,6 @@ class APIDBContentStrategy(StepBaseStrategy):
         await step_context.result_writer.update_case_progress(case_result)
 
         return success
-
 
 async def write_case_step_content_db_result(
     step_index: int,

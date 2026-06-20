@@ -1,36 +1,14 @@
-"""
-[BUG-V6] VariableTrans 引用未定义变量时静默返回变量名
+"""[BUG-V6] VariableTrans 引用未定义变量时静默返回变量名"""
 
-根因: _resolve_vars 在 var_name not in self._vars 时, 走
-      `self._vars.get(var_name, f"{var_name}")` 兜底, 把变量名当字符串返回。
-      get_var 同病: `self._vars.get(key, key)` 缺失时返回 key 名字符串。
-后果: 用户写 {{user_id}} 在 URL 里, 如果上游 extract 失败 (handler 返回 None
-      + E12 已经把它从 vars_list 过滤), 这里拿不到 user_id, 静默把 URL
-      替换成 "/users/user_id/profile" — 请求发出去, 拿到 404, 操作员
-      误以为 API 挂了, 实际上是自己的变量没提取到。
-修: WARNING 日志让运维 grep 可见, 行为保持 (不破坏存量 case),
-    VARIABLE_TRANS_STRICT=1 改成抛 KeyError 让 case 立刻挂。
-
-测试 (7 个, 不接 DB):
-  - _resolve_vars 缺失变量 → 仍返 var_name + WARNING 出现
-  - _resolve_vars 已定义变量 → 不 WARNING + 返真值
-  - _resolve_vars $f_ 前缀仍走 faker.value
-  - _resolve_vars $g_ 前缀仍走 _find_g_vars
-  - get_var 缺失 → 返 key + WARNING
-  - get_var 已有 → 不 WARNING + 返真值
-  - VARIABLE_TRANS_STRICT=1 时 _resolve_vars 抛 KeyError
-"""
 import os
 import pytest
 from unittest.mock import AsyncMock, patch
 
 from utils.variableTrans import VariableTrans
 
-
 @pytest.fixture
 def vt():
     return VariableTrans()
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -46,7 +24,6 @@ async def test_bug_v6_resolve_undefined_var_returns_name_with_warning(vt):
         f"[BUG-V6] WARNING 应含 'user_id' 和 '未定义', 实际: {msg}"
     )
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_v6_resolve_defined_var_no_warning(vt):
@@ -58,7 +35,6 @@ async def test_bug_v6_resolve_defined_var_no_warning(vt):
     assert result == "abc123", f"期望 'abc123', 实际 {result!r}"
     assert not mock_warn.called, f"[BUG-V6] 已定义变量不应 WARNING, 实际: {mock_warn.call_args_list}"
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_v6_resolve_f_prefix_still_works(vt):
@@ -68,7 +44,6 @@ async def test_bug_v6_resolve_f_prefix_still_works(vt):
         result = await vt._resolve_vars("$f_name")
     assert result == "MockFaker"
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_v6_resolve_g_prefix_still_works(vt):
@@ -76,7 +51,6 @@ async def test_bug_v6_resolve_g_prefix_still_works(vt):
     with patch.object(VariableTrans, "_find_g_vars", new=AsyncMock(return_value="g_val")):
         result = await vt._resolve_vars("$g_userId")
     assert result == "g_val"
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -92,7 +66,6 @@ async def test_bug_v6_get_var_undefined_returns_key_with_warning(vt):
         f"[BUG-V6] get_var 期望 WARNING 含 'missing_key', 实际: {msg}"
     )
 
-
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_v6_get_var_defined_no_warning(vt):
@@ -103,7 +76,6 @@ async def test_bug_v6_get_var_defined_no_warning(vt):
         result = await vt.get_var("foo")
     assert result == "bar"
     assert not mock_warn.called, f"[BUG-V6] 已定义变量不应 WARNING, 实际: {mock_warn.call_args_list}"
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio

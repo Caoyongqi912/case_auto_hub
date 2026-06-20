@@ -1,10 +1,5 @@
-"""
-BUG-M2 回归测试:`interface_case_name` / `interface_case_desc` 长度不足。
+"""BUG-M2 回归测试:`interface_case_name` / `interface_case_desc` 长度不足。"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-长 case 标题/描述写进 case_result 时,会因为 VARCHAR 长度不够触发
-`Data too long for column ...`,落库失败。
-"""
 import pytest
 from sqlalchemy import String
 
@@ -12,11 +7,9 @@ from app.model.interfaceAPIModel.interfaceCaseModel import InterfaceCase
 from app.model.interfaceAPIModel.interfaceResultModel import InterfaceCaseResult
 from tests.croe.interface._bug_ids import BUG_M2
 
-
 @pytest.fixture
 def bug_m2_marker():
     return BUG_M2
-
 
 @pytest.mark.unit
 def test_bug_m2_case_result_name_length_supports_case_title(bug_m2_marker):
@@ -34,7 +27,6 @@ def test_bug_m2_case_result_name_length_supports_case_title(bug_m2_marker):
         f"[{BUG_M2}] interface_case_name 长度 ({case_result_len}) "
         f"必须 >= case_title 长度 ({case_title_len}),否则长标题会 Data too long"
     )
-
 
 @pytest.mark.unit
 def test_bug_m2_case_result_desc_length_supports_case_desc(bug_m2_marker):

@@ -1,19 +1,14 @@
-"""
-BUG-E1 回归测试:`HttpxClient` 资源管理 + timeout 不再污染共享 client。
+"""BUG-E1 回归测试:`HttpxClient` 资源管理 + timeout 不再污染共享 client。"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-"""
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from common.httpxClient import HttpxClient
 from tests.croe.interface._bug_ids import BUG_E1
 
-
 @pytest.fixture
 def bug_e1_marker():
     return BUG_E1
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -29,7 +24,6 @@ async def test_bug_e1_client_close_releases_resource(bug_e1_marker):
     await client.close()
 
     mock_aclose.assert_awaited_once()
-
 
 @pytest.mark.unit
 @pytest.mark.asyncio

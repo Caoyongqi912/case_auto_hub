@@ -1,12 +1,4 @@
-"""
-croe.play.context 三个 dataclass 单测覆盖
-
-目标: 锁定 StepContext / StepContentContext / PlayExecutionContext 的
-property 行为 (selector / value / page / targetId 等), 防止字段重命名
-或 page_manager 处理改动后无察觉。
-
-约定: 用真实 (未持久化) 的 SQLAlchemy Model 实例 + MagicMock starter/variable/page。
-"""
+"""StepContext / StepContentContext / PlayExecutionContext 三个 dataclass 的 property 行为测试。"""
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 

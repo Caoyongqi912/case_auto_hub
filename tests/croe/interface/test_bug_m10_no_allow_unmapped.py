@@ -1,10 +1,5 @@
-"""
-BUG-M10 回归测试: 删 `__allow_unmapped__ = True` 不应导致 model 注册失败。
+"""BUG-M10 回归测试: 删 `__allow_unmapped__ = True` 不应导致 model 注册失败。"""
 
-`__allow_unmapped__ = True` 是给 dataclass-style 基类用的开关 (SQLAlchemy 2.0)，
-本项目全部 model 是 declarative class, 加上反而会跳过注解到 Column 的转换。
-详见 docs/review/run_interface_case_deep_review.md。
-"""
 from pathlib import Path
 
 import pytest
@@ -17,15 +12,12 @@ from tests.croe.interface._bug_ids import BUG_M10
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-
 def _src(rel: str) -> str:
     return (REPO_ROOT / rel).read_text(encoding="utf-8")
-
 
 @pytest.fixture
 def bug_m10_marker():
     return BUG_M10
-
 
 # --------------------------------------------------------------------------- #
 # M10.1 / M10.2 - 源码层: 0 处 __allow_unmapped__ = True
@@ -40,7 +32,6 @@ def test_bug_m10_no_allow_unmapped_in_result_model(bug_m10_marker):
         "会让 SQLAlchemy 2.0 跳过注解到 Column 的转换 (declarative class 不需要)。"
     )
 
-
 @pytest.mark.unit
 def test_bug_m10_no_allow_unmapped_in_contents_model(bug_m10_marker):
     """[BUG-M10] interfaceCaseContentsModel.py 不应再出现 __allow_unmapped__ = True。"""
@@ -48,7 +39,6 @@ def test_bug_m10_no_allow_unmapped_in_contents_model(bug_m10_marker):
     assert "__allow_unmapped__" not in src, (
         f"[{BUG_M10}] __allow_unmapped__ = True 仍然在 interfaceCaseContentsModel.py 中。"
     )
-
 
 @pytest.mark.unit
 def test_bug_m10_models_still_register_normally(bug_m10_marker):

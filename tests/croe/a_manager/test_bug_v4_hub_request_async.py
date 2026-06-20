@@ -1,12 +1,5 @@
-"""
-BUG-V4 回归测试:`hub_api_request` 不应在 async 上下文里阻塞事件循环。
+"""BUG-V4 回归测试:`hub_api_request` 不应在 async 上下文里阻塞事件循环。"""
 
-原版用 httpx.Client(同步) 在子进程里跑也是串行阻塞,单请求可能 10s+;
-改 httpx.AsyncClient + asyncio.run 内部跑,函数对外仍是同步签名,
-但每次请求不再独占一整个事件循环。
-
-详见 docs/review/run_interface_case_deep_review.md。
-"""
 import asyncio
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
@@ -14,11 +7,9 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from croe.a_manager.script_manager import ScriptManager
 from tests.croe.interface._bug_ids import BUG_V4
 
-
 @pytest.fixture
 def bug_v4_marker():
     return BUG_V4
-
 
 @pytest.mark.unit
 def test_bug_v4_uses_async_httpx_under_the_hood(bug_v4_marker):
@@ -37,7 +28,6 @@ def test_bug_v4_uses_async_httpx_under_the_hood(bug_v4_marker):
         f"[{BUG_V4}] _hub_api_request 应改用 httpx.AsyncClient"
     )
 
-
 @pytest.mark.unit
 def test_bug_v4_returns_parsed_json(bug_v4_marker):
     """正常路径:返回 JSON 解析结果。"""
@@ -51,12 +41,10 @@ def test_bug_v4_returns_parsed_json(bug_v4_marker):
     async def fake_request(self, method, url, **kwargs):
         return fake_response
 
-    # BUG-S4 修复后 _hub_api_request 入口先过 _check_ssrf, mock 掉避免真实 DNS
     with patch("httpx.AsyncClient.request", new=fake_request), \
          patch("croe.a_manager.script_manager._check_ssrf"):
         result = ScriptManager._hub_api_request("http://example.com")
     assert result == {"ok": True}, f"期望 {{'ok': True}},实际 {result!r}"
-
 
 @pytest.mark.unit
 def test_bug_v4_returns_text_for_non_json(bug_v4_marker):
@@ -74,7 +62,6 @@ def test_bug_v4_returns_text_for_non_json(bug_v4_marker):
          patch("croe.a_manager.script_manager._check_ssrf"):
         result = ScriptManager._hub_api_request("http://example.com")
     assert result == "<html>hi</html>", f"期望 text,实际 {result!r}"
-
 
 @pytest.mark.unit
 def test_bug_v4_returns_none_on_error(bug_v4_marker):

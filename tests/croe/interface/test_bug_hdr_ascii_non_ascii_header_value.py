@@ -1,20 +1,4 @@
-"""
-[BUG-HDR-ASCII] HTTP/1.1 header value 必须是 ASCII, 非 ASCII 自动 percent-encode。
-
-根因: 用户在 g_headers / interface_headers 里配中文 / emoji 时, httpx 默认按
-ascii 编码 header value 会抛 UnicodeEncodeError, 错误信息指向 httpx 内部。
-
-修法 (croe/interface/builder/request_builder.py:_prepare_headers):
-  非 ASCII header value 自动 UTF-8 percent-encode + WARNING log。
-
-本测试锁住:
-1. ASCII header value 不动
-2. 中文 header value 自动 percent-encode
-3. emoji / 重音字符自动 percent-encode
-4. WARNING log 留痕
-5. 业务不挂 (不再抛 UnicodeEncodeError)
-6. mixed ASCII + 非 ASCII 字符都处理
-"""
+"""非 ASCII header value 自动 percent-encode 行为测试。"""
 import pytest
 from unittest.mock import MagicMock
 
@@ -137,7 +121,7 @@ class TestNonAsciiHeaderEdgeCases:
 
 
 class TestNonAsciiHeadersDontCrash:
-    """[BUG-HDR-ASCII] 业务不挂: 不应再抛 UnicodeEncodeError。"""
+    """业务不挂: 不应再抛 UnicodeEncodeError。"""
 
     @pytest.mark.asyncio
     async def test_chinese_value_does_not_raise(self):

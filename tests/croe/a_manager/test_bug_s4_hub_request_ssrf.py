@@ -1,38 +1,11 @@
-"""
-[BUG-S4] _hub_api_request 缺 SSRF 防御
+"""[BUG-S4] _hub_api_request 缺 SSRF 防御"""
 
-风险: _hub_api_request 在用户脚本沙箱以 hub_request 暴露, 没限制 URL
-      scheme 跟 host 解析后的 IP。攻击者:
-        - hub_request("http://169.254.169.254/latest/meta-data/iam/security-credentials/")
-          → 偷云元数据 IAM 凭证
-        - hub_request("file:///etc/passwd")
-          → 读本地文件
-        - hub_request("http://localhost:8000/admin")
-          → 打内网服务
-        - hub_request("http://10.0.0.1/...")
-          → 内网扫描
-
-修复: _check_ssrf 守门:
-  1. Scheme 白名单 http/https
-  2. DNS 解析后 IP 黑名单 (loopback / private / link-local / reserved / multicast)
-  3. HUB_REQUEST_ALLOW_PRIVATE=1 逃生口 (内部测试需要打内网时显式开)
-
-测试 (12 个, 不打真实网络):
-  - scheme 黑名单: file/gopher/ftp/dict/ldap/javascript/data
-  - 缺失 host
-  - IPv4 黑名单: 127.0.0.1, 10.0.0.1, 172.16.0.1, 192.168.1.1, 169.254.169.254
-  - DNS 解析失败
-  - 正常公网域名: example.com 不被误杀
-  - HUB_REQUEST_ALLOW_PRIVATE=1 放行内网
-  - 端到端: hub_request() 拒绝恶意 URL 返回 None (不抛到调用方)
-"""
 import os
 import pytest
 
 from croe.a_manager.script_manager import _check_ssrf, _is_blocked_ip
 from croe.a_manager.script_manager import ScriptManager
 _hub_api_request = ScriptManager._hub_api_request
-
 
 # ===== 单元层: _is_blocked_ip =====
 
@@ -83,7 +56,6 @@ class TestIsBlockedIp:
     def test_ipv6_link_local(self):
         import ipaddress
         assert _is_blocked_ip(ipaddress.ip_address("fe80::1"))
-
 
 # ===== 集成层: _check_ssrf =====
 
@@ -136,12 +108,11 @@ class TestCheckSsrf:
         with pytest.raises(ValueError, match="DNS"):
             _check_ssrf("http://this-host-does-not-exist-12345.invalid/x")
 
-
 # ===== 端到端层: _hub_api_request 行为 =====
 
 class TestHubApiRequestEndToEnd:
     def test_file_url_returns_none_without_raising(self):
-        """hub_request("file://...") 不抛到调用方, 返回 None (跟网络失败一致)"""
+        """hub_request("file://...") 不抛到调用方, 返回 None"""
         result = _hub_api_request("file:///etc/passwd")
         assert result is None
 

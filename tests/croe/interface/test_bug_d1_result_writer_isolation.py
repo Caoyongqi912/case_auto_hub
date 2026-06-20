@@ -1,21 +1,14 @@
-"""
-BUG-D1 回归测试:每个 `InterfaceRunner` 应持有独立的 `ResultWriter` 实例,
-不能共享模块级单例(否则并发 case 时 api_result_cache /
-content_result_cache 会互相污染)。
+"""BUG-D1 回归测试:每个 `InterfaceRunner` 应持有独立的 `ResultWriter` 实例,"""
 
-详见 docs/review/run_interface_case_deep_review.md。
-"""
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 
 from croe.interface.runner import InterfaceRunner
 from tests.croe.interface._bug_ids import BUG_D1
 
-
 @pytest.fixture
 def bug_d1_marker():
     return BUG_D1
-
 
 def _make_starter():
     starter = MagicMock()
@@ -26,7 +19,6 @@ def _make_starter():
     starter.logs = []
     starter.over = AsyncMock()
     return starter
-
 
 @pytest.mark.unit
 def test_bug_d1_two_runners_have_independent_result_writers(bug_d1_marker):
@@ -49,7 +41,6 @@ def test_bug_d1_two_runners_have_independent_result_writers(bug_d1_marker):
     r2.result_writer.api_result_cache.append("B")
     assert r1.result_writer.api_result_cache == ["A"]
     assert r2.result_writer.api_result_cache == ["B"]
-
 
 @pytest.mark.unit
 def test_bug_d1_result_writer_has_clear_cache():

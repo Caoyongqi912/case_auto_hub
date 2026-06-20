@@ -1,16 +1,4 @@
-"""
-PlayRunner.run_case 端到端单测 (高 mock 模式, 不连真实 DB/browser)。
-
-策略: 测核心编排而非全流程, 在 execute_case / case 内部 mock 重活
-(browser / mapper.get_by_id / 策略 execute), 验证:
-- run_case 进入会调 init_case_result 拿 case_result
-- run_case 退出会调 set_case_result 写最终结果
-- 异常路径 (init 失败 / 步骤失败) 不会让 run_case crash
-- error_continue 参数被传递
-- trace_id 在 finally 清掉
-
-不验证步骤内容执行细节 (那由 step_content_strategy 测覆盖)。
-"""
+"""PlayRunner.run_case 核心编排的端到端测试 (高 mock)。"""
 import asyncio
 import pytest
 from datetime import datetime

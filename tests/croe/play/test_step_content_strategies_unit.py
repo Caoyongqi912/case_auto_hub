@@ -66,7 +66,7 @@ class TestAssertStrategy:
         with patch.object(strategy, "write_result", new=AsyncMock()) as mock_wr:
             result = await strategy.execute(ctx)
         assert result is False
-        # 空列表分支: 只 send warning, 不 write_result (跟实现一致)
+        # 空列表分支: 只 send warning, 不 write_result
         mock_wr.assert_not_called()
 
     @pytest.mark.asyncio
@@ -105,7 +105,7 @@ class TestAssertStrategy:
 
     @pytest.mark.asyncio
     async def test_assert_exception_returns_false_not_raise(self):
-        """manager 抛异常时策略应返回 False, 不应 raise (跟 error_continue 语义一致)。"""
+        """manager 抛异常时策略应返回 False, 不应 raise。"""
         from croe.play.executor.step_content_strategy.play_assert_strategy import (
             PlayAssertContentStrategy,
         )
@@ -142,7 +142,7 @@ class TestConditionStrategy:
             # 没 condition 配置时返 False
             mock_pc.get_by_id = AsyncMock(return_value=None)
             result = await strategy.execute(ctx)
-        # condition 配置不存在 → False (跟实现一致)
+        # condition 配置不存在 → False
         assert result is False
 
     @pytest.mark.asyncio
@@ -219,7 +219,7 @@ class TestGroupStrategy:
             result = await strategy.execute(ctx)
         assert result is True
         # write_result (容器) + write_child_result (子) + update_content_result 都应被调
-        # 实际 update_content_result 不调 (因为 GROUP_SUCCESS=True, 跟初始一致)
+        # 实际 update_content_result 不调 (因为 GROUP_SUCCESS=True)
         # 至少 write_result 和 write_child_result 应被调
         # 不强断, 防止实现细节变
 
