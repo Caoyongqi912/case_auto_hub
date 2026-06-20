@@ -8,7 +8,7 @@
 
 from fastapi import APIRouter, Depends
 
-from app.controller import Authentication
+from app.controller import Authentication, JenkinsWebhookAuth
 from app.mapper.play import PlayCaseResultMapper
 from app.model.base import User
 from app.response import Response
@@ -114,7 +114,10 @@ async def handleExecute(taskInfo: GetPlayTaskByIDSchema, user: User = Depends(Au
 
 
 @router.post("/executeJenkins", description="jenkins执行任务")
-async def runTaskByJenkins(data: GetPlayTaskByIDSchema):
+async def runTaskByJenkins(
+    data: GetPlayTaskByIDSchema,
+    _: bool = Depends(JenkinsWebhookAuth),
+):
     from common.worker_pool import ui_pool, register_play_task_robot
     task = await PlayTaskMapper.get_by_id(ident=data.taskId)
 

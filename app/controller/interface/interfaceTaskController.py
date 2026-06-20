@@ -8,7 +8,7 @@ InterfaceTask Controller
 """
 from fastapi import APIRouter, Depends
 
-from app.controller import Authentication
+from app.controller import Authentication, JenkinsWebhookAuth
 from app.mapper.interfaceApi.interfaceTaskMapper import InterfaceTaskMapper
 from app.model.base import User
 from app.response import Response
@@ -232,11 +232,15 @@ async def execute_task(task: ExecuteTask, starter: User = Depends(Authentication
 
 
 @router.post("/execute_by_jenkins", description="Jenkins触发执行任务")
-async def execute_task_by_jenkins(task: ExecuteTask):
+async def execute_task_by_jenkins(
+    task: ExecuteTask,
+    _: bool = Depends(JenkinsWebhookAuth),
+):
     """
     通过 Jenkins 外部调用执行任务
 
     - **task**: 包含任务ID和环境ID
+    - 鉴权: 请求头 `X-Jenkins-Token` 必须匹配 Config.JENKINS_WEBHOOK_TOKEN
     """
     from common.worker_pool import interface_pool, register_interface_task_RoBot
 

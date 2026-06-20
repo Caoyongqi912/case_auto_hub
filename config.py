@@ -16,6 +16,10 @@ from dotenv import load_dotenv
 class BaseConfig:
     ROOT = os.path.dirname(os.path.abspath(__file__))
     SECRET_KEY = "HARD TO GUESS"
+    # Jenkins Webhook 共享密钥: 用于 execute_by_jenkins / runTaskByJenkins 等无 Bearer 路由的鉴权。
+    # 留空表示禁用 (JenkinsWebhookAuth 依赖会 fail-closed 返回 401/503)。
+    # 部署前必须通过环境变量 JENKINS_WEBHOOK_TOKEN 显式设置一个不可猜的字符串。
+    JENKINS_WEBHOOK_TOKEN: str = os.getenv("JENKINS_WEBHOOK_TOKEN", "")
     MYSQL_DATABASE = 'caseHub'
     MYSQL_PORT: int = 3306
     REDIS_PORT = 6379
