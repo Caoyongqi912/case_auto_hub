@@ -218,9 +218,11 @@ async def test_bug_obs_4_send_typed_prepends_type_marker():
     # mock super().send 抓消息
     async def fake_super_send(msg):
         captured.append(msg)
-    starter.__class__.__bases__[0].send = AsyncMock(side_effect=fake_super_send)
-
-    await starter.send_typed(STARTER_MSG_TYPE.TYPE_EXTRACT, "变量 x = 1")
+    # BUG-P-4-1 修复: 用 patch.object 临时改 SocketSender.send, 不直接改类属性
+    # (原写法 `__bases__[0].send = ...` 会污染所有后续测试)
+    from utils.io_sender import SocketSender
+    with patch.object(SocketSender, "send", AsyncMock(side_effect=fake_super_send)):
+        await starter.send_typed(STARTER_MSG_TYPE.TYPE_EXTRACT, "变量 x = 1")
     # 抓到的消息必须含 [TYPE_EXTRACT]
     assert any("[TYPE_EXTRACT]" in m for m in captured), (
         f"[BUG-OBS-4] send_typed 没传 [TYPE_xxx] 前缀, 实际: {captured!r}"

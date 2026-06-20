@@ -107,3 +107,19 @@ BUG_P_2_3 = "P-2-3"
 # RUNNING (孤儿任务), 用户看不到任务结束。修: init_result 包 try, 失败
 # 时 log.exception + return, 让 caller 拿不到结果但不挂。
 BUG_P_3_1 = "P-3-1"
+
+# ---------------------------------------------------------------------------
+# P-4 批: 边角修复 (单测覆盖阶段)
+# ---------------------------------------------------------------------------
+
+# P-4-1 修复: tests/croe/interface/test_bug_d10_e11_obs_4_5_6.py
+# test_bug_obs_4_send_typed_prepends_type_marker 之前用
+# `starter.__class__.__bases__[0].send = AsyncMock(...)` 永久修改
+# SocketSender.send 类属性,污染所有后续 test 进程 (之后所有用
+# SocketSender 的测试拿到 AsyncMock.send 而不是真方法,日志追加、
+# 异常处理全失效)。症状:看似无关的测试随机 FAILED
+# (Expected emit to have been awaited once. Awaited 0 times /
+# len(logs) == 0),实际是类被污染。修:用
+# `with patch.object(SocketSender, "send", ...)` 临时改,with 退出
+# 时自动还原,绝不直接改 __bases__[0] 上的属性。
+BUG_P_4_1 = "P-4-1"
