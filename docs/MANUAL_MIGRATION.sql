@@ -167,3 +167,38 @@ SELECT status, COUNT(*) AS n FROM interface_case_content_result
 --   * 字段类型自动回到 String(20), "SUCCESS"/"FAIL"/"PENDING" 仍合法
 --   * 老 default="PENDING" 也回得来
 -- 数据库侧无需动作。
+
+
+-- ============================================================================
+-- BUG-P-1-3: play_task_result.rate_number 从 INTEGER 改 Float
+--            MySQL 静默截断 85.5% → 85%, 丢 1 位小数
+-- ============================================================================
+-- 背景:
+--   * 原 rate_number 是 INTEGER, writer.py 用 round(..., 2) 写 85.5,
+--     MySQL 静默截断成 85, 前端显示 85% 跟 实际 85.5% 不一致。
+--   * 改 Column(Float) 保留小数。
+--
+-- 兼容分析:
+--   * INT (4 字节) → FLOAT (4 字节): 字节数相同, 已有索引 / 视图 / 关联查询
+--     完全兼容。INT → FLOAT 转换 MySQL 自动完成, 不需要手工数据迁移。
+--   * 数据侧: 已有数据是整数, 0 → 0.0 数值上等价, 不用改。
+
+-- ---------- 步骤 1: DDL (无 DML 迁移, 字节数相同, 自动转换) ----------
+ALTER TABLE play_task_result
+    MODIFY COLUMN rate_number FLOAT DEFAULT 0
+    COMMENT '通过率';
+
+-- ---------- 步骤 2: 验证 ----------
+-- SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
+-- FROM information_schema.COLUMNS
+-- WHERE TABLE_SCHEMA = DATABASE()
+--   AND TABLE_NAME = 'play_task_result'
+--   AND COLUMN_NAME = 'rate_number';
+-- 期望 DATA_TYPE = 'float'
+
+-- ---------- 回滚 (如需要) ----------
+-- ALTER TABLE play_task_result
+--     MODIFY COLUMN rate_number INT DEFAULT 0
+--     COMMENT '通过率';
+-- (FLOAT → INT 同样字节数, MySQL 自动截断小数部分, 但写回 0.0/85.5 都行)
+
