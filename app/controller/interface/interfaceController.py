@@ -225,5 +225,5 @@ async def export_interfaces_yaml(module_id: int, _: User = Depends(Authenticatio
             headers={"Content-Disposition": f"attachment; filename=interfaces_{module_id}.yaml"}
         )
     except Exception as e:
-        log.error(f"导出YAML失败: {e}")
-        raise e
+        log.exception(f"导出YAML失败: {e}")
+        raise

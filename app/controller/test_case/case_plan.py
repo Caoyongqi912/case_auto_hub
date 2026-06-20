@@ -513,7 +513,7 @@ async def delete_plan_cases_permanent(
             plan_id=data.plan_id,
         )
     except IntegrityError:
-        log.error(
+        log.exception(
             f"delete_permanent: case 还被其他计划引用,plan_id={data.plan_id}, "
             f"case_ids={data.case_ids}"
         )
