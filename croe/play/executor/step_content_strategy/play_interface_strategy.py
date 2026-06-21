@@ -17,32 +17,31 @@ class PlayInterfaceContentStrategy(StepBaseStrategy):
 
     async def execute(self, step_context: StepContentContext) -> bool:
         start_time = datetime.datetime.now()
-
         rw = ResultWriter()
 
         try:
-            interface_executor = InterfaceExecutor(starter=step_context.starter,
-                                                   variable_manager=step_context.variable_manager)
-
-            interface = await InterfaceMapper.get_by_id(ident=step_context.play_step_content.target_id)
-            result, success = await interface_executor.execute(interface=interface)
-
-            interface_result = await rw.write_interface_result(
-                interface_result=InterfaceResult(**result),
-                immediate=True
-            )
+            async with InterfaceExecutor(
+                starter=step_context.starter,
+                variable_manager=step_context.variable_manager,
+            ) as interface_executor:
+                interface = await InterfaceMapper.get_by_id(
+                    ident=step_context.play_step_content.target_id
+                )
+                result, success = await interface_executor.execute(interface=interface)
+                interface_result = await rw.write_interface_result(
+                    interface_result=InterfaceResult(**result),
+                    immediate=True,
+                )
 
             log.debug(f"interface_result {interface_result}")
             await self.write_result(
-                result = StepExecutionResult(
+                result=StepExecutionResult(
                     success=success,
                     content_target_result_id=interface_result.id,
-
                 ),
                 start_time=start_time,
-                step_context=step_context
+                step_context=step_context,
             )
-
             return success
         except Exception as e:
             log.exception(f"PlayInterfaceContentStrategy {e}")

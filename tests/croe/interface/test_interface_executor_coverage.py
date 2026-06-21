@@ -493,8 +493,13 @@ def test_normalize_temp_variables_dict_wrapped_in_list():
 async def test_aclose_calls_http_close():
     """aclose: 释放 httpx client。锁定 BUG-E1。"""
     executor = _build_executor()
+    http = executor.http  # 保留引用, 因为 aclose 之后 self.http 会被置 None
     await executor.aclose()
-    executor.http.close.assert_awaited_once()
+    http.close.assert_awaited_once()
+    # aclose 幂等: 第二次不应再调 close
+    http.close.reset_mock()
+    await executor.aclose()
+    http.close.assert_not_awaited()
 
 @pytest.mark.asyncio
 @pytest.mark.unit

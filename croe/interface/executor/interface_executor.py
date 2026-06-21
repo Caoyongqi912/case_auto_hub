@@ -478,6 +478,14 @@ class InterfaceExecutor:
         释放底层 httpx 客户端连接 。
         应在每个 InterfaceRunner run_interface_case 的 finally 中调用,
         否则多次执行 / 并发会泄漏 httpx 连接。
+        推荐用 `async with InterfaceExecutor(...) as ie:` 自动收尾。
         """
         if getattr(self, "http", None) is not None:
             await self.http.close()
+            self.http = None
+
+    async def __aenter__(self) -> "InterfaceExecutor":
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.aclose()
