@@ -6,12 +6,13 @@ InterfaceCase Controller
 接口用例管理控制器
 提供用例的增删改查、关联接口、条件、循环等功能
 """
-import asyncio
 
 from fastapi import APIRouter
 from fastapi.params import Depends
 
+
 from app.controller import Authentication
+from utils.background import fire_and_forget
 from app.mapper.interfaceApi.dynamicMapper import InterfaceCaseDynamicMapper
 from app.mapper.interfaceApi.interfaceCaseContentMapper import InterfaceCaseContentMapper
 from app.mapper.interfaceApi.interfaceCaseMapper import InterfaceCaseMapper
@@ -485,9 +486,12 @@ async def execute_case_api(case: ExecuteInterfaceCaseSchema, starter: User = Dep
 @router.post("/execute/back", description="用例执行")
 async def execute_case_api(case: ExecuteInterfaceCaseSchema, starter: User = Depends(Authentication())):
     _starter = APIStarter(starter)
-    asyncio.create_task(InterfaceRunner(starter=_starter,
-                                        ).run_interface_case(interface_case_id=case.case_id,
-                                                             env=case.env_id,
-                                                             error_stop=case.error_stop
-                                                             ))
+    fire_and_forget(
+        InterfaceRunner(starter=_starter).run_interface_case(
+            interface_case_id=case.case_id,
+            env=case.env_id,
+            error_stop=case.error_stop,
+        ),
+        name=f"interface_case_{case.case_id}",
+    )
     return Response.success()
