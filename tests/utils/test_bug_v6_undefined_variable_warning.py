@@ -1,4 +1,4 @@
-"""[BUG-V6] VariableTrans 引用未定义变量时静默返回变量名"""
+"""VariableTrans 引用未定义变量时静默返回变量名"""
 
 import os
 import pytest
@@ -18,10 +18,10 @@ async def test_bug_v6_resolve_undefined_var_returns_name_with_warning(vt):
     with patch.object(log, "warning") as mock_warn:
         result = await vt._resolve_vars("user_id")
     assert result == "user_id", f"期望返回 'user_id' 字符串, 实际 {result!r}"
-    assert mock_warn.called, "[BUG-V6] 缺失变量未触发 log.warning"
+    assert mock_warn.called, "缺失变量未触发 log.warning"
     msg = str(mock_warn.call_args)
     assert "user_id" in msg and "未定义" in msg, (
-        f"[BUG-V6] WARNING 应含 'user_id' 和 '未定义', 实际: {msg}"
+        f"WARNING 应含 'user_id' 和 '未定义', 实际: {msg}"
     )
 
 @pytest.mark.unit
@@ -33,7 +33,7 @@ async def test_bug_v6_resolve_defined_var_no_warning(vt):
     with patch.object(log, "warning") as mock_warn:
         result = await vt._resolve_vars("token")
     assert result == "abc123", f"期望 'abc123', 实际 {result!r}"
-    assert not mock_warn.called, f"[BUG-V6] 已定义变量不应 WARNING, 实际: {mock_warn.call_args_list}"
+    assert not mock_warn.called, f"已定义变量不应 WARNING, 实际: {mock_warn.call_args_list}"
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -63,7 +63,7 @@ async def test_bug_v6_get_var_undefined_returns_key_with_warning(vt):
     assert mock_warn.called
     msg = str(mock_warn.call_args)
     assert "missing_key" in msg and "未定义" in msg, (
-        f"[BUG-V6] get_var 期望 WARNING 含 'missing_key', 实际: {msg}"
+        f"get_var 期望 WARNING 含 'missing_key', 实际: {msg}"
     )
 
 @pytest.mark.unit
@@ -75,7 +75,7 @@ async def test_bug_v6_get_var_defined_no_warning(vt):
     with patch.object(log, "warning") as mock_warn:
         result = await vt.get_var("foo")
     assert result == "bar"
-    assert not mock_warn.called, f"[BUG-V6] 已定义变量不应 WARNING, 实际: {mock_warn.call_args_list}"
+    assert not mock_warn.called, f"已定义变量不应 WARNING, 实际: {mock_warn.call_args_list}"
 
 @pytest.mark.unit
 @pytest.mark.asyncio

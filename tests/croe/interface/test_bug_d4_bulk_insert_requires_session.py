@@ -1,4 +1,4 @@
-"""BUG-D4 回归测试:`bulk_insert_models` / `bulk_insert_results` 强制要求 session,"""
+"""`bulk_insert_models` / `bulk_insert_results` 强制要求 session,"""
 
 import contextlib
 import pytest
@@ -20,7 +20,7 @@ def bug_d4_marker():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d4_bulk_insert_models_rejects_none_session(bug_d4_marker):
-    """[BUG-D4] bulk_insert_models 在 session=None 时必须抛 ValueError。"""
+    """bulk_insert_models 在 session=None 时必须抛 ValueError。"""
     fake_model = MagicMock()
     with pytest.raises(ValueError, match="external session"):
         await InterfaceResultMapper.bulk_insert_models([fake_model])
@@ -30,7 +30,7 @@ async def test_bug_d4_bulk_insert_models_rejects_none_session(bug_d4_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d4_bulk_insert_results_rejects_none_session(bug_d4_marker):
-    """[BUG-D4] bulk_insert_results 在 session=None 时必须抛 ValueError。"""
+    """bulk_insert_results 在 session=None 时必须抛 ValueError。"""
     valid = {
         "content_type": 1,  # STEP_API
         "content_id": 1,
@@ -49,7 +49,7 @@ async def test_bug_d4_bulk_insert_results_rejects_none_session(bug_d4_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d4_bulk_insert_models_uses_passed_session_only(bug_d4_marker):
-    """[BUG-D4] bulk_insert_models 传了 session, 不会再去开自己的 transaction。"""
+    """bulk_insert_models 传了 session, 不会再去开自己的 transaction。"""
     fake_model = MagicMock()
     fake_session = AsyncMock()
     fake_session.add_all = MagicMock()
@@ -74,7 +74,7 @@ async def test_bug_d4_bulk_insert_models_uses_passed_session_only(bug_d4_marker)
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d4_writer_flush_uses_single_transaction(bug_d4_marker):
-    """[BUG-D4] _flush_cache 必须用 InterfaceResultMapper.transaction() 单事务包两次 bulk。"""
+    """_flush_cache 必须用 InterfaceResultMapper.transaction() 单事务包两次 bulk。"""
     rw = ResultWriter()
     rw.api_result_cache = []  # 空
     rw.content_result_cache = []  # 空
@@ -97,7 +97,7 @@ async def test_bug_d4_writer_flush_uses_single_transaction(bug_d4_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d4_writer_flush_rollback_triggers_fallback(bug_d4_marker):
-    """[BUG-D4] bulk 事务失败 -> 整体回滚 -> 走 fallback 路径(降级逐条)。"""
+    """bulk 事务失败 -> 整体回滚 -> 走 fallback 路径(降级逐条)。"""
     rw = ResultWriter()
     fake_model = MagicMock()
     rw.api_result_cache = [fake_model]

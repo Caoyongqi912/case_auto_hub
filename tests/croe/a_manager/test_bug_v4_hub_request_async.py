@@ -1,4 +1,4 @@
-"""BUG-V4 回归测试:`hub_api_request` 不应在 async 上下文里阻塞事件循环。"""
+"""`hub_api_request` 不应在 async 上下文里阻塞事件循环。"""
 
 import asyncio
 import pytest
@@ -13,7 +13,7 @@ def bug_v4_marker():
 
 @pytest.mark.unit
 def test_bug_v4_uses_async_httpx_under_the_hood(bug_v4_marker):
-    """[BUG-V4] _hub_api_request 内部应走 httpx.AsyncClient,不是同步 Client。"""
+    """_hub_api_request 内部应走 httpx.AsyncClient,不是同步 Client。"""
     # 抓模块里 import 走的地方
     import inspect
     from croe.a_manager.script_manager import ScriptManager

@@ -36,35 +36,10 @@ from utils import log
 class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
     __model__ = InterfaceCaseResult
 
-    # BUG-N2 修复: 删 page_case_results / query_case_result 两个 dead code。
-    # D9 把它们从 `pass` 改成 raise NotImplementedError 防静默吞错, 但本质是
-    # 占着方法名, 没人调用, 还容易被新代码误调。改: 直接删, 真要分页走
-    # list_by_filter + 分页参数, 查单个走 get_by_id (D9 注释里已经给了指引)。
-    # 测试锁住 0 caller, 防止回归。
-
-    # @classmethod
-    # async def init_case_result(cls, user: User, case: InterfaceCase, env: EnvModel):
-    #
-    #     try:
-    #         async with cls.transaction() as session:
-    #             case_result = InterfaceCaseResult(
-    #                 case_id=case.id,
-    #                 env_id=env.id,
-    #                 starter_id=user.id,
-    #                 starter_name=user.username,
-    #             )
-    #
-    #     except Exception:
-    #         pass
-
     
     @classmethod
     async def set_result_field(cls, caseResult: InterfaceCaseResult) -> bool:
-        """更新 case_result 字段 (BUG-OBS-5 修复: 改返成功 bool)。
-
-        旧版只 add_flush_expunge 不返任何状态, 调用方只能靠 raise 判断。
-        改返 True=成功, 失败时异常往外冒 (跟其他 mapper 风格一致)。
-
+        """更新 case_result 字段 (改返成功 bool)。
         Args:
             caseResult: 已修改的 caseResult ORM 实例 (mutation)
 
@@ -88,38 +63,17 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
         session: AsyncSession = None,
     ) -> Dict[str, int]:
         """
-        [BUG-E8 + E9] 用 interface_result 表的 COUNT 覆写 case_result.total_num
-        / success_num / fail_num。
-
-        根因:
-          - E8: case_result.total_num 在 init_case_result 时设一次 = case_api_num,
-            之后不再更新。如果 case_api_num 跟实际跑的 API 数对不上 (M8 修了源头
-            但运行时还是可能漂), total_num 永久错位。
-          - E9: GROUP / LOOP / CONDITION 等 parent step 在 step strategy 里
-            case_result.success_num += 1, 但实际跑了 N 个 API, 应该 +N。
-            多个 step strategy 行为不对称, 改全量成本高、易漏。
-
-        修法: 在 finalize_case_result 末尾调一次, 用 interface_result 表的
-        COUNT(*) 当权威源, 覆写 case_result 三字段, 保证
-        total_num = success_num + fail_num 恒成立。
-        行为: 在原有 transaction 里跑 (跟 BUG-D4 风格一致, 失败不影响主流程)。
 
         Args:
             case_result_id: case_result.id
-            session: 外部 session (必需, BUG-D4 强制)
+            session: 外部 session（必需）
 
         Returns:
             Dict[str, int]: {'total': N, 'success': S, 'fail': F}
         """
         from sqlalchemy import func, select, case
-        # BUG-DOC 修复: 之前 session=None 直接 raise, 但 docstring + 调用方注释
-        # (result_writer.py:367) 都写 "自管事务", 实际静默 except, 丢对账。
-        # 改: session=None 时开自己的事务, session 传进来时复用外部事务 (D4 哲学一致)。
+
         async def _do_query(sess: AsyncSession) -> Dict[str, int]:
-            # BUG-E8: InterfaceResult 没有直接的 case_result_id 字段,
-            # 走 interface_case_content_result 中间表 JOIN:
-            # interface_result.content_result_id -> interface_case_content_result.id
-            #                                       -> interface_case_content_result.case_result_id
             stmt = select(
                 func.count(InterfaceResult.id).label("total"),
                 func.sum(
@@ -147,7 +101,6 @@ class InterfaceCaseResultMapper(Mapper[InterfaceCaseResult]):
             return {"total": total, "success": success, "fail": fail}
 
         try:
-            # BUG-DOC 修复: session=None 开自己的事务, session 传进来复用
             if session is None:
                 async with cls.transaction() as session:
                     return await _do_query(session)
@@ -205,7 +158,7 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
         session: AsyncSession = None,
     ) -> int:
         """
-        [BUG-F8-followup] 回填 interface_result.content_result_id
+        回填 interface_result.content_result_id
 
         背景: STEP_API 子步骤走 cache, finalize flush 完 content_result 后
               才有 id, 但 interface_result 是在 cache flush 之前以 immediate=True
@@ -231,12 +184,6 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
               AND ir.content_result_id IS NULL
         """)
         try:
-            # BUG-D4-V2 修复: 用 cls.transaction(session) 替 session_scope(session) +
-            # 显式 commit()。原因: 当 caller 传 session 进来 (bulk 业务流场景),
-            # 显式 await session.commit() 会"中途提交", 把 caller 同一事务里的
-            # 其他 INSERT 一起提前 commit, 破坏 bulk 事务边界, 数据不变量破坏
-            # (FK 已回填但主表空)。改: transaction() 在 session=None 时
-            # session.begin() 自动 commit, session 传进来时 caller 控制边界。
             async with cls.transaction(session) as session:
                 result = await session.execute(
                     sql, {"case_result_id": case_result_id}
@@ -253,19 +200,9 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
         session: AsyncSession = None,
     ) -> List[Dict[str, Any]]:
         """
-        [BUG-D6] 找出 InterfaceResult.content_result_id 跟 polymorphic
-        子类 (interface_result_id FK) 不一致的行。
-
-        双向 FK 设计: InterfaceResult.content_result_id 跟 APIStepContentResult
-        .interface_result_id 是同一 1:1 关系的两个方向, 应该始终指向同一对
-        id。任何一边漏更新就漂。
-
-        修法: D6 没改 schema (删 FK 是大改), 改成 invariant 检查 + reconcile
-        兜底。生产环境 / 迁移后可跑这个查询找出历史漂移。
-
         Args:
             case_result_id: 限定单个 case_result (CI 用), None = 全表扫描
-            session: 外部 session (D4 强制)
+            session: 外部 session（必需）
 
         Returns:
             List[Dict]: 每条 {'interface_result_id', 'interface_result.content_result_id',
@@ -274,7 +211,6 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
         if session is None:
             raise ValueError(
                 "find_fk_inconsistencies requires external session "
-                "(BUG-D4: 不再隐式 commit)"
             )
         from sqlalchemy import text
         sql = text("""
@@ -317,21 +253,9 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
         session: AsyncSession = None,
     ) -> int:
         """
-        [BUG-D6] 用 polymorphic 子类的 interface_result_id FK 覆写
-        InterfaceResult.content_result_id, 修双向 FK 漂移。
-
-        策略: interface_case_content_result_api.interface_result_id 才是
-        source of truth (因为它是 polymorphic 子类表, 在 ORM 创建 content_result
-        时就 INSERT 好了), interface_result.content_result_id 是 denormalized
-        缓存, 漂移时以子类为准。
-
-        D6 现状: F8B backfill_content_result_id_fk 已经在 finalize 调,
-        只回填 'ir_missing_fk' (ir.content_result_id IS NULL)。
-        本方法更全面: 处理 'ir_missing_fk' + 'mismatch' 两种情况。
-
         Args:
             case_result_id: 限定单个 case_result, None = 全表
-            session: 外部 session (D4 强制)
+            session: 外部 session（必需）
 
         Returns:
             int: 修复的行数
@@ -339,7 +263,6 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
         if session is None:
             raise ValueError(
                 "reconcile_fk_from_polymorphic requires external session "
-                "(BUG-D4: 不再隐式 commit)"
             )
         from sqlalchemy import text
         sql = text("""
@@ -356,9 +279,6 @@ class InterfaceResultMapper(Mapper[InterfaceResult]):
               ))
         """)
         try:
-            # BUG-D4-V2 修复: 同 backfill_content_result_id_fk, 改
-            # transaction(session), 不再显式 commit()。让 caller 控制
-            # 事务边界, 避免 bulk 场景中途 commit 破坏数据不变量。
             async with cls.transaction(session) as session:
                 result = await session.execute(
                     sql, {"case_result_id": case_result_id}
@@ -613,10 +533,7 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         result_id: int,
         **kwargs
     ) -> InterfaceCaseContentResult:
-        """执行更新逻辑 (BUG-D3 修复: 删掉 get_by_id 后的冗余 refresh)"""
-        # get_by_id 内部 session.get(model, ident) 已从 DB 取到最新数据并 attach,
-        # 本函数接下来除了 setattr 不会有人改 target, 多余的 refresh 一次纯粹浪费
-        # 一次往返。
+        """执行更新逻辑"""
         target = await cls.get_by_id(result_id, session)
 
         base_columns = set(InterfaceCaseContentResult.__table__.columns.keys())
@@ -648,8 +565,6 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         Returns:
             List[dict]: 包含完整结果信息的字典列表
         """
-        # BUG-M6-hotfix: 显式 with_polymorphic, 否则 to_dict() 触发子类列
-        # refresh 时 session 已关会报 "is not bound to a Session"
         results = await cls.query_steps_result(case_result_id)
         result_dicts = [result.to_dict() for result in results]
 
@@ -753,20 +668,8 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
     async def query_steps_result(cls, case_result_id: int):
         """
         查询用例的步骤结果, 包含子类的 interface_result 关联。
-
-        BUG-M6-hotfix: 加 with_polymorphic 显式指定所有 8 个子类, 让查询的
-        SELECT 包含子类表的所有列 (如 APIStepContentResult.interface_result_id),
-        否则 BaseModel.to_dict() 用 self_and_descendants 反射访问这些列时
-        会触发 SQLAlchemy 想 lazy-load / refresh, session 已关就报:
-        "Instance is not bound to a Session; attribute refresh operation cannot proceed"
-
-        InterfaceCaseContentResult.__mapper_args__ 已经去掉 'with_polymorphic': '*'
-        (8x 行宽浪费), 所以**需要子类列的查询**必须显式指定。
         只读基类字段的查询 (如 get_stats) 可以不加, 保持带宽优势。
         """
-        # 所有 8 个子类都列上 — to_dict() 反射访问可能命中任意子类列,
-        # 漏一个就触发 refresh 失败。JOIN 宽度 = 8 个子类表, 跟旧 '*' 等同,
-        # 但只在需要子类列的查询用, 其它查询继续保持无子类 JOIN。
         poly = with_polymorphic(
             InterfaceCaseContentResult,
             [
@@ -781,13 +684,7 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
             ],
         )
         # joinedload 必须用 poly 实体, 不能用原 class, 因为根实体已经是 poly
-        # (poly 是 with_polymorphic 返回的别名实体, 它把 8 个子类表 JOIN 在一起)
-        #
-        # BUG-D7 修复: 补上 LoopStepContentResult.interface_results 的 joinedload。
-        # M6-hotfix 时只补了 API/Group/Condition 三个, 漏了 Loop —
-        # 前端拿到循环步骤时 to_dict() 触发 self.interface_results lazy-load,
-        # session 已关, 静默返回 [], data 永远空。
-        # 测试锁: tests/croe/interface/test_bug_d7_query_steps_loop_joinedload.py
+      
         stmt = select(poly).options(
             joinedload(poly.APIStepContentResult.interface_result),
             joinedload(poly.GroupStepContentResult.interface_results),
@@ -818,20 +715,9 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         - 需要按 content_type 分组后，使用对应的子类模型批量插入
         - SQLAlchemy 会自动处理基类表和子类表的插入
 
-        BUG-D2 修复：
-        - 旧版对缺 content_type / 未知 content_type 的 item 静默 continue，
-          调用方只能看到 total_inserted，根本不知道丢了多少。
-        - 改 return 为 (inserted, skipped) 元组，skip 的全部 item 末尾 WARNING 输出
-          原因（content_name / content_id / content_type），让数据丢失可见。
-        - 缺失 content_type 视作编程错误直接抛 ValueError，
-          跟 insert_result 的策略保持一致。
-
-        BUG-D4 修复：session 改为必填，杜绝隐式 commit 导致多表批量不在同事务。
-        与 bulk_insert_models 行为对齐。
-
         Args:
             items: 数据字典列表，每个字典必须包含 content_type 字段
-            session: 必填的外部会话对象 (BUG-D4: 不再可选)
+            session: 必填的外部会话对象
 
         Returns:
             Tuple[int, int]: (inserted_count, skipped_count)
@@ -839,7 +725,6 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
         if session is None:
             raise ValueError(
                 "bulk_insert_results requires an external session "
-                "(BUG-D4: 不再允许 session=None 隐式 commit)。"
             )
         if not items:
             return (0, 0)
@@ -866,7 +751,7 @@ class InterfaceContentStepResultMapper(Mapper[InterfaceCaseContentResult]):
 
         total_inserted = 0
 
-        # BUG-D4: session 已强制必填, 不再需要 if/else 分支 + 自开 transaction
+        # session 已强制必填，统一走事务路径
         try:
             for content_type, type_items in grouped_items.items():
                 result_model = cls.RESULT_TYPE_MAP.get(content_type)

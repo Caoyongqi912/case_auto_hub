@@ -11,6 +11,7 @@ from typing import List, Sequence, Dict, Callable, Any
 
 from sqlalchemy import select, insert, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from app.mapper.interfaceApi.dynamicMapper import InterfaceCaseDynamicMapper
 from app.mapper.interfaceApi.interfaceConditionMapper import InterfaceConditionMapper
 from app.mapper.interfaceApi.interfaceLoopMapper import InterfaceLoopMapper
@@ -75,15 +76,15 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         用例调整
         """
         try:
-            kwargs["id"] = case_id
+            # 直接传 id 参数，避免修改 kwargs
             async with cls.transaction() as session:
                 old_case = await cls.get_by_id(ident=case_id, session=session)
                 old_case_map = old_case.to_dict()
-                # BUG-D10 修复: 用 post_update_hook 在 expunge 前拿 to_dict()
-                # 快照, 避免 lazy='selectin' 关系访问 detached instance
+                # 在 expunge 前通过 hook 获取快照，避免 detached instance 错误
                 new_case_map_holder = {}
                 new_case = await cls.update_by_id(
                     session=session,
+                    id=case_id,
                     update_user=user,
                     post_update_hook=lambda t: new_case_map_holder.__setitem__('m', t.to_dict()) or t,
                     **kwargs
@@ -213,7 +214,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     case_id=case_id
                 )
 
-                # BUG-M8: 兜底对账
+                # 重新计算并同步 case_api_num
                 await cls.recompute_case_api_num(case_id, session)
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
@@ -273,7 +274,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     start_index=last_index + 1,
                     case_id=case_id
                 )
-                # BUG-M8: 兜底对账
+                # 重新计算并同步 case_api_num
                 await cls.recompute_case_api_num(case_id, session)
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
@@ -322,7 +323,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
                 last_index = await cls._get_last_step_order(case_id, session)
                 await cls._create_association(session, case_id, content.id, last_index + 1)
-                # BUG-M8: 兜底对账
+                # 重新计算并同步 case_api_num
                 await cls.recompute_case_api_num(case_id, session)
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
@@ -375,7 +376,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
 
                 last_index = await cls._get_last_step_order(case_id, session)
                 await cls._create_association(session, case_id, content.id, last_index + 1)
-                # BUG-M8: 兜底对账
+                # 重新计算并同步 case_api_num
                 await cls.recompute_case_api_num(case_id, session)
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
@@ -409,7 +410,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 )
                 last_index = await cls._get_last_step_order(case_id, session)
                 await cls._create_association(session, case_id, content.id, last_index + 1)
-                # BUG-M8: 兜底对账
+                # 重新计算并同步 case_api_num
                 await cls.recompute_case_api_num(case_id, session)
                 # dynamic
                 await InterfaceCaseDynamicMapper.append_dynamic_detail(
@@ -557,7 +558,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                 await cls._create_association(
                     session, case_id, content.id, last_index + 1
                 )
-                # BUG-M8: 兜底对账
+                # 重新计算并同步 case_api_num
                 await cls.recompute_case_api_num(case_id, session)
 
                 # dynamic
@@ -694,7 +695,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
                     .where(InterfaceCase.id == case_id)
                     .values(case_api_num=InterfaceCase.case_api_num - 1)
                 )
-                # BUG-M8: 兜底对账 (移除一个 step, 但 -1 不一定准, 比如批量内部)
+                # 重新计算 case_api_num（批量操作后 -1 可能不准确）
                 await cls.recompute_case_api_num(case_id, session)
         except Exception as e:
             log.exception(f"remove_step error: {e}")
@@ -709,16 +710,10 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             session: AsyncSession = None
     ) -> int:
         """
-        BUG-M8: 重新计算用例的 step 关联数, 写回 case_api_num。
+        重新计算用例的 step 关联数并写回 case_api_num。
 
-        根因: ±1/±N 散落在 5+ 个同步点 (associate_interfaces/groups/condition/
-        loop/db + copy_step + remove_step), 任何一处漏写或多写都让 case_api_num
-        跟实际 step 数对不上。比如:
-        - 移除 GROUP 时 -1 写死, 但 group 内部含 N 个 API, 实际应 -N
-        - 批量操作中途失败, 部分 ±1 没回滚, 字段永久错位
-
-        修法: 不逐个替换 (太碎, 易遗漏), 保留 ±N 立即更新 (给 UI 实时反馈),
-        在每个事务末尾再调一次 recompute 做最终对账, 任何漂移都会被纠正。
+        各个关联操作会立即更新 case_api_num (给 UI 实时反馈)，但在事务末尾
+        再执行一次 COUNT 对账，可以纠正批量操作或失败回滚导致的漂移。
 
         Args:
             case_id: 用例 ID
@@ -763,11 +758,7 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
         Returns:
             Sequence[ Any]: 步骤内容列表
         """
-        # BUG-D5 修复: 删除 5 个 joinedload, 全部是死代码。
-        # 5 个 step strategy 都用 step_content.target_id + Mapper.get_by_id(target_id)
-        # 自行 fetch 关联实体, 不会用 ORM relationship 预加载。
-        # 旧 .options(joinedload(...)) 让 SQL 多 5 个 LEFT JOIN, 5x 行宽膨胀, 0 收益。
-        # 只查基类 + 关联表 (association), 步进内容本身就够了。
+        # 只查基类 + 关联表；strategy 会自行按 target_id fetch，无需 joinedload
         stmt = (
             select(InterfaceCaseContents)
             .join(
@@ -782,6 +773,51 @@ class InterfaceCaseMapper(Mapper[InterfaceCase]):
             result = await s.scalars(stmt)
             steps = result.unique().all()
         return steps
+
+    @classmethod
+    async def query_content_dicts(
+            cls,
+            case_id: int,
+            session: AsyncSession = None
+    ) -> List[Dict[str, Any]]:
+        """
+        查询用例步骤列表 (字典形式, 给 controller 直接返 dict 给前端)
+
+        与 query_steps 的区别:
+        - query_steps 返 ORM 对象 (Sequence[Any]) - 给 step strategy 用
+        - query_content_dicts 返 dict 列表 - 给 controller 返 JSON 用
+        - 这里在 session 内 to_dict(), 避免 lazy load 在 session 关闭后爆 detached
+
+        Args:
+            case_id: 用例 ID
+            session: 数据库会话（可选）
+
+        Returns:
+            List[Dict[str, Any]]: 步骤内容的 dict 列表
+        """
+        # 预加载 Group/DB 子类关联并在 session 内 to_dict()，避免关闭 session
+        # 后 lazy load 触发 detached。strategy 路径不依赖 relationship 预加载，
+        # 因此只在 controller 端点专用方法里加 selectinload。
+        stmt = (
+            select(InterfaceCaseContents)
+            .join(
+                InterfaceCaseStepContentAssociation,
+                InterfaceCaseContents.id == InterfaceCaseStepContentAssociation.interface_case_content_id
+            )
+            .where(InterfaceCaseStepContentAssociation.interface_case_id == case_id)
+            .order_by(InterfaceCaseStepContentAssociation.step_order)
+            .options(
+                selectinload(GroupStepContent.interface_group),
+                selectinload(DBStepContent.db_execute),
+            )
+        )
+
+        async with cls.session_scope(session) as s:
+            result = await s.scalars(stmt)
+            steps = result.unique().all()
+            # session 内 to_dict: 此刻 relationship 仍 bound, lazy load 能
+            # 成功 (虽然已被 selectinload 预加载, 但保留 fallback)
+            return [step.to_dict() for step in steps]
 
     # ==================== 私有方法 ====================
 

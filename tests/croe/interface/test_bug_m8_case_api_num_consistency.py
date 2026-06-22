@@ -1,4 +1,4 @@
-"""BUG-M8 回归测试: InterfaceCase.case_api_num 必须跟实际 step 关联数对账。"""
+"""InterfaceCase.case_api_num 必须跟实际 step 关联数对账。"""
 
 import pytest
 import re
@@ -37,7 +37,7 @@ def _mock_session_with_actual_count(actual_count: int) -> MagicMock:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_m8_recompute_writes_actual_count(bug_m8_marker):
-    """[BUG-M8] recompute_case_api_num 应 COUNT 关联表 + UPDATE 字段。"""
+    """recompute_case_api_num 应 COUNT 关联表 + UPDATE 字段。"""
     session = _mock_session_with_actual_count(3)
 
     result = await InterfaceCaseMapper.recompute_case_api_num(case_id=42, session=session)

@@ -36,8 +36,7 @@ class InterfaceCaseContents(BaseModel):
     """
     __tablename__ = "interface_case_step_content"
 
-    # BUG-M5 修复: 改用 Enum 类型, DB 存 enum NAME 而不是 int value,
-    # 避免重排枚举值时旧数据全错。native_enum=False 用 VARCHAR(20) 实现。
+    # 使用 Enum 类型存储 NAME，避免重排枚举值导致数据错乱
     content_type = Column(
         Enum(CaseStepContentType, native_enum=False, length=20),
         nullable=False,

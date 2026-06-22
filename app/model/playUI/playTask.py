@@ -46,9 +46,7 @@ class PlayTaskResult(BaseModel):
     total_number = Column(INTEGER, comment="总运行数量")
     success_number = Column(INTEGER, default=0, comment="成功数量")
     fail_number = Column(INTEGER, default=0, comment="失败数量")
-    # BUG-P-1-3 修复: 之前 Column(INTEGER) 但 writer.py 用 round(..., 2) 写 float,
-    # MySQL 静默截断, 85.5% 变成 85% (丢 1 位小数)。修: 改 Column(Float) 保留小数。
-    # 已有部署需手动跑迁移: ALTER TABLE play_task_result MODIFY COLUMN rate_number FLOAT DEFAULT 0 COMMENT '通过率';
+    # 通过率使用 Float 保留小数精度（原 INTEGER 会静默截断）
     rate_number = Column(Float, default=0, comment="通过率")
     starter_name = Column(String(20), nullable=True, comment="运行人名称")
     total_usetime = Column(String(20), comment="运行时间")

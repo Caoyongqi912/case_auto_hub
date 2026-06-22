@@ -1,4 +1,4 @@
-"""BUG-M5 回归测试:`content_type` 列必须存 enum NAME 而不是 int value,"""
+"""`content_type` 列必须存 enum NAME 而不是 int value,"""
 
 import inspect
 
@@ -26,7 +26,7 @@ def _content_type_column(model):
 
 @pytest.mark.unit
 def test_bug_m5_contents_uses_enum_type_not_integer(bug_m5_marker):
-    """[BUG-M5] InterfaceCaseContents.content_type 必须用 Enum, 不能是 Integer。"""
+    """InterfaceCaseContents.content_type 必须用 Enum, 不能是 Integer。"""
     col = _content_type_column(InterfaceCaseContents)
     assert isinstance(col.type, Enum), (
         f"[{BUG_M5}] InterfaceCaseContents.content_type 应为 Enum, "
@@ -43,7 +43,7 @@ def test_bug_m5_contents_uses_enum_type_not_integer(bug_m5_marker):
 
 @pytest.mark.unit
 def test_bug_m5_result_uses_enum_type_not_integer(bug_m5_marker):
-    """[BUG-M5] InterfaceCaseContentResult.content_type 必须用 Enum, 不能是 Integer。"""
+    """InterfaceCaseContentResult.content_type 必须用 Enum, 不能是 Integer。"""
     col = _content_type_column(InterfaceCaseContentResult)
     assert isinstance(col.type, Enum), (
         f"[{BUG_M5}] InterfaceCaseContentResult.content_type 应为 Enum, "
@@ -53,7 +53,7 @@ def test_bug_m5_result_uses_enum_type_not_integer(bug_m5_marker):
 
 @pytest.mark.unit
 def test_bug_m5_enum_uses_native_enum_false_for_portability(bug_m5_marker):
-    """[BUG-M5] Enum 必须 native_enum=False + length, 才能跨 MySQL 5/8 兼容。"""
+    """Enum 必须 native_enum=False + length, 才能跨 MySQL 5/8 兼容。"""
     col = _content_type_column(InterfaceCaseContents)
     assert col.type.native_enum is False, (
         f"[{BUG_M5}] native_enum=False 跨 MySQL 版本兼容, 实际是 {col.type.native_enum}"
@@ -64,7 +64,7 @@ def test_bug_m5_enum_uses_native_enum_false_for_portability(bug_m5_marker):
 
 @pytest.mark.unit
 def test_bug_m5_polymorphic_on_still_uses_content_type(bug_m5_marker):
-    """[BUG-M5] polymorphic_on 仍然挂在 content_type 上, 跟改 Column 类型不冲突。"""
+    """polymorphic_on 仍然挂在 content_type 上, 跟改 Column 类型不冲突。"""
     mapper_args = InterfaceCaseContents.__mapper_args__
     assert "polymorphic_on" in mapper_args, (
         f"[{BUG_M5}] polymorphic_on 必须保留, 否则多态失效"

@@ -1,4 +1,4 @@
-"""BUG-D2 回归测试:`bulk_insert_results` 不应静默丢数据。"""
+"""`bulk_insert_results` 不应静默丢数据。"""
 
 import contextlib
 import pytest
@@ -42,7 +42,7 @@ def _patch_transaction(fake_session):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d2_empty_returns_zero_zero(bug_d2_marker):
-    """[BUG-D2] 空输入应当返回 (0, 0)。"""
+    """空输入应当返回 (0, 0)。"""
     inserted, skipped = await InterfaceContentStepResultMapper.bulk_insert_results(
         [], session=_fake_session()
     )
@@ -52,7 +52,7 @@ async def test_bug_d2_empty_returns_zero_zero(bug_d2_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d2_missing_content_type_raises(bug_d2_marker):
-    """[BUG-D2] 缺 content_type 应抛 ValueError(编程错误,不静默吞)。"""
+    """缺 content_type 应抛 ValueError(编程错误,不静默吞)。"""
     bad = {"content_id": 1, "content_name": "no-ct"}  # 没 content_type
     with pytest.raises(ValueError, match="content_type"):
         await InterfaceContentStepResultMapper.bulk_insert_results(
@@ -62,7 +62,7 @@ async def test_bug_d2_missing_content_type_raises(bug_d2_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d2_unknown_content_type_is_counted_and_logged(bug_d2_marker):
-    """[BUG-D2] 未知 content_type 应当被计入 skipped 并 WARNING 输出。"""
+    """未知 content_type 应当被计入 skipped 并 WARNING 输出。"""
     unknown = {
         "content_type": 9999,  # 一定不在 RESULT_TYPE_MAP 里
         "content_id": 1,
@@ -88,7 +88,7 @@ async def test_bug_d2_unknown_content_type_is_counted_and_logged(bug_d2_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d2_mix_valid_and_unknown(bug_d2_marker):
-    """[BUG-D2] 合法 + 未知混在一起,合法的不被牵连。"""
+    """合法 + 未知混在一起,合法的不被牵连。"""
     good = _valid_item(content_id=1)
     good2 = _valid_item(content_id=2)
     unknown = {
@@ -117,7 +117,7 @@ async def test_bug_d2_mix_valid_and_unknown(bug_d2_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_d2_all_valid_no_warning(bug_d2_marker):
-    """[BUG-D2] 全部合法不应产生 WARNING。"""
+    """全部合法不应产生 WARNING。"""
     items = [_valid_item(content_id=i) for i in range(3)]
     fake_session = AsyncMock()
     fake_session.add_all = MagicMock()

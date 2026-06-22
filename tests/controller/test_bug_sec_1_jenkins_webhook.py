@@ -1,4 +1,4 @@
-"""BUG-SEC-1: Jenkins Webhook 鉴权回归测试.
+"""Jenkins Webhook 鉴权回归测试.
 
 锁定行为:
 - JenkinsWebhookAuth 依赖 fail-closed: Config.JENKINS_WEBHOOK_TOKEN 未配置 → 401
@@ -33,7 +33,7 @@ import pytest
     ],
 )
 def test_jenkins_endpoint_has_webhook_auth(controller_file, func_name):
-    """[BUG-SEC-1] Jenkins 路由必须挂 JenkinsWebhookAuth 依赖, 否则任何人可触发任务执行。"""
+    """Jenkins 路由必须挂 JenkinsWebhookAuth 依赖, 否则任何人可触发任务执行。"""
     src = Path(controller_file).read_text()
     m = re.search(
         rf"async def {func_name}\(([^)]+)\)",
@@ -43,7 +43,7 @@ def test_jenkins_endpoint_has_webhook_auth(controller_file, func_name):
     assert m, f"{controller_file} 找不到 async def {func_name}"
     sig = m.group(1)
     assert "JenkinsWebhookAuth" in sig, (
-        f"[BUG-SEC-1] {controller_file}.{func_name} 缺 JenkinsWebhookAuth 依赖, "
+        f"{controller_file}.{func_name} 缺 JenkinsWebhookAuth 依赖, "
         f"签名: {sig!r}"
     )
 
@@ -56,7 +56,7 @@ def test_jenkins_endpoint_has_webhook_auth(controller_file, func_name):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_webhook_auth_rejects_when_token_unconfigured():
-    """[BUG-SEC-1] Config.JENKINS_WEBHOOK_TOKEN 为空时, 即便 header 正确也拒绝。"""
+    """Config.JENKINS_WEBHOOK_TOKEN 为空时, 即便 header 正确也拒绝。"""
     from app.controller import JenkinsWebhookAuth
     from app.exception import AuthError
 
@@ -70,7 +70,7 @@ async def test_webhook_auth_rejects_when_token_unconfigured():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_webhook_auth_rejects_missing_header():
-    """[BUG-SEC-1] 已配置 token 但请求头缺失 → 401。"""
+    """已配置 token 但请求头缺失 → 401。"""
     from app.controller import JenkinsWebhookAuth
     from app.exception import AuthError
 
@@ -84,7 +84,7 @@ async def test_webhook_auth_rejects_missing_header():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_webhook_auth_rejects_empty_string_header():
-    """[BUG-SEC-1] 已配置 token 但 header 是空字符串 → 401。"""
+    """已配置 token 但 header 是空字符串 → 401。"""
     from app.controller import JenkinsWebhookAuth
     from app.exception import AuthError
 
@@ -98,7 +98,7 @@ async def test_webhook_auth_rejects_empty_string_header():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_webhook_auth_rejects_wrong_header():
-    """[BUG-SEC-1] header 不匹配 → 401。"""
+    """header 不匹配 → 401。"""
     from app.controller import JenkinsWebhookAuth
     from app.exception import AuthError
 
@@ -112,7 +112,7 @@ async def test_webhook_auth_rejects_wrong_header():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_webhook_auth_allows_matching_header():
-    """[BUG-SEC-1] header 匹配 → 放行 (返回 True)。"""
+    """header 匹配 → 放行 (返回 True)。"""
     from app.controller import JenkinsWebhookAuth
 
     with patch("config.Config") as MockCfg:
@@ -127,13 +127,13 @@ async def test_webhook_auth_allows_matching_header():
 # --------------------------------------------------------------------------- #
 @pytest.mark.unit
 def test_config_jenkins_token_default_empty(monkeypatch):
-    """[BUG-SEC-1] env 无 JENKINS_WEBHOOK_TOKEN 时, os.getenv 默认值是空字符串 (fail-closed)。"""
+    """env 无 JENKINS_WEBHOOK_TOKEN 时, os.getenv 默认值是空字符串 (fail-closed)。"""
     monkeypatch.delenv("JENKINS_WEBHOOK_TOKEN", raising=False)
     assert os.getenv("JENKINS_WEBHOOK_TOKEN", "") == ""
 
 
 @pytest.mark.unit
 def test_config_jenkins_token_from_env(monkeypatch):
-    """[BUG-SEC-1] JENKINS_WEBHOOK_TOKEN 能从 env 读出。"""
+    """JENKINS_WEBHOOK_TOKEN 能从 env 读出。"""
     monkeypatch.setenv("JENKINS_WEBHOOK_TOKEN", "ci-shared-secret-2026")
     assert os.getenv("JENKINS_WEBHOOK_TOKEN") == "ci-shared-secret-2026"

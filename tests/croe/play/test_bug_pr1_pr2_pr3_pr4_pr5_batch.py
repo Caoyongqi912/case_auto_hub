@@ -1,4 +1,4 @@
-"""[BUG-P-R1 + P-R2 + P-R3 + P-R4 + P-R5] 5 个 P0 隐藏 BUG 一锅端,"""
+"""5 个 P0 隐藏 BUG 一锅端,"""
 
 import inspect
 import re
@@ -45,7 +45,7 @@ def test_bug_p_r1_execute_case_except_does_not_raise():
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_r2_execute_task_no_duplicate_query_case():
-    """[BUG-P-R2] execute_task 函数体 query_case 只应调 1 次 (修前 2 次)。"""
+    """execute_task 函数体 query_case 只应调 1 次 (修前 2 次)。"""
     from croe.play.task_runner import PlayTaskRunner
 
     src = inspect.getsource(PlayTaskRunner.execute_task)
@@ -89,7 +89,7 @@ def test_bug_p_r3_init_case_vars_outside_retry_loop():
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_r4_task_params_has_error_continue():
-    """[BUG-P-R4] PlayTaskExecuteParams 必须有 error_continue 字段。"""
+    """PlayTaskExecuteParams 必须有 error_continue 字段。"""
     from croe.play.task_runner import PlayTaskExecuteParams
     import dataclasses
 
@@ -170,7 +170,7 @@ class _TestStrategy(StepBaseStrategy):
 
 @pytest.mark.asyncio
 async def test_bug_p_r5_ignored_step_writes_error_info_end_to_end():
-    """[BUG-P-R5] 端到端: 步骤失败 + ignore=True 时, set_error_step_info 仍被调。"""
+    """端到端: 步骤失败 + ignore=True 时, set_error_step_info 仍被调。"""
     from croe.play.executor.step_content_strategy._base import StepBaseStrategy
     from croe.play.executor.play_method.result_types import StepExecutionResult
 

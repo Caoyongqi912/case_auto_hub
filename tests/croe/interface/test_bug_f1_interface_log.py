@@ -1,4 +1,4 @@
-"""BUG-F1 回归测试:runner 不应给 `case_result.interfaceLog` (camelCase) 赋值,"""
+"""runner 不应给 `case_result.interfaceLog` (camelCase) 赋值,"""
 
 import re
 from pathlib import Path
@@ -13,7 +13,7 @@ def bug_f1_marker():
 
 @pytest.mark.unit
 def test_bug_f1_runner_no_camelcase_log_assignment(bug_f1_marker):
-    """[BUG-F1] runner.py 不应出现 case_result.interfaceLog = ... 这种 camelCase 赋值。"""
+    """runner.py 不应出现 case_result.interfaceLog = ... 这种 camelCase 赋值。"""
     runner_py = Path("croe/interface/runner.py")
     if not runner_py.exists():
         pytest.skip("runner.py 不存在(可能项目布局有变)")

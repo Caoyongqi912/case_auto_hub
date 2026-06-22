@@ -491,7 +491,7 @@ def test_normalize_temp_variables_dict_wrapped_in_list():
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_aclose_calls_http_close():
-    """aclose: 释放 httpx client。锁定 BUG-E1。"""
+    """aclose: 释放 httpx client。"""
     executor = _build_executor()
     http = executor.http  # 保留引用, 因为 aclose 之后 self.http 会被置 None
     await executor.aclose()

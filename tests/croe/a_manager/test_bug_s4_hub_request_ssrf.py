@@ -1,4 +1,4 @@
-"""[BUG-S4] _hub_api_request 缺 SSRF 防御"""
+"""_hub_api_request 缺 SSRF 防御"""
 
 import os
 import pytest

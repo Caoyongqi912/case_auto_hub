@@ -514,13 +514,8 @@ class PlayCaseMapper(Mapper[PlayCase]):
             case_id: 用例id
 
         Notes:
-            - BUG-P-2-2: 之前该方法在 review 时被标为"死代码", 全仓 grep 无任何调用方。
-              内容修改靠 SQLAlchemy ORM dirty tracking 自动 flush (对象已在 session
-              里), 不是死代码的根因。真正问题是没人调用。
-            - 保留原因: 接口稳定, controller 没暴露这条路径, 之后真要"批量刷新步骤
-              名称/描述"还能用。删了就没了, 留着无害 (死代码不耗运行资源, IDE 会
-              灰显提示)。
-            - 如果之后确认永远不用, 再删。改 caller 风险低: 只有 controller 会调。
+            - 当前 controller 未暴露该路径，属于预留方法。
+            - 如需批量刷新步骤名称/描述，可在此实现。
         """
 
         async with cls.transaction() as session:

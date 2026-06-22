@@ -78,16 +78,16 @@ class InterfaceMapper(Mapper[Interface]):
         Returns:
             Interface: 更新后的接口实例
         """
-        kwargs["id"] = interface_id
+        # 直接传 id 参数，避免修改 kwargs
         try:
             async with cls.transaction() as session:
                 old_interface = await cls.get_by_id(ident=interface_id, session=session)
                 old_interface_map = old_interface.to_dict()
-                # BUG-D10 修复: 用 post_update_hook 在 expunge 前拿 to_dict()
-                # 快照, 避免 lazy='selectin' 关系访问 detached instance
+                # 在 expunge 前通过 hook 获取快照，避免 detached instance 错误
                 new_interface_map_holder = {}
                 new_interface = await cls.update_by_id(
                     session=session,
+                    id=interface_id,
                     update_user=user,
                     post_update_hook=lambda t: new_interface_map_holder.__setitem__('m', t.to_dict()) or t,
                     **kwargs

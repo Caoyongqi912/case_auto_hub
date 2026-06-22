@@ -1,4 +1,4 @@
-"""BUG-F2 回归测试:runner 在用例不存在或步骤为空时,应返回 (False, None) 二元组,"""
+"""runner 在用例不存在或步骤为空时,应返回 (False, None) 二元组,"""
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -25,7 +25,7 @@ def _make_starter():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_f2_early_return_when_case_not_found(bug_f2_marker):
-    """[BUG-F2] case 不存在时,run_interface_case 应返回 (False, None) 二元组。"""
+    """case 不存在时,run_interface_case 应返回 (False, None) 二元组。"""
     runner = InterfaceRunner(starter=_make_starter())
 
     with patch(
@@ -48,7 +48,7 @@ async def test_bug_f2_early_return_when_case_not_found(bug_f2_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_f2_early_return_when_no_steps(bug_f2_marker):
-    """[BUG-F2] 用例存在但无步骤时,也应返回 (False, None)。"""
+    """用例存在但无步骤时,也应返回 (False, None)。"""
     runner = InterfaceRunner(starter=_make_starter())
     case = InterfaceCase(
         id=1, case_title="x", uid="u-1", project_id=1, module_id=1,

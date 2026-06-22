@@ -116,9 +116,7 @@ class PlayCaseChoiceGroupStepSchema(BaseModel):
 
 class PagePlayCaseResultSchema(PageSchema):
     """play用例结果分页查询模型"""
-    # BUG-P-1-2 修复: 之前 ui_case_Id 大写 I 错属性名, 改 ui_case_id (snake_case),
-    # 跟 PlayCaseResult.ui_case_id property 一致。Pydantic populate_by_name 允许
-    # 客户端继续传 ui_case_Id, 1-2 release 过渡期。
+    # 兼容旧版 ui_case_Id 别名，使用 snake_case 与 PlayCaseResult property 一致
     ui_case_id: Optional[int] = Field(None, alias="ui_case_Id", description="UI用例ID")
     ui_case_name: Optional[str] = Field(None, description="UI用例名称")
     starter_id: Optional[int] = Field(None, description="开始者ID")

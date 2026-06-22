@@ -5,6 +5,7 @@
 # @File : _response
 # @Software: PyCharm
 # @Desc:
+import enum
 from datetime import datetime, date
 from decimal import Decimal
 from typing import Any, Set, Optional, Dict
@@ -75,6 +76,9 @@ def jsonable_encoder(
 
     if isinstance(obj,httpx.BasicAuth):
         return None
+    # 显式处理 enum.Enum，统一返回 .value，避免 str Enum 序列化失败
+    if isinstance(obj, enum.Enum):
+        return obj.value
     # 处理基本类型
     if isinstance(obj, (str, int, float, type(None))):
         return obj

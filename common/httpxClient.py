@@ -16,13 +16,8 @@ LOG = MyLoguru().get_logger()
 
 
 class HttpxClient:
-    # BUG-E2 修复: 写死的 user-agent "case_Hub_http/v0.1" 删了。
-    # 旧逻辑下, 调用方无法在 Interface.interface_headers 里覆盖, 因为 client
-    # headers 在 client 创建时硬塞 user-agent, 后续 httpx 合并时若 interface_headers
-    # 不含 User-Agent 就会用这个 magic string, 且 magic string 没来源说明。
-    # 改: 入参 default_user_agent (None = 走 httpx 内置 user-agent);
-    # 运行时通过 interface_headers / g_headers 配的 User-Agent 仍会按 httpx 规则
-    # 单次 request 覆盖。
+    # 不再硬编码 user-agent，改由调用方通过 default_user_agent 传入；
+    # 未传入时使用 httpx 内置默认值，interface_headers / g_headers 仍可在单次请求覆盖。
 
     def __init__(
             self,
@@ -53,9 +48,7 @@ class HttpxClient:
                 self._hooks.setdefault(event, []).extend(event_hooks)
 
         # 客户端配置
-        # BUG-E2 修复: 仅当调用方显式传 default_user_agent 时才注入 client headers,
-        # 不传就走 httpx 内置 user-agent ("python-httpx/x.y.z"), 由 interface_headers
-        # 传入的 User-Agent 单次覆盖 (httpx 合并规则: request headers 覆盖 client headers)。
+        # 仅在显式传入 default_user_agent 时注入 client headers，否则使用 httpx 内置默认值
         client_headers: Dict[str, str] = {}
         if default_user_agent:
             client_headers["user-agent"] = default_user_agent
@@ -87,7 +80,7 @@ class HttpxClient:
         :return: 响应对象
         """
         # 把 connect/read 超时从 kwargs 取出,放到本次 request 的 timeout 上,
-        # **不**修改 self.client.timeout (BUG-E1) ——
+        # **不**修改 self.client.timeout ——
         # 共享 client 状态被并发请求互相覆盖是经典坑。
         connect = kwargs.pop("connect", self.default_timeout)
         read = kwargs.pop("read", self.default_timeout)

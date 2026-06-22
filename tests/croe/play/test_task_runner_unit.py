@@ -109,7 +109,7 @@ class TestExecuteTask:
 
     @pytest.mark.asyncio
     async def test_init_result_failure_does_not_crash(self):
-        """[BUG-P-3-1] init_result 抛异常时 execute_task 应 log + return, 不挂。"""
+        """init_result 抛异常时 execute_task 应 log + return, 不挂。"""
         starter = MagicMock()
         starter.send = AsyncMock()
         runner = PlayTaskRunner(starter=starter)

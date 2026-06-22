@@ -143,8 +143,7 @@ class InterfaceCaseContentMapper(Mapper):
             log.exception(f"不支持的 content_type: {content.content_type}")
             return False
 
-        # BUG-D8 修复: 注释和字段名统一, 用 username= 而不是 creatorName=,
-        # 因为 BaseModel 的 creatorName 列就是存 username 字符串。
+        # 使用 username 而非 creatorName，与 BaseModel 列定义一致
         new_content = cls_model(
             target_id=content.target_id,
             creator=user.id,

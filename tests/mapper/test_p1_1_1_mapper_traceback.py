@@ -1,4 +1,4 @@
-"""BUG-P-1-1.1 回归测试:app/mapper/ 全部用 bare raise + log.exception, 保留 traceback.
+"""app/mapper/ 全部用 bare raise + log.exception, 保留 traceback.
 
 锁定行为:
 - except 块内 `raise e` 改为 `raise` (防御性: e 可能被 shadow 改类型)
@@ -34,7 +34,7 @@ def _in_except_block(lines: list[str], idx: int, except_indent: int) -> bool:
 @pytest.mark.unit
 @pytest.mark.parametrize("mapper_file", _iter_mapper_py(), ids=lambda p: str(p))
 def test_no_raise_e_in_mapper(mapper_file: Path):
-    """[BUG-P-1-1.1] mapper 的 except 块内不能用 `raise e`, 必须 bare raise 防 shadow."""
+    """mapper 的 except 块内不能用 `raise e`, 必须 bare raise 防 shadow."""
     text = mapper_file.read_text()
     lines = text.splitlines()
     bad: list[tuple[int, str]] = []
@@ -51,7 +51,7 @@ def test_no_raise_e_in_mapper(mapper_file: Path):
                     bad.append((j + 1, lines[j].rstrip()))
                 j += 1
     assert not bad, (
-        f"[BUG-P-1-1.1] {mapper_file}: {len(bad)} 处 `raise e` 应改为 bare `raise`"
+        f"{mapper_file}: {len(bad)} 处 `raise e` 应改为 bare `raise`"
         f" (`raise e` 容易因 `e` 被 shadow / 重赋值 成非异常对象而 TypeError; "
         f"bare `raise` 隐式使用 sys.exc_info() 永远 raise 当前 except 异常):\n"
         + "\n".join(f"  {ln}: {t}" for ln, t in bad[:5])
@@ -64,7 +64,7 @@ def test_no_raise_e_in_mapper(mapper_file: Path):
 @pytest.mark.unit
 @pytest.mark.parametrize("mapper_file", _iter_mapper_py(), ids=lambda p: str(p))
 def test_no_log_error_in_except_mapper(mapper_file: Path):
-    """[BUG-P-1-1.1] mapper 的 except 块内 log.error 应改 log.exception 带 traceback."""
+    """mapper 的 except 块内 log.error 应改 log.exception 带 traceback."""
     text = mapper_file.read_text()
     lines = text.splitlines()
     bad: list[tuple[int, str]] = []
@@ -81,7 +81,7 @@ def test_no_log_error_in_except_mapper(mapper_file: Path):
                     bad.append((j + 1, lines[j].rstrip()))
                 j += 1
     assert not bad, (
-        f"[BUG-P-1-1.1] {mapper_file}: {len(bad)} 处 except 块内 `log.error` "
+        f"{mapper_file}: {len(bad)} 处 except 块内 `log.error` "
         f"应改 `log.exception` (loguru 自动带 tb):\n"
         + "\n".join(f"  {ln}: {t}" for ln, t in bad[:5])
     )
@@ -92,7 +92,7 @@ def test_no_log_error_in_except_mapper(mapper_file: Path):
 # --------------------------------------------------------------------------- #
 @pytest.mark.unit
 def test_bare_raise_safe_when_e_is_shadowed():
-    """[BUG-P-1-1.1] 行为证明: `raise e` 在 `e` 被 shadow 时会 TypeError, `raise` 永远安全."""
+    """行为证明: `raise e` 在 `e` 被 shadow 时会 TypeError, `raise` 永远安全."""
     # 危险模式: `e` 被改成一个非异常对象, 然后 raise e
     def dangerous_pattern_raise_e():
         try:
@@ -129,7 +129,7 @@ def test_bare_raise_safe_when_e_is_shadowed():
 # --------------------------------------------------------------------------- #
 @pytest.mark.unit
 def test_log_exception_attaches_traceback_to_log_output():
-    """[BUG-P-1-1.1] loguru 的 log.exception 在 except 块内自动带 traceback, log.error 不带."""
+    """loguru 的 log.exception 在 except 块内自动带 traceback, log.error 不带."""
     import io
     from loguru import logger
 
@@ -149,13 +149,13 @@ def test_log_exception_attaches_traceback_to_log_output():
     # log.error 不带 traceback
     err_section = output.split("called via log.exception")[0]
     assert "simulated" not in err_section, (
-        f"[BUG-P-1-1.1] log.error 不应包含 traceback, 但 output 含 'simulated':\n{err_section}"
+        f"log.error 不应包含 traceback, 但 output 含 'simulated':\n{err_section}"
     )
     # log.exception 带 traceback
     exc_section = output.split("called via log.exception")[1]
     assert "simulated" in exc_section, (
-        f"[BUG-P-1-1.1] log.exception 应带 traceback, 但 output 不含 'simulated':\n{exc_section}"
+        f"log.exception 应带 traceback, 但 output 不含 'simulated':\n{exc_section}"
     )
     assert "Traceback" in exc_section, (
-        f"[BUG-P-1-1.1] log.exception 应输出 Traceback 字样, 但 output 没有:\n{exc_section}"
+        f"log.exception 应输出 Traceback 字样, 但 output 没有:\n{exc_section}"
     )

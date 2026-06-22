@@ -1,4 +1,4 @@
-"""BUG-M2 回归测试:`interface_case_name` / `interface_case_desc` 长度不足。"""
+"""`interface_case_name` / `interface_case_desc` 长度不足。"""
 
 import pytest
 from sqlalchemy import String
@@ -13,7 +13,7 @@ def bug_m2_marker():
 
 @pytest.mark.unit
 def test_bug_m2_case_result_name_length_supports_case_title(bug_m2_marker):
-    """[BUG-M2] interface_case_name 长度应 >= case_title 长度。"""
+    """interface_case_name 长度应 >= case_title 长度。"""
     case_title_col = InterfaceCase.__table__.columns["case_title"]
     case_result_name_col = InterfaceCaseResult.__table__.columns["interface_case_name"]
 
@@ -30,7 +30,7 @@ def test_bug_m2_case_result_name_length_supports_case_title(bug_m2_marker):
 
 @pytest.mark.unit
 def test_bug_m2_case_result_desc_length_supports_case_desc(bug_m2_marker):
-    """[BUG-M2] interface_case_desc 长度应 >= case_desc 长度。"""
+    """interface_case_desc 长度应 >= case_desc 长度。"""
     case_desc_col = InterfaceCase.__table__.columns["case_desc"]
     case_result_desc_col = InterfaceCaseResult.__table__.columns["interface_case_desc"]
 

@@ -1,4 +1,4 @@
-"""BUG-E6 回归测试: _build_result 返回 Dict, 不再 (Dict, bool) tuple。"""
+"""_build_result 返回 Dict, 不再 (Dict, bool) tuple。"""
 
 import pytest
 from unittest.mock import MagicMock
@@ -33,7 +33,7 @@ def _make_ctx(success: bool = True) -> MagicMock:
 
 @pytest.mark.unit
 def test_bug_e6_build_result_returns_dict_not_tuple(bug_e6_marker):
-    """[BUG-E6] _build_result 必须返回 Dict, 不再 (Dict, bool)。"""
+    """_build_result 必须返回 Dict, 不再 (Dict, bool)。"""
     executor = InterfaceExecutor.__new__(InterfaceExecutor)
     executor.starter = MagicMock()
     ctx = _make_ctx(success=True)
@@ -47,7 +47,7 @@ def test_bug_e6_build_result_returns_dict_not_tuple(bug_e6_marker):
 
 @pytest.mark.unit
 def test_bug_e6_build_result_contains_result_field(bug_e6_marker):
-    """[BUG-E6] 返回的 dict 必须包含 'result' 字段, 跟 ctx.success 对应。"""
+    """返回的 dict 必须包含 'result' 字段, 跟 ctx.success 对应。"""
     executor = InterfaceExecutor.__new__(InterfaceExecutor)
     executor.starter = MagicMock()
 
@@ -67,7 +67,7 @@ def test_bug_e6_build_result_contains_result_field(bug_e6_marker):
 
 @pytest.mark.unit
 def test_bug_e6_execute_signature_returns_dict(bug_e6_marker):
-    """[BUG-E6] InterfaceExecutor.execute 的签名应返回 Dict, 不是 Tuple。"""
+    """InterfaceExecutor.execute 的签名应返回 Dict, 不是 Tuple。"""
     import inspect
     sig = inspect.signature(InterfaceExecutor.execute)
     anno = sig.return_annotation

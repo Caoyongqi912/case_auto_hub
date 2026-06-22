@@ -149,7 +149,7 @@ class TestPlayTaskResult:
         assert PlayTaskResult.__tablename__ == "play_task_result"
 
     def test_rate_number_is_float_column_p_1_3(self):
-        """[BUG-P-1-3 修复] rate_number 应是 Float 列 (不是 INTEGER, 避免 85.5 → 85 截断)。"""
+        """rate_number 应是 Float 列 (不是 INTEGER, 避免 85.5 → 85 截断)。"""
         col = PlayTaskResult.__table__.columns.get("rate_number")
         assert col is not None
         assert isinstance(col.type, Float), (

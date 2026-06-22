@@ -29,6 +29,7 @@ from app.model.interfaceAPIModel.interfaceTaskModel import InterfaceTask
 from enums import InterfaceAPIStatusEnum, InterfaceAPIResultEnum, StepStatusEnum
 from enums.CaseEnum import CaseStepContentType
 from utils import GenerateTools, log
+from common import rc
 from croe.interface.starter import APIStarter
 
 def _result_flag_to_bool(value: Any) -> bool:
@@ -73,21 +74,29 @@ class ResultWriter:
     }
 
     MAX_CACHE_SIZE = 1000
+    # 缓存重试上限，超过后放弃，防止错误数据长期滞留
+    MAX_RETRY_COUNT = 2
 
     def __init__(self):
         self.api_result_cache: List[InterfaceResult] = []
         self.content_result_cache: List[Dict[str, Any]] = []
+        # 失败缓存进入重试队列，下次 flush 优先消费，避免事务失败丢数据
+        self._retry_queue: List[Dict[str, Any]] = []
 
     def clear_cache(self) -> None:
         """
-        清空所有缓存,run_interface_case 在 finally 调用以释放内存。
+        清空所有缓存，run_interface_case 在 finally 调用以释放内存。
 
-        之前用的是模块级单例 result_writer,缓存不会自动清,
-        长跑 / 并发 case 会让 api_result_cache 越来越大、还会
-        把别人的数据 flush 走。
+        同时清理重试队列，防止跨 case 残留错误数据被下一个 case 消费。
         """
         self.api_result_cache.clear()
         self.content_result_cache.clear()
+        if self._retry_queue:
+            log.warning(
+                f"clear_cache 丢弃 retry_queue 中 "
+                f"{len(self._retry_queue)} 条未消费重试数据"
+            )
+            self._retry_queue.clear()
 
     async def init_task_result(
             self,
@@ -208,6 +217,7 @@ class ResultWriter:
             success: bool,
             start_time: datetime,
             use_time: str,
+            immediate: bool = False,
             **kwargs
     ) -> InterfaceCaseContentResult:
         """
@@ -215,7 +225,9 @@ class ResultWriter:
 
         设计说明：
         - 父步骤（GROUP/CONDITION/LOOP）：立即插入，获取 ID，供子步骤使用
-        - 子步骤（API 等）：加入缓存，最后批量插入
+        - 子步骤（API 等）：默认加入缓存，最后批量插入
+        - 子步骤可传 immediate=True 强制立即插入，以便拿到 content_result.id
+          回填 interface_result.content_result_id
 
         Args:
             content_type: 步骤类型
@@ -228,10 +240,11 @@ class ResultWriter:
             success: 是否成功
             start_time: 开始时间
             use_time: 用时
+            immediate: 是否立即插入
             **kwargs: 其他特有字段
 
         Returns:
-            InterfaceCaseContentResult: 创建的步骤内容结果实例
+            InterfaceCaseContentResult: 创建的步骤内容结果实例 (immediate=False 时返回 None)
         """
         is_parent_step = content_type in self.PARENT_STEP_TYPES
 
@@ -250,7 +263,17 @@ class ResultWriter:
             **kwargs
         }
 
-        if is_parent_step:
+        # 写步骤前清除 Redis 缓存，避免查询端读到旧数据
+        try:
+            if rc.r is None:
+                await rc.init_pool()
+            await rc.r.delete(f"result:steps:{case_result_id}")
+        except Exception:
+            # 清 cache 失败不应阻塞写主流程 (5s TTL 自然过期兜底)
+            log.exception(f"step result cache invalidate failed: case_result_id={case_result_id}")
+
+        if is_parent_step or immediate:
+            # 立即插入以获取 id，供 caller 回填 FK
             return await InterfaceContentStepResultMapper.insert_result(**result_data)
         else:
             self.content_result_cache.append(result_data)
@@ -323,7 +346,7 @@ class ResultWriter:
         )
         if backfilled:
             log.info(
-                f"[BUG-F8-followup] 回填 interface_result.content_result_id: "
+                f"回填 interface_result.content_result_id: "
                 f"{backfilled} 行 (case_result_id={case_result.id})"
             )
 
@@ -346,7 +369,7 @@ class ResultWriter:
                 session=None,  # 走自己的事务, 不影响 finalize 主流程
             )
             log.info(
-                f"[BUG-E8+E9] recompute case_result_nums: "
+                f"recompute case_result_nums: "
                 f"total={recomputed['total']} success={recomputed['success']} "
                 f"fail={recomputed['fail']} (case_result_id={case_result.id})"
             )
@@ -360,7 +383,7 @@ class ResultWriter:
                 case_result.result = InterfaceAPIResultEnum.ERROR
         except Exception as e:
             # recompute 失败不影响 finalize 主流程, 保留旧值
-            log.warning(f"[BUG-E8+E9] recompute_case_result_nums 失败, 用旧值: {e}")
+            log.warning(f"recompute_case_result_nums 失败, 用旧值: {e}")
 
         await InterfaceCaseResultMapper.update_by_id(
             id=case_result.id,
@@ -380,13 +403,28 @@ class ResultWriter:
         事务策略：
         - 单一事务包住 api_result + content_result 两次 bulk, 任一失败整体回滚
         - 事务路径失败 -> 进入降级路径, 降级自己再开一个事务逐条 commit
-        - 缓存清空只在最后做, 失败时不丢缓存(其实也丢, 因为 retry 不在当前设计里;
-          留 TODO: 把缓存重试也做掉)
+        - 降级路径仍失败时把 cache 推入 _retry_queue，下次 flush 先消费重试
+          (最多 MAX_RETRY_COUNT 次，仍失败则记 ERROR 并丢弃，防止错误数据长期滞留)
+        - 缓存清空只在最后做, 失败时数据走 retry queue 不丢
 
         重要：
         - content_result_cache 中存储的是字典，需要先转换成模型
         - api_result_cache 中存储的是 InterfaceResult 模型
         """
+        # flush 前先消费重试队列
+        if self._retry_queue:
+            log.info(
+                f"flush 前先消费 retry queue: "
+                f"{len(self._retry_queue)} 条"
+            )
+            # 移到 current cache 头部 (优先重试)
+            retry_items = self._retry_queue
+            self._retry_queue = []
+            self.api_result_cache = retry_items["api"] + self.api_result_cache
+            self.content_result_cache = (
+                retry_items["content"] + self.content_result_cache
+            )
+
         if self.api_result_cache or self.content_result_cache:
             log.info(
                 f"开始刷新缓存: api_result={len(self.api_result_cache)}, "
@@ -404,13 +442,49 @@ class ResultWriter:
             bulk_ok = True
         except Exception as e:
             log.error(
-                f"BUG-D4 路径: 批量事务失败, 整批回滚, 转入逐条降级: {e}"
+                f"批量事务失败，整批回滚，转入逐条降级: {e}"
             )
 
         # 2. 降级路径: 自管事务, 逐条 commit, 不被前面半写污染
         if not bulk_ok:
-            await self._fallback_insert_api_results()
-            await self._fallback_insert_content_results()
+            try:
+                await self._fallback_insert_api_results()
+                await self._fallback_insert_content_results()
+            except Exception as e:
+                # 降级路径失败后将缓存推入重试队列
+                log.error(
+                    f"降级路径也失败，推到 retry queue: {e}"
+                )
+                # 检查 retry 次数, 防止错误数据长期滞留
+                existing_retry_count = max(
+                    (item.get("_retry_count", 0)
+                     for item in self._retry_queue),
+                    default=0,
+                )
+                if existing_retry_count >= self.MAX_RETRY_COUNT:
+                    log.error(
+                        f"retry queue 已达 MAX_RETRY_COUNT="
+                        f"{self.MAX_RETRY_COUNT}, 放弃 "
+                        f"api={len(self.api_result_cache)} "
+                        f"content={len(self.content_result_cache)} 条"
+                    )
+                    self.api_result_cache.clear()
+                    self.content_result_cache.clear()
+                else:
+                    new_retry_count = existing_retry_count + 1
+                    for item in self.api_result_cache:
+                        if hasattr(item, "_retry_count"):
+                            item._retry_count = new_retry_count
+                    for item in self.content_result_cache:
+                        if isinstance(item, dict):
+                            item["_retry_count"] = new_retry_count
+                    self._retry_queue.append({
+                        "api": list(self.api_result_cache),
+                        "content": list(self.content_result_cache),
+                    })
+                    self.api_result_cache.clear()
+                    self.content_result_cache.clear()
+                return  # 退出, 不再清 cache (已经在上面处理)
 
         self.api_result_cache.clear()
         self.content_result_cache.clear()
@@ -542,11 +616,6 @@ class ResultWriter:
             success_num=task_result.success_num,
             fail_num=task_result.fail_num,
         )
-
-    def clear_cache(self):
-        """清空缓存"""
-        self.api_result_cache.clear()
-        self.content_result_cache.clear()
 
     async def flush(self):
         """公开的刷新接口"""

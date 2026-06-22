@@ -1,4 +1,4 @@
-"""[BUG-P-1-1 + P-1-2 + P-1-3 + P-1-4 + P-1-5 + P-1-6 + P-1-7 + P-1-8]"""
+""""""
 
 import inspect
 import re
@@ -26,7 +26,7 @@ MAPPER_FILES_WITH_RAISE_E = [
 
 @pytest.mark.parametrize("mapper_file", MAPPER_FILES_WITH_RAISE_E)
 def test_bug_p_1_1_no_bare_raise_e_in_mapper(mapper_file):
-    """[BUG-P-1-1] mapper 不应有 `raise e` (会丢 traceback), 改 `raise`。"""
+    """mapper 不应有 `raise e` (会丢 traceback), 改 `raise`。"""
     with open(mapper_file, "r", encoding="utf-8") as fp:
         src = fp.read()
     # 排除注释行 (允许在注释里说 "raise e 之前是什么样")
@@ -197,7 +197,7 @@ def test_bug_p_1_7_no_double_underscore_methods_in_play_runner():
     )
 
 def test_bug_p_1_7_clean_and_init_page_renamed_to_single_underscore():
-    """[BUG-P_1_7] play_runner 必须有 _clean 和 _init_page 方法 (单下划线)。"""
+    """play_runner 必须有 _clean 和 _init_page 方法 (单下划线)。"""
     from croe.play import play_runner
 
     assert hasattr(play_runner.PlayRunner, "_clean"), (

@@ -1,4 +1,4 @@
-"""BUG-P-1-1.3 回归测试: app/ 全仓 (非 controller) 的 except 块也要用 bare raise + log.exception.
+"""app/ 全仓 (非 controller) 的 except 块也要用 bare raise + log.exception.
 
 覆盖:
 - app/mapper/ (P-1-1.1 已覆盖, 本测试跳过 mapper 留给专用测试)
@@ -69,7 +69,7 @@ def _collect_except_blocks(text: str) -> list[tuple[int, int]]:
 @pytest.mark.unit
 @pytest.mark.parametrize("f", _iter_py(), ids=lambda p: str(p))
 def test_no_raise_e_in_non_controller(f: Path):
-    """[BUG-P-1-1.3] non-controller (scheduler/service/ws/model) except 块不能用 `raise e`."""
+    """non-controller (scheduler/service/ws/model) except 块不能用 `raise e`."""
     text = f.read_text()
     lines = text.splitlines()
     blocks = _collect_except_blocks(text)
@@ -79,7 +79,7 @@ def test_no_raise_e_in_non_controller(f: Path):
             if re.match(r"^\s*raise\s+e\b\s*$", lines[ln]):
                 bad.append((ln + 1, lines[ln].rstrip()))
     assert not bad, (
-        f"[BUG-P-1-1.3] {f}: {len(bad)} 处 `raise e` 应改为 bare `raise`:\n"
+        f"{f}: {len(bad)} 处 `raise e` 应改为 bare `raise`:\n"
         + "\n".join(f"  {ln}: {t}" for ln, t in bad[:5])
     )
 
@@ -90,7 +90,7 @@ def test_no_raise_e_in_non_controller(f: Path):
 @pytest.mark.unit
 @pytest.mark.parametrize("f", _iter_py(), ids=lambda p: str(p))
 def test_no_log_error_in_except_non_controller(f: Path):
-    """[BUG-P-1-1.3] non-controller except 块内 log.error → log.exception (保留 traceback)."""
+    """non-controller except 块内 log.error → log.exception (保留 traceback)."""
     text = f.read_text()
     lines = text.splitlines()
     blocks = _collect_except_blocks(text)
@@ -100,6 +100,6 @@ def test_no_log_error_in_except_non_controller(f: Path):
             if re.match(r"^\s*log\.error\(", lines[ln]):
                 bad.append((ln + 1, lines[ln].rstrip()))
     assert not bad, (
-        f"[BUG-P-1-1.3] {f}: {len(bad)} 处 except 块内 `log.error` 应改为 `log.exception`:\n"
+        f"{f}: {len(bad)} 处 except 块内 `log.error` 应改为 `log.exception`:\n"
         + "\n".join(f"  {ln}: {t}" for ln, t in bad[:5])
     )

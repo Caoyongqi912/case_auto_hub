@@ -1,4 +1,4 @@
-"""[BUG-E8 + E9] case_result.total_num 跟 success_num/fail_num 不一致"""
+"""case_result.total_num 跟 success_num/fail_num 不一致"""
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,10 +9,10 @@ def test_bug_e8_e9_recompute_uses_interface_result_count():
     import inspect
     src = inspect.getsource(InterfaceCaseResultMapper.recompute_case_result_nums)
     # 必须 COUNT interface_result 表
-    assert "InterfaceResult" in src, "[BUG-E8] recompute SQL 应 COUNT interface_result 表"
-    assert "func.count" in src or "COUNT" in src, "[BUG-E8] 应有 COUNT 表达式"
+    assert "InterfaceResult" in src, "recompute SQL 应 COUNT interface_result 表"
+    assert "func.count" in src or "COUNT" in src, "应有 COUNT 表达式"
     # 必须按 result (True/False) 分桶
-    assert "True" in src and "False" in src, "[BUG-E8] 应按 result True/False 分桶"
+    assert "True" in src and "False" in src, "应按 result True/False 分桶"
 
 def test_bug_e8_e9_recompute_session_none_no_longer_raises():
     """[
@@ -28,16 +28,16 @@ def test_bug_e8_e9_recompute_session_none_no_longer_raises():
 
     # 不应有 raise ValueError("...external session...")
     assert "raise ValueError" not in src, (
-        "[BUG-DOC 修复后] session=None 不应再 raise ValueError, "
+        "session=None 不应再 raise ValueError, "
         "改走 if session is None: async with cls.transaction() as session"
     )
 
     # 必须有 if session is None 分支调 cls.transaction()
     assert "if session is None" in src, (
-        "[BUG-DOC 修复后] 必须有 if session is None 分支"
+        "必须有 if session is None 分支"
     )
     assert "cls.transaction()" in src, (
-        "[BUG-DOC 修复后] session=None 走 cls.transaction() 自管事务"
+        "session=None 走 cls.transaction() 自管事务"
     )
 
 @pytest.mark.asyncio
@@ -74,7 +74,7 @@ async def test_bug_e8_e9_recompute_updates_case_result_fields():
     assert kwargs["success_num"] == 3
     assert kwargs["fail_num"] == 2
     # session 必须传进 update_by_id
-    assert kwargs.get("session") is mock_session, "[BUG-E8] update_by_id 必须复用同 session"
+    assert kwargs.get("session") is mock_session, "update_by_id 必须复用同 session"
 
 @pytest.mark.asyncio
 async def test_bug_e8_e9_recompute_handles_zero_results():
@@ -124,12 +124,12 @@ def test_bug_e8_e9_finalize_invokes_recompute():
     import inspect
     src = inspect.getsource(ResultWriter.finalize_case_result)
     assert "recompute_case_result_nums" in src, (
-        "[BUG-E8] finalize_case_result 必须调 recompute_case_result_nums"
+        "finalize_case_result 必须调 recompute_case_result_nums"
     )
     # 必须在 _flush_cache 之后 (要等 interface_result 真落盘)
     flush_pos = src.find("_flush_cache")
     recompute_pos = src.find("recompute_case_result_nums")
     assert flush_pos < recompute_pos, (
-        f"[BUG-E8] recompute 必须在 _flush_cache 之后"
+        f"recompute 必须在 _flush_cache 之后"
         f" (flush_pos={flush_pos}, recompute_pos={recompute_pos})"
     )

@@ -1,4 +1,4 @@
-"""Round 3 并发与竞态回归测试: BUG-CON-5 (fire_and_forget)
+"""Round 3 并发与竞态回归测试 (fire_and_forget)
 
 锁定行为:
 - fire_and_forget 必须捕获 task 异常 (兜底 log.exception)
@@ -15,7 +15,7 @@ from utils import background as bg
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fire_and_forget_runs_coro():
-    """[BUG-CON-5] fire_and_forget 启动的协程必须真的跑了."""
+    """fire_and_forget 启动的协程必须真的跑了."""
     result = {}
 
     async def coro():
@@ -30,7 +30,7 @@ async def test_fire_and_forget_runs_coro():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fire_and_forget_captures_exception():
-    """[BUG-CON-5] task 抛错不能丢, 必须 log.exception 兜底."""
+    """task 抛错不能丢, 必须 log.exception 兜底."""
     async def boom():
         raise RuntimeError("kaboom")
 
@@ -45,7 +45,7 @@ async def test_fire_and_forget_captures_exception():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_fire_and_forget_registers_and_cleans():
-    """[BUG-CON-5] active_tasks 必须反映当前在跑的 task."""
+    """active_tasks 必须反映当前在跑的 task."""
     blocker = asyncio.Event()
 
     async def wait_for_event():
@@ -67,7 +67,7 @@ async def test_fire_and_forget_registers_and_cleans():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_shutdown_cancels_pending_tasks():
-    """[BUG-CON-5] shutdown 必须 cancel 所有未完成 task 并 await."""
+    """shutdown 必须 cancel 所有未完成 task 并 await."""
 
     async def slow():
         await asyncio.sleep(60)

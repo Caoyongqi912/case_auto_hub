@@ -1,4 +1,4 @@
-"""BUG-M6-hotfix 回归测试: 需要子类列的查询必须显式 with_polymorphic。"""
+"""需要子类列的查询必须显式 with_polymorphic。"""
 
 import pytest
 import re
@@ -34,7 +34,7 @@ def bug_m6_marker():
 
 @pytest.mark.unit
 def test_bug_m6_base_model_no_wildcard(bug_m6_marker):
-    """[BUG-M6] 基类的 __mapper_args__ 不应有 with_polymorphic='*'。"""
+    """基类的 __mapper_args__ 不应有 with_polymorphic='*'。"""
     mapper_args = dict(InterfaceCaseContentResult.__mapper_args__)
     assert mapper_args.get("with_polymorphic") != "*", (
         f"[{BUG_M6}] InterfaceCaseContentResult 仍带 with_polymorphic='*', "
@@ -43,7 +43,7 @@ def test_bug_m6_base_model_no_wildcard(bug_m6_marker):
 
 @pytest.mark.unit
 def test_bug_m6_query_steps_result_uses_with_polymorphic(bug_m6_marker):
-    """[BUG-M6-hotfix] query_steps_result 必须显式 with_polymorphic。"""
+    """query_steps_result 必须显式 with_polymorphic。"""
     import inspect
     from app.mapper.interfaceApi.interfaceResultMapper import InterfaceContentStepResultMapper
     src = inspect.getsource(InterfaceContentStepResultMapper.query_steps_result)

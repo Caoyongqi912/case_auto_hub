@@ -1,4 +1,4 @@
-"""BUG-F8-followup 回归测试:finalize_case_result 末尾必须回填"""
+"""finalize_case_result 末尾必须回填"""
 
 import os
 import asyncio
@@ -19,7 +19,7 @@ REPO = Path(__file__).resolve().parents[3]
 # ---------- 1. mapper 暴露 backfill_content_result_id_fk ----------
 
 def test_bug_f8b_mapper_has_backfill_method(bug_f8b_marker):
-    """[BUG-F8B] InterfaceResultMapper 必须有 backfill_content_result_id_fk"""
+    """InterfaceResultMapper 必须有 backfill_content_result_id_fk"""
     from app.mapper.interfaceApi.interfaceResultMapper import InterfaceResultMapper
     assert hasattr(InterfaceResultMapper, "backfill_content_result_id_fk"), (
         f"[{BUG_F8B}] InterfaceResultMapper 缺 backfill_content_result_id_fk 方法"
@@ -32,7 +32,7 @@ def test_bug_f8b_mapper_has_backfill_method(bug_f8b_marker):
 # ---------- 2. finalize_case_result 源码里调 backfill ----------
 
 def test_bug_f8b_finalize_invokes_backfill(bug_f8b_marker):
-    """[BUG-F8B] finalize_case_result 末尾必须调 backfill_content_result_id_fk"""
+    """finalize_case_result 末尾必须调 backfill_content_result_id_fk"""
     src = (REPO / "croe" / "interface" / "writer" / "result_writer.py").read_text(
         encoding="utf-8"
     )
@@ -53,7 +53,7 @@ def test_bug_f8b_finalize_invokes_backfill(bug_f8b_marker):
 # ---------- 3. UPDATE SQL 走正向关系 (子表 api) ----------
 
 def test_bug_f8b_backfill_sql_uses_forward_link(bug_f8b_marker):
-    """[BUG-F8B] 回填 SQL 必须 join interface_case_content_result_api 正向关系表"""
+    """回填 SQL 必须 join interface_case_content_result_api 正向关系表"""
     from app.mapper.interfaceApi.interfaceResultMapper import InterfaceResultMapper
     import re
     # 方法源码里的 SQL 包含子表 api + 父表 cr

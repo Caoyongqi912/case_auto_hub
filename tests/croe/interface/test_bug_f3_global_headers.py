@@ -1,4 +1,4 @@
-"""BUG-F3 回归测试:`init_global_headers` 成功分支:"""
+"""`init_global_headers` 成功分支:"""
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -23,7 +23,7 @@ def _make_starter():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_f3_global_headers_actually_applied_to_executor(bug_f3_marker):
-    """[BUG-F3] init_global_headers 加载后,executor.g_headers 应当有值。"""
+    """init_global_headers 加载后,executor.g_headers 应当有值。"""
     runner = InterfaceRunner(starter=_make_starter())
 
     h1 = InterfaceGlobalHeader(id=1, key="X-Token", value="abc", project_id=1)
@@ -46,7 +46,7 @@ async def test_bug_f3_global_headers_actually_applied_to_executor(bug_f3_marker)
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_f3_global_headers_log_message_uses_actual_count(bug_f3_marker):
-    """[BUG-F3] send 出去的日志应反映实际加载数量,而不是 self.global_headers (恒为 0)。"""
+    """send 出去的日志应反映实际加载数量,而不是 self.global_headers (恒为 0)。"""
     runner = InterfaceRunner(starter=_make_starter())
     h1 = InterfaceGlobalHeader(id=1, key="X-Token", value="abc", project_id=1)
 
@@ -71,7 +71,7 @@ async def test_bug_f3_global_headers_log_message_uses_actual_count(bug_f3_marker
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_f3_global_headers_empty(bug_f3_marker):
-    """[BUG-F3] 全局 header 为空时,executor.g_headers 应为空列表(不报错)。"""
+    """全局 header 为空时,executor.g_headers 应为空列表(不报错)。"""
     runner = InterfaceRunner(starter=_make_starter())
 
     with patch(

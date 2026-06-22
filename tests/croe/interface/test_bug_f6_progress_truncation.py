@@ -1,4 +1,4 @@
-"""BUG-F6 回归测试: progress 应为 round(index/total*100, 2), 不用 int 整除。"""
+"""progress 应为 round(index/total*100, 2), 不用 int 整除。"""
 
 import inspect
 from pathlib import Path
@@ -27,7 +27,7 @@ def bug_f6_marker():
 
 @pytest.mark.unit
 def test_bug_f6_no_int_truncation_in_runner(bug_f6_marker):
-    """[BUG-F6] runner.py 不应再出现 (index * 100) // total_steps 整除。"""
+    """runner.py 不应再出现 (index * 100) // total_steps 整除。"""
     src = _runner_src()
     assert "(index * 100) // total_steps" not in src, (
         f"[{BUG_F6}] 仍有整除截断, total=4 index=3 时 progress=75 跟 Float 字段语义不齐。"
@@ -65,7 +65,7 @@ def _patch_runner_for_step_loop(monkeypatch, case_content_steps, error_stop):
 
 @pytest.mark.unit
 def test_bug_f6_progress_all_success_100(bug_f6_marker):
-    """[BUG-F6] 4 步 case 全成功: 走到第 4 步, progress=100.0。"""
+    """4 步 case 全成功: 走到第 4 步, progress=100.0。"""
     src = _runner_src()
     # 验证源码计算式 round(index / total_steps * 100, 2)
     assert "round(index / total_steps * 100, 2)" in src
@@ -78,7 +78,7 @@ def test_bug_f6_progress_all_success_100(bug_f6_marker):
 
 @pytest.mark.unit
 def test_bug_f6_progress_error_stop_at_step_2(bug_f6_marker):
-    """[BUG-F6] 4 步 case 失败停在第 2 步: progress=50.0, 不是 100%。"""
+    """4 步 case 失败停在第 2 步: progress=50.0, 不是 100%。"""
     total_steps = 4
     index = 2  # 第 2 步失败停
     progress = round(index / total_steps * 100, 2)
@@ -86,7 +86,7 @@ def test_bug_f6_progress_error_stop_at_step_2(bug_f6_marker):
 
 @pytest.mark.unit
 def test_bug_f6_progress_error_stop_at_step_3_of_4(bug_f6_marker):
-    """[BUG-F6] 4 步 case 失败停在第 3 步: progress=75.0, 不是 100% 也不是 50%。"""
+    """4 步 case 失败停在第 3 步: progress=75.0, 不是 100% 也不是 50%。"""
     total_steps = 4
     index = 3
     progress = round(index / total_steps * 100, 2)
@@ -94,7 +94,7 @@ def test_bug_f6_progress_error_stop_at_step_3_of_4(bug_f6_marker):
 
 @pytest.mark.unit
 def test_bug_f6_progress_single_step(bug_f6_marker):
-    """[BUG-F6] 单步 case: 跑到第 1 步 progress=100.0, 无歧义。"""
+    """单步 case: 跑到第 1 步 progress=100.0, 无歧义。"""
     total_steps = 1
     index = 1
     progress = round(index / total_steps * 100, 2)
@@ -102,7 +102,7 @@ def test_bug_f6_progress_single_step(bug_f6_marker):
 
 @pytest.mark.unit
 def test_bug_f6_progress_three_steps_partial(bug_f6_marker):
-    """[BUG-F6] 3 步 case 失败停在第 1 步: progress=33.33, 2 位小数。"""
+    """3 步 case 失败停在第 1 步: progress=33.33, 2 位小数。"""
     total_steps = 3
     index = 1
     progress = round(index / total_steps * 100, 2)

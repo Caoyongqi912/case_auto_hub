@@ -1,4 +1,4 @@
-"""BUG-M10 回归测试: 删 `__allow_unmapped__ = True` 不应导致 model 注册失败。"""
+"""删 `__allow_unmapped__ = True` 不应导致 model 注册失败。"""
 
 from pathlib import Path
 
@@ -25,7 +25,7 @@ def bug_m10_marker():
 
 @pytest.mark.unit
 def test_bug_m10_no_allow_unmapped_in_result_model(bug_m10_marker):
-    """[BUG-M10] interfaceResultModel.py 不应再出现 __allow_unmapped__ = True。"""
+    """interfaceResultModel.py 不应再出现 __allow_unmapped__ = True。"""
     src = _src("app/model/interfaceAPIModel/interfaceResultModel.py")
     assert "__allow_unmapped__" not in src, (
         f"[{BUG_M10}] __allow_unmapped__ = True 仍然在 interfaceResultModel.py 中, "
@@ -34,7 +34,7 @@ def test_bug_m10_no_allow_unmapped_in_result_model(bug_m10_marker):
 
 @pytest.mark.unit
 def test_bug_m10_no_allow_unmapped_in_contents_model(bug_m10_marker):
-    """[BUG-M10] interfaceCaseContentsModel.py 不应再出现 __allow_unmapped__ = True。"""
+    """interfaceCaseContentsModel.py 不应再出现 __allow_unmapped__ = True。"""
     src = _src("app/model/interfaceAPIModel/contents/interfaceCaseContentsModel.py")
     assert "__allow_unmapped__" not in src, (
         f"[{BUG_M10}] __allow_unmapped__ = True 仍然在 interfaceCaseContentsModel.py 中。"
@@ -42,7 +42,7 @@ def test_bug_m10_no_allow_unmapped_in_contents_model(bug_m10_marker):
 
 @pytest.mark.unit
 def test_bug_m10_models_still_register_normally(bug_m10_marker):
-    """[BUG-M10] 删 __allow_unmapped__ 后 model 仍能正常建表 / 字段映射。"""
+    """删 __allow_unmapped__ 后 model 仍能正常建表 / 字段映射。"""
     # 基类 __table__ 存在 + 关键列存在, 说明 declarative mapping 没被破坏
     base_table = InterfaceCaseContentResult.__table__
     assert base_table.name == "interface_case_content_result"

@@ -1,4 +1,4 @@
-"""BUG-E12 回归测试: ExtractManager 应只返回成功提取 (含 value) 的 extract。"""
+"""ExtractManager 应只返回成功提取 (含 value) 的 extract。"""
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock
@@ -13,7 +13,7 @@ def bug_e12_marker():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_e12_no_handler_extract_dropped(bug_e12_marker):
-    """[BUG-E12] 无 handler 的 extract 不应出现在返回 list。"""
+    """无 handler 的 extract 不应出现在返回 list。"""
     em = ExtractManager(response=MagicMock())
     extracts = [
         {'key': 'k1', 'target': 999},  # 没 handler
@@ -27,7 +27,7 @@ async def test_bug_e12_no_handler_extract_dropped(bug_e12_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_e12_handler_exception_extract_dropped(bug_e12_marker):
-    """[BUG-E12] handler 抛异常的 extract 不应出现在返回 list。"""
+    """handler 抛异常的 extract 不应出现在返回 list。"""
     em = ExtractManager(response=MagicMock())
 
     # mock 一个会抛异常的 handler
@@ -58,7 +58,7 @@ async def test_bug_e12_handler_exception_extract_dropped(bug_e12_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_e12_handler_returns_none_dropped(bug_e12_marker):
-    """[BUG-E12] handler 返回 None 的 extract 不应出现在返回 list。"""
+    """handler 返回 None 的 extract 不应出现在返回 list。"""
     from enums import ExtractTargetVariablesEnum
 
     em = ExtractManager(response=MagicMock())
@@ -75,7 +75,7 @@ async def test_bug_e12_handler_returns_none_dropped(bug_e12_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_e12_successful_extract_kept(bug_e12_marker):
-    """[BUG-E12] 成功提取 (handler 返回非 None value) 的 extract 必须保留。"""
+    """成功提取 (handler 返回非 None value) 的 extract 必须保留。"""
     from enums import ExtractTargetVariablesEnum
 
     em = ExtractManager(response=MagicMock())
@@ -93,7 +93,7 @@ async def test_bug_e12_successful_extract_kept(bug_e12_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_e12_mixed_partial_success(bug_e12_marker):
-    """[BUG-E12] 混合场景: 成功的保留, 失败/None 的过滤。"""
+    """混合场景: 成功的保留, 失败/None 的过滤。"""
     from enums import ExtractTargetVariablesEnum
 
     em = ExtractManager(response=MagicMock())

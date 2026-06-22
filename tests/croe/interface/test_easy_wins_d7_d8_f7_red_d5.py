@@ -17,14 +17,14 @@ from tests.croe.interface._bug_ids import BUG_D1  # 借用 marker, 避免 _bug_i
 
 @pytest.mark.unit
 def test_bug_d7_copy_interface_no_dead_group_check():
-    """[BUG-D7] copy_interface 不应再有 `if not group: raise` 死代码。"""
+    """copy_interface 不应再有 `if not group: raise` 死代码。"""
     from app.mapper.interfaceApi.interfaceGroupMapper import InterfaceGroupMapper
     src = inspect.getsource(InterfaceGroupMapper.copy_interface)
     assert "if not group:" not in src, (
-        f"[BUG-D7] copy_interface 还有 if not group 死代码, get_by_id 已经会抛 NotFind"
+        f"copy_interface 还有 if not group 死代码, get_by_id 已经会抛 NotFind"
     )
     assert "if not interface:" not in src, (
-        f"[BUG-D7] copy_interface 还有 if not interface 死代码, 同上"
+        f"copy_interface 还有 if not interface 死代码, 同上"
     )
 
 # ===========================================================
@@ -33,14 +33,14 @@ def test_bug_d7_copy_interface_no_dead_group_check():
 
 @pytest.mark.unit
 def test_bug_d8_copy_content_uses_username_kwarg():
-    """[BUG-D8] copy_content 应该 username=user.username, 不是 creatorName=。"""
+    """copy_content 应该 username=user.username, 不是 creatorName=。"""
     from app.mapper.interfaceApi.interfaceCaseContentMapper import (
         InterfaceCaseContentMapper,
     )
     src = inspect.getsource(InterfaceCaseContentMapper.copy_content)
     # 只看实际 kwarg (不命中注释): `username=` 出现在 kwarg 调用里
     assert "username=user.username" in src, (
-        f"[BUG-D8] copy_content 应 username=user.username, 实际没找到"
+        f"copy_content 应 username=user.username, 实际没找到"
     )
     # 实际调用里不应有 creatorName= 这种 kwarg (注释里可以有)
     import re
@@ -50,7 +50,7 @@ def test_bug_d8_copy_content_uses_username_kwarg():
     ]
     code_text = "\n".join(code_lines)
     assert "creatorName=" not in code_text, (
-        f"[BUG-D8] 实际代码里仍出现 creatorName= kwarg, 应删"
+        f"实际代码里仍出现 creatorName= kwarg, 应删"
     )
 
 # ===========================================================
@@ -60,7 +60,7 @@ def test_bug_d8_copy_content_uses_username_kwarg():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_f7_init_case_result_does_not_log_obj_directly():
-    """[BUG-F7] init_case_result 在 if task_result: 分支里不应再有 'task_result {}'.format(...) 这种 log。"""
+    """init_case_result 在 if task_result: 分支里不应再有 'task_result {}'.format(...) 这种 log。"""
 
     # 模拟一个最小化的 case_result / task_result, 走完 init_case_result 看 log 行为
     with patch("croe.interface.writer.result_writer.InterfaceCaseResultMapper") as mock_mapper, \
@@ -101,7 +101,7 @@ async def test_bug_f7_init_case_result_does_not_log_obj_directly():
             msg = str(call.args[0]) if call.args else ""
             assert not (
                 "task_result {" in msg or "task_result{}" in msg
-            ), f"[BUG-F7] 仍然有误导性 log.info: {msg!r}"
+            ), f"仍然有误导性 log.info: {msg!r}"
 
 # ===========================================================
 # RED-D5: ResultWriter 不再有 _progress_update_cache 死字段

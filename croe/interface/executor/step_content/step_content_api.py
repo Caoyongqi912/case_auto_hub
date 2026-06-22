@@ -57,7 +57,8 @@ class APIStepContentStrategy(StepBaseStrategy):
         if step_context.execution_context.task_result:
             task_result_id = step_context.execution_context.task_result.id
 
-        await step_context.result_writer.write_step_result(
+        # 子步骤立即插入，获取 id 后回填 interface_result.content_result_id
+        content_result = await step_context.result_writer.write_step_result(
             content_type=CaseStepContentType.STEP_API,
             case_result_id=step_context.execution_context.case_result.id,
             task_result_id=task_result_id,
@@ -69,7 +70,21 @@ class APIStepContentStrategy(StepBaseStrategy):
             start_time=interface_result.start_time,
             use_time=interface_result.use_time,
             interface_result_id=interface_result.id,
+            immediate=True,  # 立即插入以获取 id 回填 FK
         )
+        if content_result is not None and content_result.id is not None:
+            # 回填 interface_result.content_result_id
+            try:
+                await InterfaceResultMapper.update_by_id(
+                    id=interface_result.id,
+                    content_result_id=content_result.id,
+                )
+            except Exception as e:
+                log.warning(
+                    f"回填 interface_result.content_result_id 失败 "
+                    f"(interface_result_id={interface_result.id}, "
+                    f"content_result_id={content_result.id}): {e}"
+                )
 
         case_result = step_context.execution_context.case_result
         if success:

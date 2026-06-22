@@ -78,7 +78,7 @@ class APIDBContentStrategy(StepBaseStrategy):
         except Exception as e:
             success = False
             log.warning(
-                f"[BUG-E10] step_content_db 异常 (case_result_id="
+                f"step_content_db 异常 (case_result_id="
                 f"{step_context.execution_context.case_result.id}, step_index="
                 f"{step_context.index}): {type(e).__name__}: {e}"
             )

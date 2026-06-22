@@ -15,6 +15,8 @@ from app.mapper.interfaceApi.interfaceResultMapper import InterfaceResultMapper,
     InterfaceCaseResultMapper, InterfaceContentStepResultMapper
 from app.schema.api.interfaceResultSchema import PageInterfaceCaseResultSchema, PageInterfaceResultSchema, \
     PageInterfaceTaskResultSchema, QueryCaseStepResultSchema
+import json
+from common import rc
 from utils import log
 
 router = APIRouter(prefix="/interfaceResult", tags=['自动化接口接结果'])
@@ -41,11 +43,47 @@ async def interface_detail(result_id: int, _=Depends(Authentication())):
     return Response.success(detail)
 
 
+# queryStepResult 使用 Redis 5s 缓存加速，写步骤时主动清除缓存。
+# 本地内存缓存无法跨 uvicorn worker 共享，Redis 已在项目中使用。
+STEP_RESULT_CACHE_PREFIX = "result:steps:"
+STEP_RESULT_CACHE_TTL = 5  # 5 second, enough for one UI interaction cycle, not too long for stale data
+
+
+async def _invalidate_step_result_cache(case_result_id: int) -> None:
+    """Write path: clear the cache for this case_result_id. Best-effort."""
+    try:
+        if rc.r is None:
+            await rc.init_pool()
+        await rc.r.delete(f"{STEP_RESULT_CACHE_PREFIX}{case_result_id}")
+    except Exception:
+        log.exception(f"clear step result cache failed: case_result_id={case_result_id}")
+
+
 @router.get("/queryStepResult", description="接口结果字段查询")
 async def query_step_results(case_result_id: int, _=Depends(Authentication())):
+    """查询 case 所有 step 结果 (Redis 5s 缓存 + 写时 invalidation)."""
+    cache_key = f"{STEP_RESULT_CACHE_PREFIX}{case_result_id}"
+    try:
+        if rc.r is None:
+            await rc.init_pool()
+        cached = await rc.r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        log.exception(f"step result cache read failed: case_result_id={case_result_id}")
+
     data = await InterfaceContentStepResultMapper.query_steps_result(case_result_id)
     log.debug(data)
-    return Response.success(data)
+    out = Response.success(data)
+
+    try:
+        if rc.r is None:
+            await rc.init_pool()
+        await rc.r.set(cache_key, json.dumps(out), ex=STEP_RESULT_CACHE_TTL)
+    except Exception:
+        log.exception(f"step result cache write failed: case_result_id={case_result_id}")
+
+    return out
 
 
 

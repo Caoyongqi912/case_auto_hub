@@ -213,7 +213,7 @@ class Mapper(Generic[M]):
         Args:
             session: 可选的外部会话对象
             update_user: 更新人信息（自动注入 updater/updaterName）
-            post_update_hook: BUG-D10 修复 — 在 expunge 之前调用的 callback,
+            post_update_hook: 在 expunge 之前调用的 callback,
                 签名 `async (target) -> Any` 或 `def (target) -> Any`。
                 用于在 target 还 attached 时拿 to_dict() 快照, 避免 expunge
                 后 lazy='selectin' 关系访问 detached instance 报错。
@@ -240,7 +240,7 @@ class Mapper(Generic[M]):
             async with cls.transaction(session) as session:
                 target = await cls.get_by_id(ident, session)
                 await cls.update_cls(target, session, **kwargs)
-                # BUG-D10 修复: 在 expunge 之前 (target 还 attached) 跑 hook,
+                # 在 expunge 之前 (target 还 attached) 跑 hook,
                 # 防止 lazy='selectin' 关系访问 detached instance
                 if post_update_hook is not None:
                     result = post_update_hook(target)
@@ -857,18 +857,9 @@ class Mapper(Generic[M]):
     async def bulk_insert_models(cls, models: List[M], session: AsyncSession = None) -> int:
         """
         批量插入模型实例（直接接受模型实例列表）。
-
-        与 bulk_insert 不同，此方法适用于已经创建好模型实例的场景。
-
-        BUG-D4 修复:强制要求调用方传入 session,从外部事务统一管理 commit/rollback。
-        原版允许 session=None 时自动 commit, 容易在"多张表批量操作不在同一事务"时
-        出现"先 commit 再失败"导致数据半写。
-        如果调用方真的要自管理事务, 显式 `async with async_session() as s: s.begin()` 后
-        把 s 传进来即可。
-
         Args:
             models: 模型实例列表
-            session: 必填的外部会话对象 (BUG-D4: 不再可选)
+            session: 必填的外部会话对象
 
         Returns:
             int: 插入的记录数
@@ -877,7 +868,7 @@ class Mapper(Generic[M]):
             # 强约束: 不再隐式开事务自 commit, 否则多张表批量无法同事务
             raise ValueError(
                 "bulk_insert_models requires an external session "
-                "(BUG-D4: 不再允许 session=None 隐式 commit)。"
+                "(不再允许 session=None 隐式 commit)。"
                 "如需自管理事务, 用 `async with async_session() as s, s.begin():` 后传入 s。"
             )
         if not models:

@@ -1,4 +1,4 @@
-"""BUG-M11 回归测试:`*_uid` 字段长度应与 `BaseModel.uid` (50) 对齐。"""
+"""`*_uid` 字段长度应与 `BaseModel.uid` (50) 对齐。"""
 
 import pytest
 from sqlalchemy import String
@@ -17,7 +17,7 @@ def bug_m11_marker():
 
 @pytest.mark.unit
 def test_bug_m11_uid_columns_at_least_base_uid_length(bug_m11_marker):
-    """[BUG-M11] 所有 *_uid 列长度应 >= BaseModel.uid 长度(50)。"""
+    """所有 *_uid 列长度应 >= BaseModel.uid 长度(50)。"""
     base_uid_col = InterfaceResult.__table__.columns["uid"]  # BaseModel 是 abstract,借具体子类拿列
     assert isinstance(base_uid_col.type, String)
     base_uid_len = base_uid_col.type.length

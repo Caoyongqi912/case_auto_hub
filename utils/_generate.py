@@ -71,13 +71,11 @@ class GenerateTools:
                 if value == "":  # 空字符串视为无效值
                     continue
 
-            # BUG-V2 修复: 重复 key 静默覆盖是隐性 bug, 排查极难
-            # (前序步骤提取的变量被后序覆盖, 业务上很难看出哪个步骤改了)
-            # 保持 "last wins" 语义 (跟 dict.update 一致), 但 WARNING
+            # 重复 key 时输出 WARNING，避免静默覆盖导致排查困难
             if key in result:
                 from utils import log as _log
                 _log.warning(
-                    f"[BUG-V2] list2dict 重复 key '{key}': 前值 {result[key]!r} 被后值 {value!r} 覆盖"
+                    f"list2dict 重复 key '{key}': 前值 {result[key]!r} 被后值 {value!r} 覆盖"
                 )
 
             result[key] = value

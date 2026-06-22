@@ -1,4 +1,4 @@
-"""BUG-M3 回归测试:`to_dict`/`map` 必须覆盖 JTI(Joined Table Inheritance)所有列。"""
+"""`to_dict`/`map` 必须覆盖 JTI(Joined Table Inheritance)所有列。"""
 
 import pytest
 
@@ -14,7 +14,7 @@ def bug_m3_marker():
 
 @pytest.mark.unit
 def test_bug_m3_api_step_content_result_to_dict_includes_subclass_field(bug_m3_marker):
-    """[BUG-M3] APIStepContentResult.to_dict() 应包含子类字段 interface_result_id。"""
+    """APIStepContentResult.to_dict() 应包含子类字段 interface_result_id。"""
     obj = APIStepContentResult(
         case_result_id=1,
         task_result_id=2,
@@ -32,7 +32,7 @@ def test_bug_m3_api_step_content_result_to_dict_includes_subclass_field(bug_m3_m
 
 @pytest.mark.unit
 def test_bug_m3_group_step_content_result_to_dict_includes_subclass_fields(bug_m3_marker):
-    """[BUG-M3] GroupStepContentResult.to_dict() 应包含子类字段 total/success/fail。"""
+    """GroupStepContentResult.to_dict() 应包含子类字段 total/success/fail。"""
     obj = GroupStepContentResult(
         case_result_id=1,
         content_id=2,

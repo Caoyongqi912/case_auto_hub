@@ -1,4 +1,4 @@
-"""[BUG-P1-1 + P1-2 + P1-4] 3 个 P1 一锅端, 来自 EXECUTION_LAYERS_REVIEW_2026_06_20。"""
+"""3 个 P1 一锅端, 来自 EXECUTION_LAYERS_REVIEW_2026_06_20。"""
 
 import inspect
 import re
@@ -78,7 +78,7 @@ def test_bug_p1_2_slots_no_global_headers():
 # --------------------------------------------------------------------------- #
 
 def test_bug_p1_4_try_interface_has_try_finally():
-    """[BUG-P1-4] try_interface 函数体必须有 try/finally, finally 调 aclose。"""
+    """try_interface 函数体必须有 try/finally, finally 调 aclose。"""
     from croe.interface.runner import InterfaceRunner
 
     src = inspect.getsource(InterfaceRunner.try_interface)
@@ -99,7 +99,7 @@ def test_bug_p1_4_try_interface_has_try_finally():
     )
 
 def test_bug_p1_4_try_group_has_try_finally():
-    """[BUG-P1-4] try_group 函数体必须有 try/finally, finally 调 aclose。"""
+    """try_group 函数体必须有 try/finally, finally 调 aclose。"""
     from croe.interface.runner import InterfaceRunner
 
     src = inspect.getsource(InterfaceRunner.try_group)
@@ -121,7 +121,7 @@ def test_bug_p1_4_try_group_has_try_finally():
 
 @pytest.mark.asyncio
 async def test_bug_p1_4_try_interface_finally_runs_on_exception():
-    """[BUG-P1-4] 端到端: try_interface 抛异常时 finally 仍调 aclose。"""
+    """端到端: try_interface 抛异常时 finally 仍调 aclose。"""
     from croe.interface.runner import InterfaceRunner
     from croe.interface.starter import APIStarter
 
@@ -165,7 +165,7 @@ async def test_bug_p1_4_try_interface_finally_runs_on_exception():
 
 @pytest.mark.asyncio
 async def test_bug_p1_4_try_group_finally_runs_on_exception():
-    """[BUG-P1-4] 端到端: try_group 抛异常时 finally 仍调 aclose。"""
+    """端到端: try_group 抛异常时 finally 仍调 aclose。"""
     from croe.interface.runner import InterfaceRunner
     from croe.interface.starter import APIStarter
 

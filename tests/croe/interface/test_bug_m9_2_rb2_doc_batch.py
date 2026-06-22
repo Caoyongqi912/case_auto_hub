@@ -1,4 +1,4 @@
-"""[BUG-M9-2 + RB2 + DOC] 3 个 P0 隐藏 BUG 一锅端, 来自 f5d5a8a 后的 code review。"""
+"""3 个 P0 隐藏 BUG 一锅端, 来自 f5d5a8a 后的 code review。"""
 
 import inspect
 import re

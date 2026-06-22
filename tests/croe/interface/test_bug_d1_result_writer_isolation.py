@@ -1,4 +1,4 @@
-"""BUG-D1 回归测试:每个 `InterfaceRunner` 应持有独立的 `ResultWriter` 实例,"""
+"""每个 `InterfaceRunner` 应持有独立的 `ResultWriter` 实例,"""
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock
@@ -22,7 +22,7 @@ def _make_starter():
 
 @pytest.mark.unit
 def test_bug_d1_two_runners_have_independent_result_writers(bug_d1_marker):
-    """[BUG-D1] 两个 InterfaceRunner 应当有不同的 result_writer 实例。"""
+    """两个 InterfaceRunner 应当有不同的 result_writer 实例。"""
     r1 = InterfaceRunner(starter=_make_starter())
     r2 = InterfaceRunner(starter=_make_starter())
 
@@ -44,7 +44,7 @@ def test_bug_d1_two_runners_have_independent_result_writers(bug_d1_marker):
 
 @pytest.mark.unit
 def test_bug_d1_result_writer_has_clear_cache():
-    """[BUG-D1] ResultWriter 应当提供 clear_cache 用于释放缓存。"""
+    """ResultWriter 应当提供 clear_cache 用于释放缓存。"""
     r = InterfaceRunner(starter=_make_starter())
     assert hasattr(r.result_writer, "clear_cache"), (
         f"[{BUG_D1}] ResultWriter 应有 clear_cache 方法"

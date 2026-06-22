@@ -1,4 +1,4 @@
-"""[BUG-D7] query_steps_result joinedload 漏 LoopStepContentResult.interface_results"""
+"""query_steps_result joinedload 漏 LoopStepContentResult.interface_results"""
 
 import ast
 import inspect
@@ -22,7 +22,7 @@ def test_bug_d7_loop_joinedload_present_in_query():
     joinedloads = _extract_joinedload_lines(src)
     # 期望至少包含 Loop.interface_results
     assert ("LoopStepContentResult", "interface_results") in joinedloads, (
-        f"[BUG-D7] query_steps_result 漏 joinedload(poly.LoopStepContentResult.interface_results)。"
+        f"query_steps_result 漏 joinedload(poly.LoopStepContentResult.interface_results)。"
         f"\n当前 joinedload 列表: {joinedloads}"
         f"\n→ 加上: joinedload(poly.LoopStepContentResult.interface_results),"
         f"\n  否则循环步骤的 to_dict() 拿不到 interface_results, data 永远是 []"
@@ -80,7 +80,7 @@ def test_bug_d7_all_parent_subtype_relationships_joinedload():
 
     for cls_name, rel_name in expected:
         assert (cls_name, rel_name) in joinedloads, (
-            f"[BUG-D7] query_steps_result 漏 joinedload({cls_name}.{rel_name})。"
+            f"query_steps_result 漏 joinedload({cls_name}.{rel_name})。"
             f"\n所有 parent subtype relationship: {expected}"
             f"\n当前 joinedload 列表: {joinedloads}"
         )

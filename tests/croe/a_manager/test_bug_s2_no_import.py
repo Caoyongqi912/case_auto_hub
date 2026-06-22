@@ -1,4 +1,4 @@
-"""BUG-S2 回归测试:ScriptManager 不应允许 import 节点。"""
+"""ScriptManager 不应允许 import 节点。"""
 
 import pytest
 
@@ -12,7 +12,7 @@ def bug_s2_marker():
 @pytest.mark.security
 @pytest.mark.unit
 def test_bug_s2_import_blocked(bug_s2_marker):
-    """[BUG-S2] import os 应被拦截。"""
+    """import os 应被拦截。"""
     sm = ScriptManager()
     with pytest.raises(ScriptSecurityError):
         sm.execute("import os")
@@ -20,7 +20,7 @@ def test_bug_s2_import_blocked(bug_s2_marker):
 @pytest.mark.security
 @pytest.mark.unit
 def test_bug_s2_from_import_blocked(bug_s2_marker):
-    """[BUG-S2] from os import system 应被拦截。"""
+    """from os import system 应被拦截。"""
     sm = ScriptManager()
     with pytest.raises(ScriptSecurityError):
         sm.execute("from os import system")

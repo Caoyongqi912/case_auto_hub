@@ -37,7 +37,7 @@ def _extract_m5_section(sql: str) -> str:
 
 @pytest.mark.unit
 def test_m5_migration_targets_contents_table(bug_m5_marker):
-    """[BUG-M5] M5 迁移 SQL 必须 ALTER/UPDATE InterfaceCaseContents 对应的表。"""
+    """M5 迁移 SQL 必须 ALTER/UPDATE InterfaceCaseContents 对应的表。"""
     expected = InterfaceCaseContents.__tablename__
     section = _extract_m5_section(_read_migration_sql())
     assert f"ALTER TABLE {expected}" in section, (
@@ -65,7 +65,7 @@ def test_m5_migration_targets_result_table(bug_m5_marker):
 
 @pytest.mark.unit
 def test_m5_migration_no_wrong_step_content_result_table(bug_m5_marker):
-    """[BUG-M5] M5 迁移 SQL 不能再出现 'interface_case_step_content_result' (错表名)。"""
+    """M5 迁移 SQL 不能再出现 'interface_case_step_content_result' (错表名)。"""
     section = _extract_m5_section(_read_migration_sql())
     assert "interface_case_step_content_result" not in section, (
         f"[{BUG_M5}] M5 章节出现错表名 'interface_case_step_content_result', "

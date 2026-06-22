@@ -46,7 +46,7 @@ class CaseStepContext:
 
     @property
     def result_writer(self) -> "ResultWriter":
-        """[BUG-F8] 步骤级便捷访问, 避免每个 strategy 写一长串 execution_context.result_writer"""
+        """步骤级便捷访问 result_writer"""
         return self.execution_context.result_writer
 
     @property

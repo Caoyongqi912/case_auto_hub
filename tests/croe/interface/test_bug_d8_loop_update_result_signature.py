@@ -1,4 +1,4 @@
-"""[BUG-D8] APILoopContentStrategy._update_loop_result 漏收 step_context 参数"""
+"""APILoopContentStrategy._update_loop_result 漏收 step_context 参数"""
 
 import ast
 import inspect
@@ -17,7 +17,7 @@ def test_bug_d8_update_loop_result_signature_has_step_context():
     sig = inspect.signature(cls._update_loop_result)
     params = list(sig.parameters.keys())
     assert "step_context" in params, (
-        f"[BUG-D8] _update_loop_result 漏收 step_context, 当前参数: {params}。"
+        f"_update_loop_result 漏收 step_context, 当前参数: {params}。"
         f"\n函数体内直接 await step_context.result_writer.update_step_result(...),"
         f"\n但调用方不传就 NameError 整 case 跑挂。"
     )
@@ -43,7 +43,7 @@ def test_bug_d8_all_four_call_sites_pass_step_context():
 
     for i, body in enumerate(calls, 1):
         assert "step_context=step_context" in body, (
-            f"[BUG-D8] 第 {i} 个 _update_loop_result 调用漏传 step_context=step_context\n"
+            f"第 {i} 个 _update_loop_result 调用漏传 step_context=step_context\n"
             f"调用体:\n{textwrap.indent(body, '    ')}"
         )
 

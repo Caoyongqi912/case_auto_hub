@@ -1,4 +1,4 @@
-"""BUG-E10 回归测试: step_content_db 异常应被 try/except 兜住, 跟 step_content_script 一致。"""
+"""step_content_db 异常应被 try/except 兜住, 跟 step_content_script 一致。"""
 
 import asyncio
 from pathlib import Path
@@ -25,7 +25,7 @@ def bug_e10_marker():
 
 @pytest.mark.unit
 def test_bug_e10_try_except_in_db_strategy(bug_e10_marker):
-    """[BUG-E10] step_content_db.py 应有 try/except 包裹 db_script.invoke。"""
+    """step_content_db.py 应有 try/except 包裹 db_script.invoke。"""
     src = _db_src()
     # db_script.invoke 必须在 try 块里
     try_idx = src.find("try:")
@@ -68,7 +68,7 @@ def _build_ctx(content_id=1, db_id=1, sql_text="SELECT 1", sql_extracts=None):
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_bug_e10_db_invoke_exception_does_not_propagate(bug_e10_marker):
-    """[BUG-E10] db_script.invoke 抛异常: step 不应 propagate, 应返回 False。"""
+    """db_script.invoke 抛异常: step 不应 propagate, 应返回 False。"""
     ctx = _build_ctx()
 
     fake_content_sql = MagicMock()
@@ -105,7 +105,7 @@ async def test_bug_e10_db_invoke_exception_does_not_propagate(bug_e10_marker):
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_bug_e10_db_invoke_success_path(bug_e10_marker):
-    """[BUG-E10] db_script.invoke 正常: step 返回 True, status=SUCCESS, 变量写入。"""
+    """db_script.invoke 正常: step 返回 True, status=SUCCESS, 变量写入。"""
     ctx = _build_ctx()
 
     fake_content_sql = MagicMock()

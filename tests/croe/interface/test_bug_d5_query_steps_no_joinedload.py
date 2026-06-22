@@ -1,4 +1,4 @@
-"""BUG-D5 回归测试: query_steps 不应有 5 个死 joinedload。"""
+"""query_steps 不应有 5 个死 joinedload。"""
 
 import inspect
 import re
@@ -14,7 +14,7 @@ def bug_d5_marker():
 
 @pytest.mark.unit
 def test_bug_d5_query_steps_no_joinedload_options(bug_d5_marker):
-    """[BUG-D5] query_steps 的 .options() 不应包含 joinedload(relationship)。"""
+    """query_steps 的 .options() 不应包含 joinedload(relationship)。"""
     src = inspect.getsource(InterfaceCaseMapper.query_steps)
     # 死代码: 5 个关系 joinedload
     dead_joinedloads = [
@@ -32,7 +32,7 @@ def test_bug_d5_query_steps_no_joinedload_options(bug_d5_marker):
 
 @pytest.mark.unit
 def test_bug_d5_query_steps_no_joinedload_import(bug_d5_marker):
-    """[BUG-D5] interfaceCaseMapper 不再 import joinedload (没人用了)。"""
+    """interfaceCaseMapper 不再 import joinedload (没人用了)。"""
     import app.mapper.interfaceApi.interfaceCaseMapper as m
     src = inspect.getsource(m)
     # 如果以后又用, 再加回
@@ -42,7 +42,7 @@ def test_bug_d5_query_steps_no_joinedload_import(bug_d5_marker):
 
 @pytest.mark.unit
 def test_bug_d5_query_steps_no_options_clause(bug_d5_marker):
-    """[BUG-D5] query_steps 不应在执行体里有 .options() 子句 (注释不算)。"""
+    """query_steps 不应在执行体里有 .options() 子句 (注释不算)。"""
     src = inspect.getsource(InterfaceCaseMapper.query_steps)
     # 去掉所有 # 注释行, 再检查
     code_lines = [l for l in src.split("\n") if not l.strip().startswith("#")]

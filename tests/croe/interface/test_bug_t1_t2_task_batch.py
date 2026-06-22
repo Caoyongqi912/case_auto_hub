@@ -1,4 +1,4 @@
-"""[BUG-T1 + T2] 任务级 execution 2 个 P0 一锅端, 来自 EXECUTION_LAYERS_REVIEW_2026_06_20。"""
+"""任务级 execution 2 个 P0 一锅端, 来自 EXECUTION_LAYERS_REVIEW_2026_06_20。"""
 
 import inspect
 import re
@@ -47,7 +47,7 @@ def test_bug_t1_init_task_variables_actually_adds_to_vm():
 
 @pytest.mark.asyncio
 async def test_bug_t1_init_task_variables_end_to_end():
-    """[BUG-T1] 端到端: 传 dict 进去, _shared_vm 应该有这个 key=value。"""
+    """端到端: 传 dict 进去, _shared_vm 应该有这个 key=value。"""
     from croe.interface.task import TaskRunner
     from croe.interface.starter import APIStarter
 
@@ -76,7 +76,7 @@ async def test_bug_t1_init_task_variables_end_to_end():
 
 @pytest.mark.asyncio
 async def test_bug_t1_init_task_variables_none_noop():
-    """[BUG-T1] 传 None 不应崩, 也不应误注入。"""
+    """传 None 不应崩, 也不应误注入。"""
     from croe.interface.task import TaskRunner
     from croe.interface.starter import APIStarter
 
@@ -118,7 +118,7 @@ def test_bug_t1_interface_runner_accepts_optional_variable_manager():
 # --------------------------------------------------------------------------- #
 
 def test_bug_t2_run_interface_by_task_has_try_finally():
-    """[BUG-T2] run_interface_by_task 函数体必须有 try/finally 包裹 retry 循环。"""
+    """run_interface_by_task 函数体必须有 try/finally 包裹 retry 循环。"""
     from croe.interface.runner import InterfaceRunner
 
     src = inspect.getsource(InterfaceRunner.run_interface_by_task)
@@ -189,7 +189,7 @@ def test_bug_t2_finally_cleans_three_things():
 
 @pytest.mark.asyncio
 async def test_bug_t2_finally_runs_even_on_exception():
-    """[BUG-T2] 端到端: 接口执行抛异常时, finally 清理仍要跑。"""
+    """端到端: 接口执行抛异常时, finally 清理仍要跑。"""
     from croe.interface.runner import InterfaceRunner
     from croe.interface.starter import APIStarter
     from croe.interface.executor.interface_executor import InterfaceExecutor

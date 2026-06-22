@@ -1,4 +1,4 @@
-"""BUG-E1 回归测试:`HttpxClient` 资源管理 + timeout 不再污染共享 client。"""
+"""`HttpxClient` 资源管理 + timeout 不再污染共享 client。"""
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -13,7 +13,7 @@ def bug_e1_marker():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_e1_client_close_releases_resource(bug_e1_marker):
-    """[BUG-E1] close() 应当真正调用底层 client.aclose()。"""
+    """close() 应当真正调用底层 client.aclose()。"""
     client = HttpxClient()
     # 触发懒初始化
     _ = client.client
@@ -28,7 +28,7 @@ async def test_bug_e1_client_close_releases_resource(bug_e1_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_e1_timeout_passed_per_request_not_mutate_client(bug_e1_marker):
-    """[BUG-E1] __call__ 不应直接修改 self.client.timeout。"""
+    """__call__ 不应直接修改 self.client.timeout。"""
     client = HttpxClient()
     _ = client.client
     original_timeout = client._client.timeout

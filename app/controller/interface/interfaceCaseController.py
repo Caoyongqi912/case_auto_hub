@@ -200,7 +200,7 @@ async def query_contents(case_id: int, _=Depends(Authentication())):
 
     - **case_id**: 用例ID
     """
-    contents = await InterfaceCaseMapper.query_steps(case_id=case_id)
+    contents = await InterfaceCaseMapper.query_content_dicts(case_id=case_id)
     return Response.success(contents)
 
 

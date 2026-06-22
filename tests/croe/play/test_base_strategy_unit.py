@@ -216,7 +216,7 @@ class TestWriteResult:
 
     @pytest.mark.asyncio
     async def test_write_result_failure_writes_error_info_p_r5(self):
-        """[BUG-P-R5] 步骤失败时不管 ignore, 都应 set_error_step_info 到 case_result。"""
+        """步骤失败时不管 ignore, 都应 set_error_step_info 到 case_result。"""
         strategy = _TestStrategy()
         ctx = MagicMock()
         ctx.index = 1

@@ -134,7 +134,7 @@ class TestPlayResultMapper:
         assert inspect.iscoroutinefunction(PlayContentResultMapper.save_result_batch.__func__)
 
     def test_no_bare_raise_e_p_1_1(self):
-        """[BUG-P-1-1 锁] playResultMapper.py 不应有 `raise e`。"""
+        """playResultMapper.py 不应有 `raise e`。"""
         with open("app/mapper/play/playResultMapper.py", "r", encoding="utf-8") as fp:
             src = fp.read()
         # 排除注释行

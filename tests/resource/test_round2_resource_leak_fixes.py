@@ -1,7 +1,7 @@
-"""Round 2 资源泄漏审计回归测试: BUG-RES-1
+"""Round 2 资源泄漏审计回归测试
 
 锁定行为:
-- BUG-RES-1: InterfaceExecutor / HttpxClient 资源管理
+- InterfaceExecutor / HttpxClient 资源管理
   - 加了 __aenter__ / __aexit__ 上下文支持
   - aclose() 之后 self.http 置 None (幂等)
   - play_interface_strategy 必须用 async with (否则会泄漏 httpx 连接池)
@@ -13,11 +13,11 @@ import pytest
 
 
 # --------------------------------------------------------------------------- #
-# BUG-RES-1: InterfaceExecutor async with + 幂等 close
+# InterfaceExecutor async with + 幂等 close
 # --------------------------------------------------------------------------- #
 @pytest.mark.unit
 def test_interface_executor_supports_async_with():
-    """[BUG-RES-1] InterfaceExecutor 必须支持 async with 自动 aclose."""
+    """InterfaceExecutor 必须支持 async with 自动 aclose."""
     from croe.interface.executor.interface_executor import InterfaceExecutor
     assert hasattr(InterfaceExecutor, "__aenter__"), "InterfaceExecutor 缺 __aenter__"
     assert hasattr(InterfaceExecutor, "__aexit__"), "InterfaceExecutor 缺 __aexit__"
@@ -28,7 +28,7 @@ def test_interface_executor_supports_async_with():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_interface_executor_async_with_closes_httpx():
-    """[BUG-RES-1] async with 退出时必须调 http.close()."""
+    """async with 退出时必须调 http.close()."""
     from croe.interface.executor.interface_executor import InterfaceExecutor
 
     fake_starter = MagicMock()
@@ -45,7 +45,7 @@ async def test_interface_executor_async_with_closes_httpx():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_interface_executor_aclose_is_idempotent():
-    """[BUG-RES-1] aclose() 多次调用幂等 (不抛错)。"""
+    """aclose() 多次调用幂等 (不抛错)。"""
     from croe.interface.executor.interface_executor import InterfaceExecutor
     ie = InterfaceExecutor(starter=MagicMock(send=AsyncMock()), variable_manager=MagicMock())
     mock_http = MagicMock()
@@ -60,7 +60,7 @@ async def test_interface_executor_aclose_is_idempotent():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_interface_executor_async_with_closes_on_exception():
-    """[BUG-RES-1] async with 块内抛错, 仍要 aclose。"""
+    """async with 块内抛错, 仍要 aclose。"""
     from croe.interface.executor.interface_executor import InterfaceExecutor
     ie = InterfaceExecutor(starter=MagicMock(send=AsyncMock()), variable_manager=MagicMock())
     mock_http = MagicMock()
@@ -75,11 +75,11 @@ async def test_interface_executor_async_with_closes_on_exception():
 
 
 # --------------------------------------------------------------------------- #
-# BUG-RES-1: play_interface_strategy 必须 async with
+# play_interface_strategy 必须 async with
 # --------------------------------------------------------------------------- #
 @pytest.mark.unit
 def test_play_interface_strategy_uses_async_with():
-    """[BUG-RES-1] PlayInterfaceContentStrategy.execute 必须 async with 包裹 InterfaceExecutor.
+    """PlayInterfaceContentStrategy.execute 必须 async with 包裹 InterfaceExecutor.
 
     旧代码: 直接 interface_executor = InterfaceExecutor(...), 异常路径不 aclose,
     每次执行都泄漏一个 httpx 连接池。
@@ -88,8 +88,8 @@ def test_play_interface_strategy_uses_async_with():
     from pathlib import Path
     src = Path("croe/play/executor/step_content_strategy/play_interface_strategy.py").read_text()
     assert "async with InterfaceExecutor" in src, (
-        "[BUG-RES-1] PlayInterfaceContentStrategy 必须用 async with 包裹 InterfaceExecutor"
+        "PlayInterfaceContentStrategy 必须用 async with 包裹 InterfaceExecutor"
     )
     assert not re.search(r"^\s*interface_executor\s*=\s*InterfaceExecutor\(", src, re.MULTILINE), (
-        "[BUG-RES-1] 残留裸 InterfaceExecutor 赋值, 改用 async with"
+        "残留裸 InterfaceExecutor 赋值, 改用 async with"
     )

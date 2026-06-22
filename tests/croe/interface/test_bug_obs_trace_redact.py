@@ -51,7 +51,7 @@ def capture_loguru():
 
 @pytest.mark.unit
 def test_bug_obs_2_trace_id_8_chars():
-    """[BUG-OBS-2] new_trace_id 必须 8 字符 (够区分并发, 短, 不抢眼)。"""
+    """new_trace_id 必须 8 字符 (够区分并发, 短, 不抢眼)。"""
     tid = new_trace_id()
     assert len(tid) == 8, f"trace_id 应 8 字符, 实际 {len(tid)}: {tid!r}"
     # 必须是 hex
@@ -59,7 +59,7 @@ def test_bug_obs_2_trace_id_8_chars():
 
 @pytest.mark.unit
 def test_bug_obs_2_trace_id_set_get_clear():
-    """[BUG-OBS-2] set_trace_id / get_trace_id / clear_trace_id 生命周期。"""
+    """set_trace_id / get_trace_id / clear_trace_id 生命周期。"""
     assert get_trace_id() is None, "初始必须 None"
 
     tid = set_trace_id()
@@ -76,7 +76,7 @@ def test_bug_obs_2_trace_id_set_get_clear():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_obs_2_trace_id_crosses_async_task_boundary():
-    """[BUG-OBS-2] trace_id 跨 asyncio.Task 边界 (contextvars 核心卖点)。"""
+    """trace_id 跨 asyncio.Task 边界 (contextvars 核心卖点)。"""
     tid = set_trace_id("parent01")
 
     async def child_task():
@@ -147,7 +147,7 @@ def test_bug_obs_3_sensitive_key_recognized(key):
     "url_token_path",  # 复合: 包含 token
 ])
 def test_bug_obs_3_safe_key_not_matched(key):
-    """[BUG-OBS-3] 正常字段不应误识别。"""
+    """正常字段不应误识别。"""
     # 子串匹配, 所以 url_token_path / Authorization_safe 也算敏感
     # 这条测试是反面, 故意让用户知道子串匹配的代价
     if "token" in key.lower() or "password" in key.lower() or "auth" in key.lower():
@@ -160,7 +160,7 @@ def test_bug_obs_3_safe_key_not_matched(key):
 
 @pytest.mark.unit
 def test_bug_obs_3_sensitive_patterns_count():
-    """[BUG-OBS-3] SENSITIVE_KEY_PATTERNS 至少 10 个 pattern (防缩水)。"""
+    """SENSITIVE_KEY_PATTERNS 至少 10 个 pattern (防缩水)。"""
     assert len(SENSITIVE_KEY_PATTERNS) >= 10, (
         f"[{BUG_OBS_3}] 应至少 10 个 pattern, 实际 {len(SENSITIVE_KEY_PATTERNS)}"
     )
@@ -169,7 +169,7 @@ def test_bug_obs_3_sensitive_patterns_count():
 
 @pytest.mark.unit
 def test_bug_obs_3_redact_dict_basic():
-    """[BUG-OBS-3] redact_dict 把敏感字段值替换, 非敏感保留。"""
+    """redact_dict 把敏感字段值替换, 非敏感保留。"""
     red = redact_dict({
         "Authorization": "Bearer abc",
         "user": "alice",
@@ -181,7 +181,7 @@ def test_bug_obs_3_redact_dict_basic():
 
 @pytest.mark.unit
 def test_bug_obs_3_redact_dict_nested():
-    """[BUG-OBS-3] redact_dict 递归处理嵌套 dict。"""
+    """redact_dict 递归处理嵌套 dict。"""
     red = redact_dict({
         "headers": {"Authorization": "Bearer x", "Content-Type": "json"},
         "data": {"token": "abc", "user_id": 42},
@@ -193,7 +193,7 @@ def test_bug_obs_3_redact_dict_nested():
 
 @pytest.mark.unit
 def test_bug_obs_3_redact_dict_list():
-    """[BUG-OBS-3] redact_dict 处理 list / tuple 内的 dict。"""
+    """redact_dict 处理 list / tuple 内的 dict。"""
     red = redact_dict([
         {"Authorization": "a", "name": "first"},
         {"password": "p", "name": "second"},
@@ -205,7 +205,7 @@ def test_bug_obs_3_redact_dict_list():
 
 @pytest.mark.unit
 def test_bug_obs_3_redact_dict_does_not_mutate_input():
-    """[BUG-OBS-3] redact_dict 深拷贝, 不改原 obj。"""
+    """redact_dict 深拷贝, 不改原 obj。"""
     original = {"Authorization": "secret", "ok": 1}
     red = redact_dict(original)
     assert original["Authorization"] == "secret", (
@@ -230,7 +230,7 @@ def test_bug_obs_3_redact_dict_does_not_mutate_input():
     ("no key value here", False),
 ])
 def test_bug_obs_3_redact_message(raw, expected_key_redacted):
-    """[BUG-OBS-3] redact_message 扫 key=value / key:value / 'key':'value' 模式。"""
+    """redact_message 扫 key=value / key:value / 'key':'value' 模式。"""
     red = _redact_message(raw)
     if expected_key_redacted:
         assert REDACTED in red, (
@@ -250,7 +250,7 @@ def test_bug_obs_3_redact_message(raw, expected_key_redacted):
 
 @pytest.mark.unit
 def test_bug_obs_2_3_patcher_injects_trace_id_in_log(capture_loguru):
-    """[BUG-OBS-2] patcher 必须把 trace_id 注入到每条 log 的 extra.trace_id。"""
+    """patcher 必须把 trace_id 注入到每条 log 的 extra.trace_id。"""
     set_trace_id("cafebabe")
     logger.info("hello world")
 
@@ -262,7 +262,7 @@ def test_bug_obs_2_3_patcher_injects_trace_id_in_log(capture_loguru):
 
 @pytest.mark.unit
 def test_bug_obs_2_patcher_default_dash(capture_loguru):
-    """[BUG-OBS-2] 没 set_trace_id 时, trace_id 默认 '-' (单测 / 脚本场景)。"""
+    """没 set_trace_id 时, trace_id 默认 '-' (单测 / 脚本场景)。"""
     logger.info("hello")
     record = capture_loguru[0]
     assert record["extra"].get("trace_id") == "-", (
@@ -271,7 +271,7 @@ def test_bug_obs_2_patcher_default_dash(capture_loguru):
 
 @pytest.mark.unit
 def test_bug_obs_3_patcher_redacts_message(capture_loguru):
-    """[BUG-OBS-3] loguru message 里 Authorization=xxx 自动变 ***REDACTED***。"""
+    """loguru message 里 Authorization=xxx 自动变 ***REDACTED***。"""
     logger.info("Authorization=Bearer abc123 url=https://x.com")
     record = capture_loguru[0]
     assert "***REDACTED***" in record["message"], (
@@ -301,7 +301,7 @@ def test_bug_obs_3_patcher_redacts_dict_extra(capture_loguru):
 
 @pytest.mark.unit
 def test_bug_obs_1_myloguru_format_has_trace_id():
-    """[BUG-OBS-1+2] MyLoguru 的日志格式必须含 {extra[trace_id]} (patcher 才有用)。"""
+    """MyLoguru 的日志格式必须含 {extra[trace_id]} (patcher 才有用)。"""
     from utils._myLoguru import MyLoguru
     # 直接读 _configure_logger 源码 (避免实际初始化写文件)
     src = inspect.getsource(MyLoguru._configure_logger)
@@ -319,7 +319,7 @@ def test_bug_obs_1_myloguru_format_has_trace_id():
 
 @pytest.mark.unit
 def test_bug_obs_2_runner_run_interface_case_sets_trace_id():
-    """[BUG-OBS-2] runner.run_interface_case 入口必须 set_trace_id()。"""
+    """runner.run_interface_case 入口必须 set_trace_id()。"""
     from croe.interface.runner import InterfaceRunner
     src = inspect.getsource(InterfaceRunner.run_interface_case)
     assert "set_trace_id()" in src, (
@@ -329,7 +329,7 @@ def test_bug_obs_2_runner_run_interface_case_sets_trace_id():
 
 @pytest.mark.unit
 def test_bug_obs_2_runner_finally_clears_trace_id():
-    """[BUG-OBS-2] runner.run_interface_case 的 finally 必须 clear_trace_id()。"""
+    """runner.run_interface_case 的 finally 必须 clear_trace_id()。"""
     from croe.interface.runner import InterfaceRunner
     src = inspect.getsource(InterfaceRunner.run_interface_case)
     # finally 块里必须有 clear_trace_id

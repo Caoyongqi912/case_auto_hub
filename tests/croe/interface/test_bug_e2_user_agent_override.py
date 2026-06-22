@@ -1,4 +1,4 @@
-"""BUG-E2 回归测试: HttpxClient 不应硬写 user-agent, 应支持 default_user_agent 入参,"""
+"""HttpxClient 不应硬写 user-agent, 应支持 default_user_agent 入参,"""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -24,7 +24,7 @@ def bug_e2_marker():
 
 @pytest.mark.unit
 def test_bug_e2_no_magic_user_agent_in_source(bug_e2_marker):
-    """[BUG-E2] HttpxClient 不应再写死 'case_Hub_http/v0.1' user-agent。"""
+    """HttpxClient 不应再写死 'case_Hub_http/v0.1' user-agent。"""
     src = _client_src()
 
     code_lines = [
@@ -41,7 +41,7 @@ def test_bug_e2_no_magic_user_agent_in_source(bug_e2_marker):
 
 @pytest.mark.unit
 def test_bug_e2_default_user_agent_param_exists(bug_e2_marker):
-    """[BUG-E2] HttpxClient.__init__ 应该有 default_user_agent 入参。"""
+    """HttpxClient.__init__ 应该有 default_user_agent 入参。"""
     sig = inspect.signature(HttpxClient.__init__)
     assert "default_user_agent" in sig.parameters, (
         f"[{BUG_E2}] HttpxClient.__init__ 应新增 default_user_agent 入参。"
@@ -53,7 +53,7 @@ def test_bug_e2_default_user_agent_param_exists(bug_e2_marker):
 
 @pytest.mark.unit
 def test_bug_e2_no_default_user_agent_means_empty_client_headers(bug_e2_marker):
-    """[BUG-E2] 不传 default_user_agent: client headers 不含 user-agent。"""
+    """不传 default_user_agent: client headers 不含 user-agent。"""
     c = HttpxClient()
     cfg = c._client_config
     assert "headers" in cfg
@@ -63,7 +63,7 @@ def test_bug_e2_no_default_user_agent_means_empty_client_headers(bug_e2_marker):
 
 @pytest.mark.unit
 def test_bug_e2_with_default_user_agent_sets_client_header(bug_e2_marker):
-    """[BUG-E2] 传 default_user_agent='case_Hub/1.0': client headers 注入 user-agent。"""
+    """传 default_user_agent='case_Hub/1.0': client headers 注入 user-agent。"""
     c = HttpxClient(default_user_agent="case_Hub/1.0")
     cfg = c._client_config
     assert cfg["headers"].get("user-agent") == "case_Hub/1.0", (
@@ -107,7 +107,7 @@ def test_bug_e2_runtime_request_headers_pass_through(bug_e2_marker):
 
 @pytest.mark.unit
 def test_bug_e2_no_default_user_agent_keeps_runtime_user_agent(bug_e2_marker):
-    """[BUG-E2] 不传 default_user_agent: runtime headers 的 User-Agent 仍能透传。"""
+    """不传 default_user_agent: runtime headers 的 User-Agent 仍能透传。"""
     import asyncio
 
     c = HttpxClient()  # 不传 default_user_agent

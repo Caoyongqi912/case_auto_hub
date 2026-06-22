@@ -1,4 +1,4 @@
-"""BUG-M6 回归测试: InterfaceCaseContentResult 不应使用 with_polymorphic='*'。"""
+"""InterfaceCaseContentResult 不应使用 with_polymorphic='*'。"""
 
 import pytest
 
@@ -11,7 +11,7 @@ def bug_m6_marker():
 
 @pytest.mark.unit
 def test_bug_m6_no_wildcard_polymorphic(bug_m6_marker):
-    """[BUG-M6] InterfaceCaseContentResult 不应有 with_polymorphic='*'。"""
+    """InterfaceCaseContentResult 不应有 with_polymorphic='*'。"""
     mapper_args = dict(InterfaceCaseContentResult.__mapper_args__)
     assert mapper_args.get("with_polymorphic") != "*", (
         f"[{BUG_M6}] InterfaceCaseContentResult 仍带 with_polymorphic='*', "
@@ -20,7 +20,7 @@ def test_bug_m6_no_wildcard_polymorphic(bug_m6_marker):
 
 @pytest.mark.unit
 def test_bug_m6_polymorphic_on_unchanged(bug_m6_marker):
-    """[BUG-M6] polymorphic_on=content_type 必须保留, 这是 M5 修复的根基。"""
+    """polymorphic_on=content_type 必须保留, 这是 M5 修复的根基。"""
     mapper_args = dict(InterfaceCaseContentResult.__mapper_args__)
     assert "polymorphic_on" in mapper_args, (
         f"[{BUG_M6}] polymorphic_on 必须在, 否则多态根本起不来"
@@ -31,7 +31,7 @@ def test_bug_m6_polymorphic_on_unchanged(bug_m6_marker):
 
 @pytest.mark.unit
 def test_bug_m6_polymorphic_identity_unchanged(bug_m6_marker):
-    """[BUG-M6] polymorphic_identity=None 是基类默认值, 不能误删。"""
+    """polymorphic_identity=None 是基类默认值, 不能误删。"""
     mapper_args = dict(InterfaceCaseContentResult.__mapper_args__)
     assert "polymorphic_identity" in mapper_args, (
         f"[{BUG_M6}] polymorphic_identity 必须在, 基类默认 None"

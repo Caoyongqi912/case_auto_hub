@@ -1,4 +1,4 @@
-"""BUG-F4 回归测试:`init_interface_case_vars` 不应静默吞错。"""
+"""`init_interface_case_vars` 不应静默吞错。"""
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
@@ -23,7 +23,7 @@ def _make_starter():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_f4_mapper_error_does_not_silently_sink(bug_f4_marker):
-    """[BUG-F4] mapper 抛错时,失败要可见(starter.send + log.exception),不抛。"""
+    """mapper 抛错时,失败要可见(starter.send + log.exception),不抛。"""
     runner = InterfaceRunner(starter=_make_starter())
 
     with patch(
@@ -49,7 +49,7 @@ async def test_bug_f4_mapper_error_does_not_silently_sink(bug_f4_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_f4_mapper_error_does_not_crash_subsequent_steps(bug_f4_marker):
-    """[BUG-F4] 失败时不应抛,这样调用方能继续(后续步骤仍跑)。"""
+    """失败时不应抛,这样调用方能继续(后续步骤仍跑)。"""
     runner = InterfaceRunner(starter=_make_starter())
 
     with patch(
@@ -68,7 +68,7 @@ async def test_bug_f4_mapper_error_does_not_crash_subsequent_steps(bug_f4_marker
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_f4_happy_path_still_works(bug_f4_marker):
-    """[BUG-F4] 正常路径不应被破坏。"""
+    """正常路径不应被破坏。"""
     runner = InterfaceRunner(starter=_make_starter())
 
     fake_var = MagicMock()

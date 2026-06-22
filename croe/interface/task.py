@@ -120,7 +120,9 @@ class TaskRunner:
             await self.starter.send(
                 f"未通过{params.task_id} 找到 相关任务"
             )
-            return await self.starter.over()
+            # 显式 await 并返回 None
+            await self.starter.over()
+            return None
 
         if params.env_id:
             params.env = await EnvMapper.get_by_id(ident=params.env_id)

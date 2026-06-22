@@ -1,4 +1,4 @@
-"""BUG-M1 回归测试:`InterfaceCaseContents.target_id` 不应是 ClassVar。"""
+"""`InterfaceCaseContents.target_id` 不应是 ClassVar。"""
 
 import pytest
 
@@ -16,7 +16,7 @@ def bug_m1_marker():
 @pytest.mark.security
 @pytest.mark.unit
 def test_bug_m1_api_step_content_to_dict_contains_target_id(bug_m1_marker):
-    """BUG-M1: APIStepContent.to_dict() 应包含 target_id 的真实值,而非 None。"""
+    """APIStepContent.to_dict() 应包含 target_id 的真实值,而非 None。"""
     # Arrange:直接构造一个内存中的 APIStepContent
     content = APIStepContent(
         target_id=42,
@@ -34,7 +34,7 @@ def test_bug_m1_api_step_content_to_dict_contains_target_id(bug_m1_marker):
 @pytest.mark.security
 @pytest.mark.unit
 def test_bug_m1_base_class_has_no_classvar_target_id(bug_m1_marker):
-    """BUG-M1: 基类不应把 target_id 声明为 ClassVar,会遮蔽子类的 Column 定义。"""
+    """基类不应把 target_id 声明为 ClassVar,会遮蔽子类的 Column 定义。"""
     # Arrange / Act
     has_classvar = "target_id" in InterfaceCaseContents.__dict__
 

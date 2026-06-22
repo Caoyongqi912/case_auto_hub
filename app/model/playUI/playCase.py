@@ -66,13 +66,8 @@ class PlayCaseResult(BaseModel):
     task_result_id = Column(INTEGER, ForeignKey('play_task_result.id', ondelete='CASCADE'),
                             comment="所属TASK", nullable=True)
 
-    # BUG-P-1-2 修复: 之前 ui_case_Id 大写 I 错属性名, Python 习惯 snake_case
-    # (跟 task_result_id 一致), 调用方容易写错。修: 加 ui_case_id property
-    # (读+写) 兼容到 ui_case_Id 字段, 1-2 release 过渡后彻底改字段名。
-    # 为什么用 property 不用 Column rename: rename Column 需 DB migration,
-    # 且 mapper._to_dict_impl 走 SQLAlchemy inspect 会拿 column key, 重命名
-    # 字段名也要同步改所有 mapper 调用, 改动面大。property 是零迁移 + 向后
-    # 兼容最稳的过渡方案。
+    # 兼容旧版 ui_case_Id 字段，提供 ui_case_id property 作为 snake_case 别名
+    # （避免直接重命名 Column 带来的迁移和调用方改动）
     @property
     def ui_case_id(self):
         """snake_case 别名: 读 ui_case_Id"""

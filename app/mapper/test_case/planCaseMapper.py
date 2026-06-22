@@ -29,7 +29,20 @@ from app.mapper.test_case.planModuleMapper import PlanModuleMapper
 from utils import log
 from utils.caseEnumResolver import find_group_path, resolve_plan_group_path, _split_group_path
 from app.mapper.test_case.testcaseMapper import _parse_steps
-from app.constant.caseStatus import BUILTIN_CASE_STATUS_LABEL_MAP, CASE_STATUS_KEY
+from app.constant.caseStatus import (
+    BUILTIN_CASE_STATUS,
+    BUILTIN_CASE_STATUS_LABEL_MAP,
+    CASE_STATUS_KEY,
+)
+# get_overview 用的 pass/fail 状态值. 派生自 BUILTIN_CASE_STATUS, 保证
+# 枚举被调整时本文件不会静默漂移; 若枚举删了 pass/fail, 启动时
+# next(...) 会 raise StopIteration 第一时间暴露.
+_OVERVIEW_PASS_VALUE: str = next(
+    item.value for item in BUILTIN_CASE_STATUS if item.value == "pass"
+)
+_OVERVIEW_FAIL_VALUE: str = next(
+    item.value for item in BUILTIN_CASE_STATUS if item.value == "fail"
+)
 
 
 
@@ -2619,9 +2632,11 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
             status_result = await session.execute(status_stmt)
             status_rows = status_result.all()
 
-            # 分别聚合一轮和二轮的状态计数
-            first_status_counts: Dict[int, int] = {}
-            second_status_counts: Dict[int, int] = {}
+            # 分别聚合一轮和二轮的状态计数. 状态列是 varchar, 实际值为
+            # BUILTIN_CASE_STATUS 里定义的英文短词 (pass / fail / skip / ...),
+            # 所以 key 类型是 str, 不是 int.
+            first_status_counts: Dict[str, int] = {}
+            second_status_counts: Dict[str, int] = {}
             case_total = 0
             for row in status_rows:
                 case_total += row.count
@@ -2630,13 +2645,13 @@ class PlanCaseMapper(Mapper[PlanCaseAssociation]):
                 second_status_counts[row.second_status] = \
                     second_status_counts.get(row.second_status, 0) + row.count
 
-            # first_status / second_status 在数据库中是 String(255) 类型,
-            # 状态值走配置中心 (CaseConfig.value) 统一为字符串 ('1','2','3','4','0'),
-            # 用 int 索引 Dict 永远查不到 —— 转 str 后再查
-            first_passed = first_status_counts.get("1", 0)
-            first_failed = first_status_counts.get("2", 0)
-            second_passed = second_status_counts.get("1", 0)
-            second_failed = second_status_counts.get("2", 0)
+            # 历史 case_config 表里 CASE_STATUS.value 用过 0/1/2, 但状态机早已
+            # hardcode 到 BUILTIN_CASE_STATUS (pass/fail/...), 见 app/constant/caseStatus.py.
+            # 这里直接走派生常量, 不再读 case_config 也不会再读历史旧值.
+            first_passed = first_status_counts.get(_OVERVIEW_PASS_VALUE, 0)
+            first_failed = first_status_counts.get(_OVERVIEW_FAIL_VALUE, 0)
+            second_passed = second_status_counts.get(_OVERVIEW_PASS_VALUE, 0)
+            second_failed = second_status_counts.get(_OVERVIEW_FAIL_VALUE, 0)
 
             # 缺陷链接统计
             # 实际业务里 bug_url 写入到「步骤结果」表 (TestCaseStepResult.bug_url)，

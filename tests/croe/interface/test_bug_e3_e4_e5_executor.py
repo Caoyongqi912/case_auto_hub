@@ -1,4 +1,4 @@
-"""BUG-E3 / E4 / E5 回归测试:执行器层 3 个 easy win 一锅端。"""
+"""执行器层 3 个 easy win 一锅端。"""
 
 import ast
 import inspect
@@ -25,7 +25,7 @@ def bug_e5_marker():
 # ---------- E3: 不再有 asyncio.TaskGroup ----------
 
 def test_bug_e3_request_builder_no_task_group(bug_e3_marker):
-    """[BUG-E3] request_builder.py 不能用 asyncio.TaskGroup (3.11+)"""
+    """request_builder.py 不能用 asyncio.TaskGroup (3.11+)"""
     p = REPO / "croe" / "interface" / "builder" / "request_builder.py"
     src = p.read_text(encoding="utf-8")
     # 用 AST 检查 (排除注释/docstring 里的提及)
@@ -51,7 +51,7 @@ def test_bug_e3_request_builder_no_task_group(bug_e3_marker):
                     )
 
 def test_bug_e3_request_builder_uses_gather(bug_e3_marker):
-    """[BUG-E3] request_builder.py 必须用 asyncio.gather 替代"""
+    """request_builder.py 必须用 asyncio.gather 替代"""
     src = (REPO / "croe" / "interface" / "builder" / "request_builder.py").read_text(
         encoding="utf-8"
     )
@@ -60,7 +60,7 @@ def test_bug_e3_request_builder_uses_gather(bug_e3_marker):
     )
 
 def test_bug_e3_transform_request_data_signature_unchanged(bug_e3_marker):
-    """[BUG-E3] _transform_request_data 签名不能改 (会被外部调用)"""
+    """_transform_request_data 签名不能改 (会被外部调用)"""
     from croe.interface.builder.request_builder import RequestBuilder
     sig = inspect.signature(RequestBuilder._transform_request_data)
     params = list(sig.parameters.keys())
@@ -71,7 +71,7 @@ def test_bug_e3_transform_request_data_signature_unchanged(bug_e3_marker):
 # ---------- E4: _parse_url 死代码已删, EnvMapper import 已删 ----------
 
 def test_bug_e4_parse_url_removed(bug_e4_marker):
-    """[BUG-E4] interface_executor._parse_url 是死代码, 删掉避免和 UrlBuilder 不一致"""
+    """interface_executor._parse_url 是死代码, 删掉避免和 UrlBuilder 不一致"""
     from croe.interface.executor.interface_executor import InterfaceExecutor
     assert not hasattr(InterfaceExecutor, "_parse_url"), (
         f"[{BUG_E4}] _parse_url 还在, 跟 UrlBuilder.build 逻辑不一致, "
@@ -79,7 +79,7 @@ def test_bug_e4_parse_url_removed(bug_e4_marker):
     )
 
 def test_bug_e4_env_mapper_import_removed(bug_e4_marker):
-    """[BUG-E4] EnvMapper 在 interface_executor.py 里只剩 _parse_url 用, 删方法后 import 也该删"""
+    """EnvMapper 在 interface_executor.py 里只剩 _parse_url 用, 删方法后 import 也该删"""
     src = (REPO / "croe/interface/executor/interface_executor.py").read_text(
         encoding="utf-8"
     )
@@ -90,7 +90,7 @@ def test_bug_e4_env_mapper_import_removed(bug_e4_marker):
 # ---------- E5: 显式 None 防御 ----------
 
 def test_bug_e5_before_sql_uses_explicit_none_guard(bug_e5_marker):
-    """[BUG-E5] _execute_before_sql 改用 sql_text = ... or "" 显式处理 None"""
+    """_execute_before_sql 改用 sql_text = ... or "" 显式处理 None"""
     src = (REPO / "croe/interface/executor/interface_executor.py").read_text(
         encoding="utf-8"
     )
@@ -108,7 +108,7 @@ def test_bug_e5_before_sql_uses_explicit_none_guard(bug_e5_marker):
 
 @pytest.mark.asyncio
 async def test_bug_e3_transform_data_e2e(bug_e3_marker):
-    """[BUG-E3] _transform_request_data 在真 asyncio loop 下能跑通 (3.10 兼容路径)"""
+    """_transform_request_data 在真 asyncio loop 下能跑通 (3.10 兼容路径)"""
     from unittest.mock import MagicMock, AsyncMock
     from croe.interface.builder.request_builder import RequestBuilder
 
@@ -131,7 +131,7 @@ async def test_bug_e3_transform_data_e2e(bug_e3_marker):
 
 @pytest.mark.asyncio
 async def test_bug_e3_transform_data_empty(bug_e3_marker):
-    """[BUG-E3] 空 dict / 全 None 也不崩"""
+    """空 dict / 全 None 也不崩"""
     from unittest.mock import MagicMock
     from croe.interface.builder.request_builder import RequestBuilder
 

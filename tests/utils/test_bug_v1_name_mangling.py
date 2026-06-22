@@ -1,4 +1,4 @@
-"""BUG-V1 回归测试:`__find_g_vars` 触发 name mangling,子类重写不会被调到。"""
+"""`__find_g_vars` 触发 name mangling,子类重写不会被调到。"""
 
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -13,7 +13,7 @@ def bug_v1_marker():
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_v1_subclass_can_override_find_g_vars(bug_v1_marker):
-    """[BUG-V1] 子类 _find_g_vars 应被 _resolve_vars 调到。"""
+    """子类 _find_g_vars 应被 _resolve_vars 调到。"""
 
     class MyVT(VariableTrans):
         async def _find_g_vars(self, name):
@@ -29,7 +29,7 @@ async def test_bug_v1_subclass_can_override_find_g_vars(bug_v1_marker):
 
 @pytest.mark.unit
 def test_bug_v1_no_dunder_find_g_vars_on_class(bug_v1_marker):
-    """[BUG-V1] VariableTrans 不应再有 __find_g_vars 属性(name mangled 名字)。"""
+    """VariableTrans 不应再有 __find_g_vars 属性(name mangled 名字)。"""
     cls_dict = VariableTrans.__dict__
     assert "__find_g_vars" not in cls_dict, (
         f"[{BUG_V1}] VariableTrans.__dict__ 不应包含 __find_g_vars"
@@ -41,7 +41,7 @@ def test_bug_v1_no_dunder_find_g_vars_on_class(bug_v1_marker):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_bug_v1_resolve_g_var_calls_find_g_vars(bug_v1_marker):
-    """[BUG-V1] _resolve_vars('g_xxx') 应最终走到 _find_g_vars。"""
+    """_resolve_vars('g_xxx') 应最终走到 _find_g_vars。"""
     vt = VariableTrans()
 
     with patch.object(

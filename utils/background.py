@@ -1,4 +1,4 @@
-"""后台任务辅助 (BUG-CON-5 修复)
+"""后台任务辅助
 
 直接 asyncio.create_task 启后台任务有两个隐患:
 1. 异常不会传播, 任务抛错只在 gc 时打印 Task exception was never retrieved
@@ -24,7 +24,7 @@ def fire_and_forget(coro, *, name=None):
         _TASKS.discard(t)
         if not t.cancelled() and t.exception() is not None:
             log.exception(
-                f"[BUG-CON-5] background task {t.get_name()} 异常: {t.exception()!r}",
+                f"background task {t.get_name()} 异常: {t.exception()!r}",
                 exc_info=t.exception(),
             )
 
@@ -41,7 +41,7 @@ async def shutdown(timeout=10.0):
     """服务关闭时调用: cancel 所有 background task 并 await."""
     if not _TASKS:
         return
-    log.info(f"[BUG-CON-5] shutdown: cancel {len(_TASKS)} background tasks")
+    log.info(f"shutdown: cancel {len(_TASKS)} background tasks")
     for t in list(_TASKS):
         t.cancel()
     await asyncio.wait_for(

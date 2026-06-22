@@ -202,8 +202,7 @@ class InterfaceCaseContentResult(BaseModel):
     content_name = Column(String(250), nullable=True, comment="步骤名称")
     content_desc = Column(String(250), nullable=True, comment="步骤描述")
     content_step = Column(INTEGER, nullable=False, comment="步骤序号")
-    # BUG-M5 修复: 改用 Enum 类型, DB 存 enum NAME 而不是 int value,
-    # 避免重排枚举值时旧数据全错。native_enum=False 用 VARCHAR(20) 实现。
+    # 使用 Enum 类型存储 NAME，避免重排枚举值导致数据错乱
     content_type = Column(
         Enum(CaseStepContentType, native_enum=False, length=20),
         nullable=False,
@@ -214,10 +213,7 @@ class InterfaceCaseContentResult(BaseModel):
     result = Column(Boolean, nullable=True, comment="执行结果")
     start_time = Column(DATETIME, default=datetime.now, comment="开始时间")
     use_time = Column(String(50), nullable=True, comment="执行用时")
-    # BUG-M9 修复: status 从 String(20) 改 Enum(StepStatusEnum, native_enum=False, length=20),
-    # 跟 content_type (M5) 同模式, 写库存 enum NAME, 避免写错字符串 ("success"/"OK"/"DONE")。
-    # 8 个 step_content 文件同步改用 StepStatusEnum.SUCCESS / .FAIL。
-    # PENDING 保留作 default 兼容 (interfaceResultModel 之前 default="PENDING")。
+    # 使用 Enum 存储状态，避免字符串拼写错误
     status = Column(
         Enum(StepStatusEnum, native_enum=False, length=20),
         default=StepStatusEnum.PENDING,
@@ -227,14 +223,7 @@ class InterfaceCaseContentResult(BaseModel):
     __mapper_args__ = {
         'polymorphic_on': content_type,
         'polymorphic_identity': None,
-        # BUG-M6 修复: 去掉 with_polymorphic='*'。
-        # 原配置会让每次 SELECT InterfaceCaseContentResult 都自动 LEFT OUTER JOIN
-        # 所有 8 个子类表 (api/group/condition/script/db/wait/assert/loop) —
-        # 每行宽度膨胀 8x, 网络/内存/DB 计划都浪费, 实际 ORM 子类字段
-        # (to_dict 里用 self_and_descendants) 是运行时反射, 跟 with_polymorphic 无关。
-        # 当前 3 个查询 (query_by_case_result_id / query_by_task_result_id /
-        # query_by_content_type) 都只读基类字段, 不需要子类表 JOIN。
-        # 如果以后要按子类字段过滤, 显式加 .with_polymorphic([APIStepContentResult, ...]) 即可。
+        # 移除 with_polymorphic='*'，避免每次查询自动 JOIN 所有子类表
     }
 
     def to_dict(self, exclude: Optional[Set[str]] = None) -> dict:

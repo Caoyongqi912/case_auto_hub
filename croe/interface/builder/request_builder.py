@@ -134,7 +134,7 @@ class RequestBuilder:
             for k, v in GenerateTools.list2dict(interface.interface_headers).items():
                 if k.lower() in self.BLOCKED_DOWNSTREAM_HEADERS:
                     log.warning(
-                        f"[BUG-S7] 拦截下游敏感 header: {k!r}={v!r} "
+                        f"拦截下游敏感 header: {k!r}={v!r} "
                         f"(case_id={getattr(interface, 'interface_case_id', '?')}), "
                         f"不让用户配覆盖后端真实值"
                     )
@@ -148,7 +148,7 @@ class RequestBuilder:
                 continue
             encoded = urllib.parse.quote(v, safe="")
             log.warning(
-                f"[BUG-HDR-ASCII] header 值含非 ASCII, 自动 percent-encode: "
+                f"header 值含非 ASCII, 自动 percent-encode: "
                 f"{k!r}={v!r} -> {encoded!r} (case_id={case_id})"
             )
             headers[k] = encoded
@@ -190,7 +190,7 @@ class RequestBuilder:
                 )
             else:
                 log.warning(
-                    f"[BUG-RB1] 未知的 KV Auth target: {target!r} "
+                    f"未知的 KV Auth target: {target!r} "
                     f"(case_id={getattr(interface, 'interface_case_id', '?')}), "
                     f"允许值: query / header, kv 字段将不写入请求"
                 )

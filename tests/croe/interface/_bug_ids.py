@@ -343,7 +343,7 @@ BUG_P1_2 = "P1-2"
 BUG_P1_4 = "P1-4"
 
 # ---------------------------------------------------------------------------
-# BUG-HDR-ASCII: 非 ASCII header value 透传给 httpx 报 UnicodeEncodeError
+# 非 ASCII header value 透传给 httpx 报 UnicodeEncodeError
 # ---------------------------------------------------------------------------
 # 根因: HTTP/1.1 spec (RFC 7230) header value 必须是 ASCII, httpx 默认按
 # ascii 编码。用户 g_headers / interface_headers 里配中文 / emoji 等时,

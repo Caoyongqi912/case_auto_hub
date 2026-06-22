@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Optional, Dict, Any
 
 from app.model.base import User
 from enums import StarterEnum
@@ -59,13 +59,26 @@ class SocketSender:
             # 记录发送过程中出现的错误。
             log.error(e)
 
-    async def over(self, reportId: int | str = None):
+    async def over(self, reportId: int | str = None) -> Optional[Dict[str, Any]]:
+        """
+        发送"执行结束"信号到前端。
+
+        早返返回 None 表示"执行失败",调用方 (False, _) 解包安全。
+
+        Args:
+            reportId: 报告 ID (case_result.id / task_result.id)
+
+        Returns:
+            发送的 data dict (供 caller 参考), 异常时 None
+        """
         try:
             data = {"code": 1, 'data': dict(rId=reportId)}
             await async_io.emit(event=self._event, data=data, uid=self.uid,
                                 namespace=self._ns)
+            return data
         except Exception as e:
             log.error(e)
+            return None
 
     async def push(self, data: dict):
         """

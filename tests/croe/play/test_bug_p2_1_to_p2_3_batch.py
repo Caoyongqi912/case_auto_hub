@@ -1,4 +1,4 @@
-"""[BUG-P-2-1 + P-2-2 + P-2-3] 3 个 P2 修复一锅端, 来自 PLAY_REVIEW_2026_06_21 §5。"""
+"""3 个 P2 修复一锅端, 来自 PLAY_REVIEW_2026_06_21 §5。"""
 
 import inspect
 import re
@@ -31,7 +31,7 @@ def test_bug_p_2_1_no_inline_play_step_group_mapper_import_in_play_case_mapper()
     )
 
 def test_bug_p_2_1_play_step_group_mapper_imported_at_top():
-    """[BUG-P-2-1] playCaseMapper.py 顶部应 import PlayStepGroupMapper。"""
+    """playCaseMapper.py 顶部应 import PlayStepGroupMapper。"""
     with open("app/mapper/play/playCaseMapper.py", "r", encoding="utf-8") as fp:
         src = fp.read()
     # 找 import 块 (前 30 行, 排除 docstring 之后)
@@ -44,7 +44,7 @@ def test_bug_p_2_1_play_step_group_mapper_imported_at_top():
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_2_2_reload_content_has_deprecation_note():
-    """[BUG-P-2-2] reload_content docstring 应有 deprecation 标记。"""
+    """reload_content docstring 应有 deprecation 标记。"""
     from app.mapper.play.playCaseMapper import PlayCaseMapper
 
     src = inspect.getsource(PlayCaseMapper.reload_content)
@@ -56,7 +56,7 @@ def test_bug_p_2_2_reload_content_has_deprecation_note():
 # --------------------------------------------------------------------------- #
 
 def test_bug_p_2_3_execute_case_sets_trace_id():
-    """[BUG-P-2-3] execute_case 进入时 set_trace_id。"""
+    """execute_case 进入时 set_trace_id。"""
     from croe.play.play_runner import PlayRunner
 
     src = inspect.getsource(PlayRunner.execute_case)
@@ -74,7 +74,7 @@ def test_bug_p_2_3_execute_case_sets_trace_id():
     )
 
 def test_bug_p_2_3_execute_case_clears_trace_id_in_finally():
-    """[BUG-P-2-3] execute_case 的 finally 块应 clear_trace_id 防泄漏。"""
+    """execute_case 的 finally 块应 clear_trace_id 防泄漏。"""
     from croe.play.play_runner import PlayRunner
 
     src = inspect.getsource(PlayRunner.execute_case)
@@ -95,7 +95,7 @@ def test_bug_p_2_3_execute_case_clears_trace_id_in_finally():
     )
 
 def test_bug_p_2_3_execute_case_imports_trace_id_helpers():
-    """[BUG-P-2-3] play_runner.py 应 import set_trace_id / clear_trace_id。"""
+    """play_runner.py 应 import set_trace_id / clear_trace_id。"""
     from croe.play import play_runner
 
     src = inspect.getsource(play_runner)

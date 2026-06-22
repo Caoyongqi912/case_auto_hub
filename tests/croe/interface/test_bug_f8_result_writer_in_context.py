@@ -1,4 +1,4 @@
-"""BUG-F8 回归测试:`result_writer` 必须从 ExecutionContext 拿,不能再用模块级单例。"""
+"""`result_writer` 必须从 ExecutionContext 拿,不能再用模块级单例。"""
 
 import ast
 from pathlib import Path
@@ -18,7 +18,7 @@ def _read(path: Path) -> str:
 # ---------- 1. writer/__init__.py 不再导出 result_writer 单例 ----------
 
 def test_bug_f8_writer_init_does_not_export_singleton(bug_f8_marker):
-    """[BUG-F8] writer/__init__.py 不应再暴露模块级 result_writer 单例"""
+    """writer/__init__.py 不应再暴露模块级 result_writer 单例"""
     src = _read(REPO / "croe" / "interface" / "writer" / "__init__.py")
 
     # 禁止出现 `result_writer = ResultWriter()` 这种模块级赋值
@@ -55,7 +55,7 @@ FILES_MUST_NOT_IMPORT_SINGLETON = [
 
 @pytest.mark.parametrize("rel_path", FILES_MUST_NOT_IMPORT_SINGLETON)
 def test_bug_f8_no_module_singleton_import(bug_f8_marker, rel_path):
-    """[BUG-F8] 这些文件不能 `import result_writer` 模块单例"""
+    """这些文件不能 `import result_writer` 模块单例"""
     src = _read(REPO / rel_path)
     forbidden = [
         "from croe.interface.writer import result_writer",
@@ -70,7 +70,7 @@ def test_bug_f8_no_module_singleton_import(bug_f8_marker, rel_path):
 # ---------- 3. ExecutionContext 包含 result_writer 字段 ----------
 
 def test_bug_f8_execution_context_has_result_writer(bug_f8_marker):
-    """[BUG-F8] ExecutionContext 必须包含 result_writer 字段"""
+    """ExecutionContext 必须包含 result_writer 字段"""
     from croe.interface.executor.context import ExecutionContext
     from dataclasses import fields
     names = {f.name for f in fields(ExecutionContext)}
@@ -82,7 +82,7 @@ def test_bug_f8_execution_context_has_result_writer(bug_f8_marker):
 # ---------- 4. CaseStepContext 提供 .result_writer 便捷 property ----------
 
 def test_bug_f8_case_step_context_has_result_writer_property(bug_f8_marker):
-    """[BUG-F8] CaseStepContext 应有 result_writer property 桥接到 ExecutionContext"""
+    """CaseStepContext 应有 result_writer property 桥接到 ExecutionContext"""
     from croe.interface.executor.context import CaseStepContext
     cls_attr = vars(CaseStepContext)
     assert "result_writer" in cls_attr, (
@@ -95,7 +95,7 @@ def test_bug_f8_case_step_context_has_result_writer_property(bug_f8_marker):
 # ---------- 5. Runner 注入 ExecutionContext 时传 self.result_writer ----------
 
 def test_bug_f8_runner_injects_result_writer_into_context(bug_f8_marker):
-    """[BUG-F8] runner.run_interface_case 创建 ExecutionContext 必须传 self.result_writer"""
+    """runner.run_interface_case 创建 ExecutionContext 必须传 self.result_writer"""
     src = _read(REPO / "croe" / "interface" / "runner.py")
     assert "result_writer=self.result_writer" in src, (
         f"[{BUG_F8}] runner.py 未把 self.result_writer 注入 ExecutionContext"
@@ -104,7 +104,7 @@ def test_bug_f8_runner_injects_result_writer_into_context(bug_f8_marker):
 # ---------- 6. TaskRunner 自有 self.result_writer ----------
 
 def test_bug_f8_task_runner_has_own_result_writer(bug_f8_marker):
-    """[BUG-F8] TaskRunner 应在 __init__ 里 self.result_writer = ResultWriter()"""
+    """TaskRunner 应在 __init__ 里 self.result_writer = ResultWriter()"""
     src = _read(REPO / "croe" / "interface" / "task.py")
     assert "self.result_writer = ResultWriter()" in src, (
         f"[{BUG_F8}] task.py 未在 TaskRunner.__init__ 创建自有 result_writer"
@@ -120,7 +120,7 @@ def test_bug_f8_task_runner_has_own_result_writer(bug_f8_marker):
 # ---------- 7. 端到端: runner 用的 result_writer 跟 context 注入 ----------
 
 def test_bug_f8_runner_result_writer_is_same_as_context(bug_f8_marker):
-    """[BUG-F8] ExecutionContext.result_writer 必须 === runner.result_writer"""
+    """ExecutionContext.result_writer 必须 === runner.result_writer"""
     from unittest.mock import MagicMock, AsyncMock
     from croe.interface.runner import InterfaceRunner
     from croe.interface.executor.context import ExecutionContext

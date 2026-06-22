@@ -136,7 +136,7 @@ class TestInitCaseVariables:
 
     @pytest.mark.asyncio
     async def test_mapper_exception_does_not_raise_p1_8(self):
-        """[BUG-P-1-8] mapper 抛异常时 init_case_variables 不应 raise (让 case 继续跑)。"""
+        """mapper 抛异常时 init_case_variables 不应 raise (让 case 继续跑)。"""
         starter = MagicMock()
         starter.send = AsyncMock()
         r = PlayRunner(starter=starter)

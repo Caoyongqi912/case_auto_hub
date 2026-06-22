@@ -1,4 +1,4 @@
-"""BUG-F5 回归测试: error_stop 触发时, case_result.progress 不应被强制 100,"""
+"""error_stop 触发时, case_result.progress 不应被强制 100,"""
 
 import pytest
 from pathlib import Path
@@ -25,7 +25,7 @@ def _make_starter():
 # ---------- 1. runner 源码不再 force 100 ----------
 
 def test_bug_f5_runner_does_not_force_progress_100(bug_f5_marker):
-    """[BUG-F5] runner 的 error_stop break 路径不能 `case_result.progress = 100`"""
+    """runner 的 error_stop break 路径不能 `case_result.progress = 100`"""
     src = (REPO / "croe/interface/runner.py").read_text(encoding="utf-8")
     # 找 error_stop 块
     block_start = src.find("if not case_success and error_stop:")
@@ -40,7 +40,7 @@ def test_bug_f5_runner_does_not_force_progress_100(bug_f5_marker):
 # ---------- 2. finalize 写库用 case_result.progress ----------
 
 def test_bug_f5_finalize_uses_case_result_progress(bug_f5_marker):
-    """[BUG-F5] finalize_case_result 末尾 progress 写库不能硬编码 100.0"""
+    """finalize_case_result 末尾 progress 写库不能硬编码 100.0"""
     src = (REPO / "croe/interface/writer/result_writer.py").read_text(encoding="utf-8")
     # 在 finalize_case_result 函数体里找 update_by_id
     finalize_idx = src.find("async def finalize_case_result")

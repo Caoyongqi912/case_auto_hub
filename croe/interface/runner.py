@@ -83,8 +83,14 @@ class InterfaceRunner:
                 interface=interface, env=env
             )
         finally:
+            # 清理执行器、结果缓存和变量；不清 trace_id/starter.over，避免影响外层
             try:
                 await self.interface_executor.aclose()
+            except Exception:
+                pass
+            self.result_writer.clear_cache()
+            try:
+                await self.variable_manager.clear()
             except Exception:
                 pass
 
@@ -119,8 +125,14 @@ class InterfaceRunner:
                 results.append(result)
             return results
         finally:
+            # 清理执行器、结果缓存和变量
             try:
                 await self.interface_executor.aclose()
+            except Exception:
+                pass
+            self.result_writer.clear_cache()
+            try:
+                await self.variable_manager.clear()
             except Exception:
                 pass
 
@@ -155,7 +167,7 @@ class InterfaceRunner:
             await self.starter.send(
                 f"未通过{interface_case_id} 找到 相关业务流用例"
             )
-            # 显式返回 (False, None) 让调用方可以安全 unpack
+            # 显式 await 并返回 (False, None)
             await self.starter.over()
             return False, None
 
@@ -189,70 +201,30 @@ class InterfaceRunner:
         )
         # 排查单 case 时 case_result_id 比 trace_id 更直接
         log.debug(
-            f"[BUG-OBS-6] case_result 初始化完成: "
+            f"case_result 初始化完成: "
             f"case_id={interface_case_id} "
             f"case_result_id={getattr(case_result, 'id', None)} "
             f"task_result_id={getattr(task_result, 'id', None) if task_result else None}"
         )
 
+        # 将步骤循环拆分到独立方法，单步异常不中断整个用例
+        execution_context = ExecutionContext(
+            interface_case=interface_case,
+            env=target_env,
+            case_result=case_result,
+            result_writer=self.result_writer,
+            task_result=task_result
+        )
+
         try:
-            # 否则 step_content 走模块单例 cache, 永远不被 flush
-            execution_context = ExecutionContext(
-                interface_case=interface_case,
-                env=target_env,
+            case_success = await self._execute_steps(
+                case_content_steps=case_content_steps,
                 case_result=case_result,
-                result_writer=self.result_writer,
-                task_result=task_result
+                execution_context=execution_context,
+                error_stop=error_stop,
+                case_success=case_success,
+                task_result=task_result,
             )
-
-            total_steps = len(case_content_steps)
-            for index, step_content in enumerate(case_content_steps, start=1):
-                await self.starter.send(
-                    f"✍️✍️ {'=' * 20} EXECUTE_STEP {index} ： "
-                    f"{step_content} {'=' * 20}"
-                )
-
-                # enable 仅在调试模式下生效
-                if step_content.enable == 0 and not task_result:
-                    await self.starter.send(
-                        f"✍️✍️  EXECUTE_STEP {index} ： 调试禁用 跳过执行"
-                    )
-            
-                    case_result.progress = round(index / total_steps * 100, 2)
-                    await self.result_writer.update_case_progress(case_result)
-                    continue
-
-                # 执行步骤
-                step_context = CaseStepContext(
-                    index=index,
-                    content=step_content,
-                    execution_context=execution_context,
-                    starter=self.starter,
-                    variable_manager=self.variable_manager,
-                )
-
-                strategy = get_step_strategy(
-                    step_content.content_type,
-                    self.interface_executor
-                )
-                step_success = await strategy.execute(step_context)
-
-                case_success = case_success and step_success
-
-                case_result.progress = round(index / total_steps * 100, 2)
-
-                # 用例执行失败 且 配置了错误停止
-                if not case_success and error_stop:
-
-                    await self.starter.send(
-                        f"⏭️⏭️  SKIP_STEP {index} ： 遇到错误已停止 "
-                        f"(progress={case_result.progress}%)"
-                    )
-                    break
-
-                await self.starter.send(
-                    f"✍️✍️  EXECUTE_STEP {index} ： FINISH"
-                )
 
             await self.starter.send(
                 f"用例 {interface_case.case_title} 执行结束"
@@ -267,7 +239,8 @@ class InterfaceRunner:
             return case_success, case_result
 
         except Exception as e:
-            log.exception(f"执行业务流用例异常: {e}")
+            # 主 except 仅捕获 init/finalize 阶段异常
+            log.exception(f"执行业务流用例异常 (init/finalize 阶段): {e}")
             return False, case_result
 
         finally:
@@ -283,6 +256,82 @@ class InterfaceRunner:
                 await self.starter.over(case_result.id)
             else:
                 await self.starter.over()
+
+    async def _execute_steps(
+        self,
+        case_content_steps,
+        case_result,
+        execution_context,
+        error_stop: bool,
+        case_success: bool,
+        task_result,
+    ) -> bool:
+        """
+        顺序执行用例步骤。
+
+        每个 step 单独 try/except，单步异常只标该 step 失败并继续下一步；
+        配合 error_stop 在失败时中断执行。
+        """
+        total_steps = len(case_content_steps)
+        for index, step_content in enumerate(case_content_steps, start=1):
+            await self.starter.send(
+                f"✍️✍️ {'=' * 20} EXECUTE_STEP {index} ： "
+                f"{step_content} {'=' * 20}"
+            )
+
+            # enable 仅在调试模式下生效
+            if step_content.enable == 0 and not task_result:
+                await self.starter.send(
+                    f"✍️✍️  EXECUTE_STEP {index} ： 调试禁用 跳过执行"
+                )
+                case_result.progress = round(index / total_steps * 100, 2)
+                await self.result_writer.update_case_progress(case_result)
+                continue
+
+            # 执行步骤 - 单步独立 try/except
+            step_context = CaseStepContext(
+                index=index,
+                content=step_content,
+                execution_context=execution_context,
+                starter=self.starter,
+                variable_manager=self.variable_manager,
+            )
+
+            try:
+                strategy = get_step_strategy(
+                    step_content.content_type,
+                    self.interface_executor
+                )
+                step_success = await strategy.execute(step_context)
+            except Exception as e:
+                # 单步失败仅记录日志并标记失败，不抛回主流程
+                log.exception(
+                    f"单步执行异常 (step_index={index}, "
+                    f"type={step_content.content_type}): {e}"
+                )
+                try:
+                    await self.starter.send(
+                        f"❌ STEP {index} 异常: {e} (继续下一步)"
+                    )
+                except Exception:
+                    pass
+                step_success = False
+
+            case_success = case_success and step_success
+            case_result.progress = round(index / total_steps * 100, 2)
+
+            if not case_success and error_stop:
+                await self.starter.send(
+                    f"⏭️⏭️  SKIP_STEP {index} ： 遇到错误已停止 "
+                    f"(progress={case_result.progress}%)"
+                )
+                break
+
+            await self.starter.send(
+                f"✍️✍️  EXECUTE_STEP {index} ： FINISH"
+            )
+
+        return case_success
 
     async def run_interface_by_task(
             self,

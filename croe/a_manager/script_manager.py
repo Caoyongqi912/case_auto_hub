@@ -170,7 +170,7 @@ def _check_ssrf(url: str) -> None:
         if _is_blocked_ip(ip):
             if os.environ.get("HUB_REQUEST_ALLOW_PRIVATE") == "1":
                 log.warning(
-                    f"[BUG-S4] hub_request 命中内网 IP {ip} 但环境变量 HUB_REQUEST_ALLOW_PRIVATE=1 放行"
+                    f"hub_request 命中内网 IP {ip} 但环境变量 HUB_REQUEST_ALLOW_PRIVATE=1 放行"
                 )
                 return
             raise ValueError(
@@ -341,7 +341,7 @@ class ScriptManager:
         try:
             _check_ssrf(url)
         except ValueError as e:
-            log.warning(f"[BUG-S4] hub_request SSRF 拦截: {e}")
+            log.warning(f"hub_request SSRF 拦截: {e}")
             return None
 
         async def _do_request() -> Any:

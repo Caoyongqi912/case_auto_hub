@@ -1,4 +1,4 @@
-"""BUG-M9 回归测试: case step content 的 status 字段应走 StepStatusEnum,"""
+"""case step content 的 status 字段应走 StepStatusEnum,"""
 
 from enum import Enum
 from pathlib import Path
@@ -31,7 +31,7 @@ STEP_CONTENT_FILES = [
 
 @pytest.mark.unit
 def test_bug_m9_step_status_enum_exists(bug_m9_marker):
-    """[BUG-M9] enums.InterfaceEnum.StepStatusEnum 应是 enum.Enum 子类。"""
+    """enums.InterfaceEnum.StepStatusEnum 应是 enum.Enum 子类。"""
     assert issubclass(StepStatusEnum, Enum), (
         f"[{BUG_M9}] StepStatusEnum 必须继承 enum.Enum 才能被 SQLAlchemy Enum(...) 接受。"
     )
@@ -57,7 +57,7 @@ def test_bug_m9_no_status_string_literal_in_step_content(bug_m9_marker):
 
 @pytest.mark.unit
 def test_bug_m9_step_status_enum_imported_in_step_content(bug_m9_marker):
-    """[BUG-M9] 8 个 step_content 文件应 import StepStatusEnum。"""
+    """8 个 step_content 文件应 import StepStatusEnum。"""
     for rel in STEP_CONTENT_FILES:
         src = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert "StepStatusEnum" in src, (
@@ -70,7 +70,7 @@ def test_bug_m9_step_status_enum_imported_in_step_content(bug_m9_marker):
 
 @pytest.mark.unit
 def test_bug_m9_status_field_is_enum(bug_m9_marker):
-    """[BUG-M9] InterfaceCaseContentResult.status 字段应是 Enum 类型, 不是 String。"""
+    """InterfaceCaseContentResult.status 字段应是 Enum 类型, 不是 String。"""
     from sqlalchemy import Enum as SAEnum
     col = InterfaceCaseContentResult.__table__.columns["status"]
     assert isinstance(col.type, SAEnum), (
@@ -92,7 +92,7 @@ def test_bug_m9_status_field_is_enum(bug_m9_marker):
 
 @pytest.mark.unit
 def test_bug_m9_status_default_is_pending_or_enum_member(bug_m9_marker):
-    """[BUG-M9] status 字段 default 应是 StepStatusEnum 成员 (兼容 PENDING 历史值)。"""
+    """status 字段 default 应是 StepStatusEnum 成员 (兼容 PENDING 历史值)。"""
     col = InterfaceCaseContentResult.__table__.columns["status"]
     default = col.default
     if default is not None:
@@ -105,7 +105,7 @@ def test_bug_m9_status_default_is_pending_or_enum_member(bug_m9_marker):
 
 @pytest.mark.unit
 def test_bug_m9_status_only_accepts_enum_members(bug_m9_marker):
-    """[BUG-M9] status 字段只接受 StepStatusEnum 已声明的成员, 写错字符串会报错。"""
+    """status 字段只接受 StepStatusEnum 已声明的成员, 写错字符串会报错。"""
     from sqlalchemy import Enum as SAEnum
     col = InterfaceCaseContentResult.__table__.columns["status"]
     # SAEnum 接受合法的 enum member name/value

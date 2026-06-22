@@ -1,4 +1,4 @@
-"""BUG-N2 回归测试: page_case_results / query_case_result 是 dead code, 删了不破坏。"""
+"""page_case_results / query_case_result 是 dead code, 删了不破坏。"""
 
 import re
 from pathlib import Path
@@ -23,14 +23,14 @@ def bug_n2_marker():
 
 @pytest.mark.unit
 def test_bug_n2_page_case_results_removed_from_mapper(bug_n2_marker):
-    """[BUG-N2] InterfaceCaseResultMapper.page_case_results 已删。"""
+    """InterfaceCaseResultMapper.page_case_results 已删。"""
     assert not hasattr(InterfaceCaseResultMapper, "page_case_results"), (
         f"[{BUG_N2}] page_case_results 还在, 应删除 (dead code)。"
     )
 
 @pytest.mark.unit
 def test_bug_n2_query_case_result_removed_from_mapper(bug_n2_marker):
-    """[BUG-N2] InterfaceCaseResultMapper.query_case_result 已删。"""
+    """InterfaceCaseResultMapper.query_case_result 已删。"""
     assert not hasattr(InterfaceCaseResultMapper, "query_case_result"), (
         f"[{BUG_N2}] query_case_result 还在, 应删除 (dead code)。"
     )
@@ -77,8 +77,8 @@ def test_bug_n2_no_caller_in_croe_app(bug_n2_marker):
 
 @pytest.mark.unit
 def test_bug_n2_d9_comment_still_recommends_get_by_id(bug_n2_marker):
-    """[BUG-N2] 删方法后, 注释仍指引"请用 get_by_id 替代", 防止新代码误加。"""
+    """删方法后, 注释仍指引"请用 get_by_id 替代", 防止新代码误加。"""
     src = _src("app/mapper/interfaceApi/interfaceResultMapper.py")
     assert "list_by_filter" in src or "get_by_id" in src, (
-        "[BUG-N2] 注释里应指引替代方案 (get_by_id / list_by_filter)。"
+        "注释里应指引替代方案 (get_by_id / list_by_filter)。"
     )
