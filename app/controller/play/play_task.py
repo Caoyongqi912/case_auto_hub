@@ -102,15 +102,19 @@ async def handleExecute(taskInfo: GetPlayTaskByIDSchema, user: User = Depends(Au
     from common.worker_pool import ui_pool, register_play_task_handle
     task = await PlayTaskMapper.get_by_id(ident=taskInfo.taskId)
 
-    await ui_pool.submit_to_redis(func=register_play_task_handle,
-                                 job_id=task.uid,
-                                 job_name=task.title,
-                                 job_kwargs={
-                                     "task_id": task.id,
-                                     "user": user,
-                                 }
-                                 )
-    return Response.success()
+    try:
+        await ui_pool.submit_to_redis(func=register_play_task_handle,
+                                     job_id=task.uid,
+                                     job_name=task.title,
+                                     job_kwargs={
+                                         "task_id": task.id,
+                                         "user": user,
+                                     }
+                                     )
+        return Response.success()
+    except RuntimeError as e:
+        log.exception(f"[handleExecute] 提交任务到 worker pool 失败: {e}")
+        return Response.error(msg=f"任务提交失败: {e}")
 
 
 @router.post("/executeJenkins", description="jenkins执行任务")
@@ -121,14 +125,18 @@ async def runTaskByJenkins(
     from common.worker_pool import ui_pool, register_play_task_robot
     task = await PlayTaskMapper.get_by_id(ident=data.taskId)
 
-    await ui_pool.submit_to_redis(func=register_play_task_robot,
-                                 job_id=task.uid,
-                                 job_name=task.title,
-                                 job_kwargs={
-                                     "task_id": task.id,
-                                 }
-                                 )
-    return Response.success()
+    try:
+        await ui_pool.submit_to_redis(func=register_play_task_robot,
+                                     job_id=task.uid,
+                                     job_name=task.title,
+                                     job_kwargs={
+                                         "task_id": task.id,
+                                     }
+                                     )
+        return Response.success()
+    except RuntimeError as e:
+        log.exception(f"[runTaskByJenkins] 提交任务到 worker pool 失败: {e}")
+        return Response.error(msg=f"任务提交失败: {e}")
 
 
 @router.post("/baseReport/page", description="任务报告分页")

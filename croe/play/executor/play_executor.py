@@ -63,6 +63,15 @@ class PlayExecutor:
     @classmethod
     async def invoke(cls, executor, context: StepContext, locator: Optional[Locator]) -> StepExecutionResult:
         method_name = context.step.method
+        if getattr(executor, "requires_locator", True) and locator is None:
+            error_msg = f"Method '{method_name}' requires a locator, but none was provided"
+            log.error(f"[PlayExecutor] {error_msg}")
+            await context.starter.send(f"❌ {error_msg}")
+            return StepExecutionResult(
+                success=False,
+                message=error_msg,
+                error_type="element_not_found",
+            )
         try:
             return await executor.execute(context=context, locator=locator)
         except Exception as e:

@@ -14,19 +14,11 @@ from croe.play.context import StepContentContext, StepContext
 from croe.play.executor.step_content_strategy._base import StepBaseStrategy
 from croe.a_manager import ConditionManager
 from croe.play.executor.play_method.result_types import StepExecutionResult
+from enums.CaseEnum import operatorMap
 
 from utils import GenerateTools, log
 
-OperatorOption = {
-  0: '等于',
-  1: '不等于',
-  2: '大于',
-  3: '小于',
-  4: '大于等于',
-  5: '小于等于',
-  6: '包含',
-  7: '不包含',
-};
+
 class PlayConditionContentStrategy(StepBaseStrategy):
     """
     UI条件判断步骤执行策略
@@ -57,7 +49,7 @@ class PlayConditionContentStrategy(StepBaseStrategy):
 
         condition_container_result = StepExecutionResult(
             success=True,
-            message=f"条件判断: {condition.condition_key} {OperatorOption[condition_data.get('operator')]} {condition.condition_value} -> {'通过' if condition_passed else '未通过'}",
+            message=f"条件判断: {condition.condition_key} {operatorMap[condition_data.get('operator')]} {condition.condition_value} -> {'通过' if condition_passed else '未通过'}",
             # assert_data=condition_data
         )
 

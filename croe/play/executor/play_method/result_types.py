@@ -65,7 +65,7 @@ def create_success_result(message: Optional[str] = None, assert_data: Optional[A
         StepExecutionResult: 成功的执行结果
     """
     if assert_data:
-        assert_data = [asdict(assert_data)] or []
+        assert_data = [asdict(assert_data)]
     return StepExecutionResult(
         success=True,
         message=message,
@@ -83,14 +83,14 @@ def create_error_result(
 ) -> StepExecutionResult:
     """
     创建错误执行结果
-    
+
     Args:
         error_type: 错误类型
         message: 错误消息
         selector: 选择器（可选）
         assert_data:断言信息
         **extra: 其他额外信息
-        
+
     Returns:
         StepExecutionResult: 失败的执行结果
     """
@@ -100,7 +100,7 @@ def create_error_result(
     if extra:
         data.update(extra)
     if assert_data:
-        assert_data = [asdict(assert_data)] or []
+        assert_data = [asdict(assert_data)]
     return StepExecutionResult(
         success=False,
         message=message,

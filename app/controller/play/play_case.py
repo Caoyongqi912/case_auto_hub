@@ -530,6 +530,21 @@ async def query_variable(caseId: int, _: User = Depends(Authentication())):
     return Response.success(data)
 
 
+def _handle_background_task(task):
+    """后台执行 Task 完成回调：消费异常，避免未处理异常淹没。"""
+    try:
+        task.result()
+    except Exception as e:
+        log.exception(f"后台执行用例失败: {e}")
+
+
+def _run_play_case_in_background(starter: UIStarter, info: ExecutePlayCase):
+    """提取公共后台执行逻辑。"""
+    task = create_task(PlayRunner(starter).run_case(**info.model_dump()))
+    task.add_done_callback(_handle_background_task)
+    return task
+
+
 @router.post("/execute_back", description='后台执行')
 async def execute_back(info: ExecutePlayCase, sr: User = Depends(Authentication())):
     """
@@ -543,7 +558,7 @@ async def execute_back(info: ExecutePlayCase, sr: User = Depends(Authentication(
         执行成功响应
     """
     starter = UIStarter(sr)
-    create_task(PlayRunner(starter).run_case(**info.model_dump()))
+    _run_play_case_in_background(starter, info)
     return Response.success()
 
 
@@ -560,5 +575,5 @@ async def execute_io(info: ExecutePlayCase, sr: User = Depends(Authentication())
         执行成功响应
     """
     starter = UIStarter(sr)
-    create_task(PlayRunner(starter).run_case(**info.model_dump()))
+    _run_play_case_in_background(starter, info)
     return Response.success()
