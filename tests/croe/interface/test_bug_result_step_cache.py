@@ -25,13 +25,13 @@ def _writer_src() -> str:
 
 
 def _extract_func(src: str, name: str, indent: str = "") -> str:
-        """从源码里抽函数/方法体, 按缩进找边界。"""
+    """从源码里抽函数/方法体, 按缩进找边界。"""
     start = src.find(f"{indent}async def {name}")
     if start < 0:
         start = src.find(f"{indent}def {name}")
     assert start >= 0, f"{name} not found"
     end = len(src)
- # 找下一个同层级的 def/class/decorator
+    # 找下一个同层级的 def/class/decorator
     boundary_re = re.compile(rf"\n({indent}async def |{indent}def |class |@)")
     for m in boundary_re.finditer(src[start+1:]):
         end = start + 1 + m.start()
@@ -39,7 +39,7 @@ def _extract_func(src: str, name: str, indent: str = "") -> str:
     return src[start:end]
 
 def _mysql_reachable() -> bool:
-        """本地 MySQL 可达 = True. 用 2s 超时, 跑默认单测不卡."""
+    """本地 MySQL 可达 = True. 用 2s 超时, 跑默认单测不卡."""
     try:
         import pymysql
         from config import LocalConfig
@@ -183,10 +183,10 @@ class TestBugResultStepCacheIndex:
         from sqlalchemy import text
         from app.model import async_session
         async with async_session() as s:
- result = await s.execute(text("""
- SHOW INDEX FROM interface_case_content_result
- WHERE Column_name = 'content_step'
- """))
+            result = await s.execute(text("""
+                SHOW INDEX FROM interface_case_content_result
+                WHERE Column_name = 'content_step'
+            """))
             rows = result.fetchall()
             found = False
             for r in rows:
@@ -220,10 +220,10 @@ class TestBugResultStepCacheIndex:
         )
         try:
             with conn.cursor() as cur:
- cur.execute("""
- EXPLAIN SELECT * FROM interface_case_content_result
- WHERE case_result_id = 68 ORDER BY content_step
- """)
+                cur.execute("""
+                    EXPLAIN SELECT * FROM interface_case_content_result
+                    WHERE case_result_id = 68 ORDER BY content_step
+                """)
                 row = cur.fetchone()
         finally:
             conn.close()

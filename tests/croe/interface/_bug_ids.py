@@ -391,3 +391,78 @@ BUG_P1_10 = "P1-10"
 # 回归测试: tests/croe/interface/test_bug_hdr_ascii_non_ascii_header_value.py
 #   锁住: 非 ASCII 值自动 percent-encode, ASCII 值不变, log 警告。
 BUG_HDR_ASCII = "BUG-HDR-ASCII"
+
+# ---------------------------------------------------------------------------
+# 2026-06-22 Round 2 - BUG-GROUP-DETACHED
+# 触发: 端点 GET /interfaceCase/content/query_contents?case_id=7
+#   报 "Parent instance <GroupStepContent> is not bound to a Session; lazy load
+#   operation of attribute 'interface_group' cannot proceed"
+# 根因: InterfaceCaseContentResult 转 dict 走 BaseModel.to_dict, 默认触发
+#   lazy='select' 的 relationship 加载, 在 session 关闭后访问 → DetachedInstanceError.
+# 修法: mapper 端加 query_content_dicts 用 selectinload 预取, 转 dict 在 session
+#   内完成, controller 调新方法而不是直接 to_dict.
+# 回归测试: tests/croe/interface/test_bug_group_detached_fix.py
+# ---------------------------------------------------------------------------
+
+BUG_GROUP_DETACHED = "BUG-GROUP-DETACHED"
+
+# ---------------------------------------------------------------------------
+# 2026-06-22 Round 2 - BUG-RESULT-ENUM-SERIALIZE
+# 触发: 用户跑 queryStepResult 报
+#   TypeError: Object of type StepStatusEnum is not JSON serializable
+# 根因: app/response/_response.py jsonable_encoder 不认 enum.Enum 类型.
+#   BUG-M9 把 status 改 Enum(StepStatusEnum, native_enum=False), 写库后
+#   to_dict 拿到 enum 对象, 序列化时漏这条路径.
+# 修法: jsonable_encoder 加 isinstance(obj, enum.Enum) 通用检查,
+#   显式 return obj.value, 跟 FastAPI 自带 jsonable_encoder 一致.
+# 回归测试: tests/croe/interface/test_bug_result_enum_serialize_fix.py
+# ---------------------------------------------------------------------------
+
+BUG_RESULT_ENUM_SERIALIZE = "BUG-RESULT-ENUM-SERIALIZE"
+
+# ---------------------------------------------------------------------------
+# 2026-06-22 Round 3 - BUG-RESULT-STEP-CACHE
+# 触发: 端点 GET /interfaceResult/queryStepResult?case_result_id=68
+#   跨机房 DB 场景 (10.1.5.49) 响应 4s 慢
+# 根因:
+#   1. 远端 DB 网络往返 (主因)
+#   2. SQL Using filesort - 缺 (case_result_id, content_step) 联合索引
+#   3. 前端高频轮询, 无缓存
+# 修法:
+#   1. 加联合索引 (case_result_id, content_step) - 消 filesort
+#   2. controller 加 Redis 5s TTL 缓存 - 重复点击 O(1) 响应
+#   3. write_step_result 写新 step 时 DEL cache (5s TTL 兜底)
+# 回归测试: tests/croe/interface/test_bug_result_step_cache.py
+# ---------------------------------------------------------------------------
+
+BUG_RESULT_STEP_CACHE = "BUG-RESULT-STEP-CACHE"
+
+# ---------------------------------------------------------------------------
+# 2026-06-22 Round 4 - BUG-COPY-CONTENT
+# 触发: 端点 POST /interfaceCase/content/copy_step
+#   复制 WaitStepContent (STEP_API_WAIT) 时 500:
+#   AttributeError: 'WaitStepContent' object has no attribute 'target_id'
+# 根因 (两层):
+#   1. copy_content 假定所有 step content 都有 target_id 字段, 默认走
+#      `target_id=content.target_id` + `new_content.target_id = new_target_id`.
+#      但 WaitStepContent / ScriptStepContent / AssertStepContent 是
+#      自包含 (数据全在子表 wait_time / script_text / assert_list), 没有
+#      target_id 字段, 读取和赋值都 AttributeError.
+#   2. 顺带 username=user.username 错. BaseModel 列定义是 creatorName
+#      不是 username, 即便 target_id 类型也会 TypeError, 用户没碰上只是
+#      因为更早炸在 target_id.
+# 修法:
+#   1. 拆 self-contained / target_id 两条路. self-contained 用 introspection
+#      复制子表独有字段, 未来加新 self-contained 类型只改 SELF_CONTAINED
+#      集合即可 (或保持自动).
+#   2. username → creatorName, 跟 BaseModel 列对齐.
+# 为什么方案 B (case-match 把每种类型都展开) 不行:
+#   - 8 种类型都展开 ≈ 80 行, 加新类型易漏. introspection 是 O(子表列数),
+#     永远跟 schema 同步, 不会漏.
+# 验证:
+#   - WaitStepContent / ScriptStepContent / AssertStepContent 都能 copy_step
+#   - 5 种 target_id 类型 (API / GROUP / CONDITION / DB / LOOP) 行为不变
+# 回归测试: tests/croe/interface/test_bug_copy_content.py
+# ---------------------------------------------------------------------------
+
+BUG_COPY_CONTENT = "BUG-COPY-CONTENT"

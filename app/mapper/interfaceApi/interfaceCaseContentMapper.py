@@ -143,15 +143,46 @@ class InterfaceCaseContentMapper(Mapper):
             log.exception(f"不支持的 content_type: {content.content_type}")
             return False
 
-        # 使用 username 而非 creatorName，与 BaseModel 列定义一致
+        ct = CaseStepContentType(content.content_type)
+
+        # BUG-COPY-CONTENT 修复: 拆 self-contained / target_id 两条路.
+        # 旧版默认 target_id=content.target_id + new_content.target_id = new_target_id,
+        # 但 WaitStepContent / ScriptStepContent / AssertStepContent 数据全在子表
+        # (wait_time / script_text / assert_list), 没有 target_id 字段 → AttributeError.
+        # 顺带修 username=user.username → creatorName=user.username (BaseModel 列名).
+        SELF_CONTAINED_TYPES = frozenset({
+            CaseStepContentType.STEP_API_SCRIPT,
+            CaseStepContentType.STEP_API_WAIT,
+            CaseStepContentType.STEP_API_ASSERT,
+        })
+
+        if ct in SELF_CONTAINED_TYPES:
+            # 子表独有列 (排除基类 + 主键 + 审计字段, creator/creatorName 走 kwargs)
+            _AUDIT_COLS = {
+                "id", "uid", "create_time", "update_time",
+                "creator", "creatorName", "updater", "updaterName",
+            }
+            child_fields = {
+                col.name: getattr(content, col.name)
+                for col in cls_model.__table__.columns
+                if col.name not in _AUDIT_COLS
+            }
+            new_content = cls_model(
+                **child_fields,
+                creator=user.id,
+                creatorName=user.username,
+            )
+            return await cls.add_flush_expunge(session=session, model=new_content)
+
+        # target_id 类型 (5 种: API / GROUP / CONDITION / DB / LOOP)
         new_content = cls_model(
             target_id=content.target_id,
             creator=user.id,
-            username=user.username,
+            creatorName=user.username,
         )
 
         new_target_id = content.target_id
-        match content.content_type:
+        match ct:
             case CaseStepContentType.STEP_API:
                 interface = await InterfaceMapper.get_by_id(ident=content.target_id, session=session)
                 if not interface:

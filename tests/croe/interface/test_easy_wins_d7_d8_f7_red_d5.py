@@ -28,29 +28,32 @@ def test_bug_d7_copy_interface_no_dead_group_check():
     )
 
 # ===========================================================
-# D8: InterfaceCaseContentMapper.copy_content 用 username= 字段
+# D8 (已废) + BUG-COPY-CONTENT: copy_content 必须用 creatorName=, 不能再 username=
 # ===========================================================
+#
+# 历史: 旧版 D8 修时把 `username=user.username` 当 "对" 的写进 copy_content.
+#       但 BaseModel 列定义是 creatorName, 不是 username, 实际是对所有类型
+#       都会 TypeError. Round 4 BUG-COPY-CONTENT 顺带修这个字段名错.
+# 锁住: 改完后的正确行为 (creatorName=user.username, 不再 username=).
 
 @pytest.mark.unit
-def test_bug_d8_copy_content_uses_username_kwarg():
-    """copy_content 应该 username=user.username, 不是 creatorName=。"""
+def test_bug_d8_copy_content_uses_creator_name_kwarg():
+    """[BUG-COPY-CONTENT] copy_content 必须 creatorName=user.username, 不再 username=."""
     from app.mapper.interfaceApi.interfaceCaseContentMapper import (
         InterfaceCaseContentMapper,
     )
     src = inspect.getsource(InterfaceCaseContentMapper.copy_content)
-    # 只看实际 kwarg (不命中注释): `username=` 出现在 kwarg 调用里
-    assert "username=user.username" in src, (
-        f"copy_content 应 username=user.username, 实际没找到"
-    )
-    # 实际调用里不应有 creatorName= 这种 kwarg (注释里可以有)
-    import re
+    # 排除注释行后再检查
     code_lines = [
         line for line in src.splitlines()
         if not line.strip().startswith("#")
     ]
     code_text = "\n".join(code_lines)
-    assert "creatorName=" not in code_text, (
-        f"实际代码里仍出现 creatorName= kwarg, 应删"
+    assert "creatorName=user.username" in code_text, (
+        f"[BUG-COPY-CONTENT] copy_content 应 creatorName=user.username, 实际没找到"
+    )
+    assert "username=user.username" not in code_text, (
+        f"[BUG-COPY-CONTENT] copy_content 不能 username=user.username (字段名错)"
     )
 
 # ===========================================================
