@@ -32,7 +32,7 @@ class AssertIsCheckedMethod(BaseMethods):
             assert_expect=True,
         )
         try:
-            expect(locator).to_be_checked()
+            await expect(locator).to_be_checked()
             assert_result.assert_actual = True
             assert_result.assert_result = True
             return create_success_result(
@@ -66,7 +66,7 @@ class AssertIsDisabledMethod(BaseMethods):
             assert_expect=True,
         )
         try:
-            expect(locator).to_be_disabled()
+            await expect(locator).to_be_disabled()
             assert_result.assert_actual = True
             assert_result.assert_result = True
             return create_success_result(
@@ -100,7 +100,7 @@ class AssertIsEditableMethod(BaseMethods):
             assert_expect=True,
         )
         try:
-            expect(locator).to_be_editable()
+            await expect(locator).to_be_editable()
             assert_result.assert_actual = True
             assert_result.assert_result = True
             return create_success_result(
@@ -134,7 +134,7 @@ class AssertIsEmptyMethod(BaseMethods):
             assert_expect=True,
         )
         try:
-            expect(locator).to_be_empty()
+            await expect(locator).to_be_empty()
             assert_result.assert_actual = True
             assert_result.assert_result = True
             return create_success_result(
@@ -168,7 +168,7 @@ class AssertIsEnabledMethod(BaseMethods):
             assert_expect=True,
         )
         try:
-            expect(locator).to_be_enabled()
+            await expect(locator).to_be_enabled()
             assert_result.assert_actual = True
             assert_result.assert_result = True
             return create_success_result(
@@ -202,7 +202,7 @@ class AssertIsFocusedMethod(BaseMethods):
             assert_expect=True,
         )
         try:
-            expect(locator).to_be_focused()
+            await expect(locator).to_be_focused()
             assert_result.assert_actual = True
             assert_result.assert_result = True
             return create_success_result(
@@ -236,7 +236,7 @@ class AssertIsHiddenMethod(BaseMethods):
             assert_expect=True,
         )
         try:
-            expect(locator).to_be_hidden()
+            await expect(locator).to_be_hidden()
             assert_result.assert_actual = True
             assert_result.assert_result = True
             return create_success_result(

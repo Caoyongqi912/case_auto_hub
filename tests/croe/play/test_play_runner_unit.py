@@ -77,8 +77,8 @@ class TestClean:
         starter.clear_logs.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_clean_closes_browser_when_set(self):
-        """_clean 在 self.browser 存在时应调 browser.close_all。"""
+    async def test_clean_does_not_close_browser(self):
+        """_clean 不应关闭全局浏览器单例，只清理页面/变量/日志。"""
         starter = MagicMock()
         starter.clear_logs = AsyncMock()
         r = PlayRunner(starter=starter)
@@ -88,7 +88,9 @@ class TestClean:
         mock_browser.close_all = AsyncMock()
         r.browser = mock_browser
         await r._clean(page_manager=None)
-        mock_browser.close_all.assert_called_once()
+        mock_browser.close_all.assert_not_called()
+        r.variable_manager.clear.assert_called_once()
+        starter.clear_logs.assert_called_once()
 
 # --------------------------------------------------------------------------- #
 # PlayRunner.init_case_variables

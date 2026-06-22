@@ -142,8 +142,6 @@ class PlayRunner:
         if page_manager:
             await page_manager.close()
 
-        if self.browser:
-            await self.browser.close_all()
         await self.variable_manager.clear()
         await self.starter.clear_logs()
 

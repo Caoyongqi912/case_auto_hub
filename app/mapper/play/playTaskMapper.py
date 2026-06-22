@@ -177,7 +177,7 @@ class PlayTaskMapper(Mapper[PlayTask]):
                 data = await session.execute(
                     select(count('*')).where(PlayTaskCasesAssociation.play_task_id == taskId)
                 )
-                task.ui_case_num = data.scalar()
+                task.play_case_num = data.scalar()
         except Exception as e:
             raise
 

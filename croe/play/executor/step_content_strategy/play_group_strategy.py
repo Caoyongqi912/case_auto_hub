@@ -62,6 +62,7 @@ class PlayGroupContentStrategy(StepBaseStrategy):
                 starter=step_context.starter,
                 variable_manager=step_context.variable_manager,
                 play_step_result_writer=step_context.play_step_result_writer,
+                play_case_result_writer=step_context.play_case_result_writer,
             )
             
             # 创建子步骤上下文

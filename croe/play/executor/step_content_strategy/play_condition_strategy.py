@@ -89,6 +89,7 @@ class PlayConditionContentStrategy(StepBaseStrategy):
                     starter=step_context.starter,
                     variable_manager=step_context.variable_manager,
                     play_step_result_writer=step_context.play_step_result_writer,
+                    play_case_result_writer=step_context.play_case_result_writer,
                 )
                 step = await PlayStepV2Mapper.get_by_id(ident=child_step_content.target_id)
 
@@ -109,7 +110,7 @@ class PlayConditionContentStrategy(StepBaseStrategy):
                     step_context=condition_step_context
                 )
 
-                if not result:
+                if not result.success:
                     all_success = False
                     await step_context.starter.send(f"❌ 子步骤执行失败,停止执行")
                     break

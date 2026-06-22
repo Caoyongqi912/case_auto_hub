@@ -10,7 +10,6 @@ from typing import List
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.mapper import Mapper
-from app.model import async_session
 from app.model.base import User
 from app.model.playUI import   PlayStepModel
 from enums.CaseEnum import PlayStepContentType
@@ -25,24 +24,16 @@ class PlayStepV2Mapper(Mapper[PlayStepModel]):
     async def copy_step(cls, step_id: int, user: User, copy_step_name: bool = False, is_common: bool = False,
                         session: AsyncSession = None) -> PlayStepModel:
         """
-                步骤复制
+        步骤复制
 
-        :param step_id:目标步骤ID
-        :param user:User 创建人
-        :param copy_step_name: 是否完全复制步骤名 否则 + （副本）
-        :param is_common:是否复制成公共
-        :param session:上下文
-        :return PlayStep
+        :param step_id: 目标步骤ID
+        :param user: User 创建人
+        :param copy_step_name: 是否完全复制步骤名，否则 +（副本）
+        :param is_common: 是否复制成公共
+        :param session: 可选的外部会话（传入时由调用方控制事务）
+        :return: PlayStepModel
         """
-
-        # 使用传入的session或创建新的
-        should_close = False
-        if session is None:
-            session = async_session()
-            should_close = True
-
-        try:
-            # 查询步骤
+        async with cls.transaction(session) as session:
             step = await cls.get_by_id(ident=step_id, session=session)
 
             new_step = step.copy_map()
@@ -53,20 +44,7 @@ class PlayStepV2Mapper(Mapper[PlayStepModel]):
                 'creator': user.id,
                 'creatorName': user.username
             })
-            result = await cls.save(**new_step, session=session)
-            # 如果是临时session，需要提交
-            if should_close:
-                await session.commit()
-
-            return result
-        except Exception as e:
-            # 发生异常时回滚
-            if should_close and session:
-                await session.rollback()
-            raise
-        finally:
-            if should_close and session:
-                await session.close()
+            return await cls.save(**new_step, session=session)
 
     @classmethod
     async def update_step(cls, id: int, **kwargs):

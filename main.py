@@ -24,6 +24,7 @@ from common import rc, RedisClient
 from config import Config
 from script.init_method import init_interface_global_func, init_interface_script_doc
 from script.init_case_config import init_case_config
+from croe.play.browser import BrowserManagerFactory
 
 logging.getLogger('apscheduler').setLevel(logging.WARNING)
 logging.getLogger('apscheduler.scheduler').setLevel(logging.WARNING)
@@ -99,6 +100,7 @@ async def lifespanApp(app: FastAPI):
 
     await aps.shutdown() if aps else None
     await pool.stop() if pool else None
+    await BrowserManagerFactory.reset()
     await rc.close_pool()
 
 

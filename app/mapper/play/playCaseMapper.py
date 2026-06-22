@@ -178,6 +178,7 @@ class PlayCaseMapper(Mapper[PlayCase]):
                 await CommonHelper.create_case_content_association(
                     session, case_id, group_content_list, last_index + 1
                 )
+                play_case.step_num += len(group_content_list)
         except Exception as e:
             log.exception(f"关联公共步骤失败: {e}")
             raise
@@ -464,11 +465,9 @@ class PlayCaseMapper(Mapper[PlayCase]):
             content = await PlayStepContentMapper.get_by_id(ident=content_id, session=session)
             # 查询步骤
             play_case = await cls.get_by_id(ident=case_id, session=session)
-            if play_case.step_num > 0:  # 防止负数
-                play_case.step_num -= 1
 
             # 删除关联表
-            await session.execute(
+            result = await session.execute(
                 delete(PlayCaseStepContentAssociation).where(
                     and_(
                         PlayCaseStepContentAssociation.play_step_content_id == content_id,
@@ -476,6 +475,10 @@ class PlayCaseMapper(Mapper[PlayCase]):
                     )
                 )
             )
+            # 确认关联确实存在再扣减步数
+            if result.rowcount > 0 and play_case.step_num > 0:
+                play_case.step_num -= 1
+
             if not content.is_common:
                 await PlayStepContentMapper.delete_content(content=content, session=session)
 
