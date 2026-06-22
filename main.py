@@ -100,7 +100,10 @@ async def lifespanApp(app: FastAPI):
 
     await aps.shutdown() if aps else None
     await pool.stop() if pool else None
-    await BrowserManagerFactory.reset()
+    try:
+        await BrowserManagerFactory.reset()
+    except Exception as e:
+        log.warning(f"浏览器工厂清理失败: {e}")
     await rc.close_pool()
 
 

@@ -47,9 +47,11 @@ class PlayConditionContentStrategy(StepBaseStrategy):
             step_context.starter
         )
 
+        operator_value = condition_data.get('operator')
+        operator_label = operatorMap.get(operator_value, f"未知操作符({operator_value})")
         condition_container_result = StepExecutionResult(
             success=True,
-            message=f"条件判断: {condition.condition_key} {operatorMap[condition_data.get('operator')]} {condition.condition_value} -> {'通过' if condition_passed else '未通过'}",
+            message=f"条件判断: {condition.condition_key} {operator_label} {condition.condition_value} -> {'通过' if condition_passed else '未通过'}",
             # assert_data=condition_data
         )
 
@@ -102,7 +104,7 @@ class PlayConditionContentStrategy(StepBaseStrategy):
                     step_context=condition_step_context
                 )
 
-                if not result.success:
+                if not result or not result.success:
                     all_success = False
                     await step_context.starter.send(f"❌ 子步骤执行失败,停止执行")
                     break

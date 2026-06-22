@@ -283,8 +283,9 @@ class PlayCaseMapper(Mapper[PlayCase]):
                     )
                 else:
                     log.warning(f"没有创建任何步骤关联，用例ID: {case_id}")
-                    # 回滚步骤数量更新
-                    play_case.step_num -= len(play_step_id_list)
+                    # 回滚步骤数量更新，避免负数
+                    rollback_num = min(len(play_step_id_list), play_case.step_num)
+                    play_case.step_num -= rollback_num
         except Exception as e:
             log.exception(f"关联步骤出现错误: {e}")
             raise
