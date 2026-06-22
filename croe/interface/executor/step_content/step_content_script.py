@@ -92,13 +92,7 @@ class APIScriptContentStrategy(StepBaseStrategy):
             interface_task_result_id=task_result_id,
         )
 
-        case_result = step_context.execution_context.case_result
-        if success:
-            case_result.success_num += 1
-        else:
-            case_result.fail_num += 1
-
-        await step_context.result_writer.update_case_progress(case_result)
+        await self._record_step_outcome(step_context, success)
 
         return success
 

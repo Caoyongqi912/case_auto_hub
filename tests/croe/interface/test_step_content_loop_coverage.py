@@ -195,7 +195,7 @@ async def test_loop_step_loop_times_with_failure(strategy):
     fake_api_step.interface_name = "i1"
 
     call_count = [0]
-    async def fake_execute(interface, env):
+    async def fake_execute(interface, env, temp_var=None):
         call_count[0] += 1
         return _build_step_result(success=(call_count[0] == 1))  # 第 1 次成功, 第 2 次失败
 

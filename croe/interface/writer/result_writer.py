@@ -457,8 +457,11 @@ class ResultWriter:
                 )
                 # 检查 retry 次数, 防止错误数据长期滞留
                 existing_retry_count = max(
-                    (item.get("_retry_count", 0)
-                     for item in self._retry_queue),
+                    (
+                        getattr(item, "_retry_count", 0) if not isinstance(item, dict) else item.get("_retry_count", 0)
+                        for queue_item in self._retry_queue
+                        for item in (queue_item.get("api", []) + queue_item.get("content", []))
+                    ),
                     default=0,
                 )
                 if existing_retry_count >= self.MAX_RETRY_COUNT:

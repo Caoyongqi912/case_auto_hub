@@ -13,7 +13,7 @@ from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 from croe.a_manager import ConditionManager
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
-from enums import InterfaceAPIResultEnum, StepStatusEnum
+from enums import StepStatusEnum
 from enums.CaseEnum import CaseStepContentType
 
 
@@ -89,8 +89,7 @@ class APIConditionContentStrategy(StepBaseStrategy):
                     result=True,
                     status=StepStatusEnum.SUCCESS,
                 )
-                case_result.success_num += 1
-                await step_context.result_writer.update_case_progress(case_result)
+                await self._record_step_outcome(step_context, True)
                 return True
 
             total_apis = len(condition_api_list)
@@ -115,15 +114,13 @@ class APIConditionContentStrategy(StepBaseStrategy):
                     await step_context.starter.send(
                         f"✍️✍️  步骤 {index}/{total_apis} 执行失败，停止后续执行"
                     )
-                    case_result.result = InterfaceAPIResultEnum.ERROR
-                    case_result.fail_num += 1
 
                     await step_context.result_writer.update_step_result(
                         result_id=condition_content_result.id,
                         result=False,
                         status=StepStatusEnum.FAIL,
                     )
-                    await step_context.result_writer.update_case_progress(case_result)
+                    await self._record_step_outcome(step_context, False)
                     return False
 
             await step_context.result_writer.update_step_result(
@@ -131,19 +128,16 @@ class APIConditionContentStrategy(StepBaseStrategy):
                 result=True,
                 status=StepStatusEnum.SUCCESS,
             )
-            case_result.success_num += 1
-            await step_context.result_writer.update_case_progress(case_result)
+            await self._record_step_outcome(step_context, True)
             return True
         else:
             await step_context.starter.send(
                 "✍️✍️  执行条件判断未通过 ❌❌  跳过子步骤"
             )
-            case_result.success_num += 1
-
             await step_context.result_writer.update_step_result(
                 result_id=condition_content_result.id,
                 result=True,
                 status=StepStatusEnum.SUCCESS,
             )
-            await step_context.result_writer.update_case_progress(case_result)
+            await self._record_step_outcome(step_context, True)
             return True

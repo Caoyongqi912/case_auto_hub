@@ -22,9 +22,6 @@ from app.model.base import User
 from app.model.interfaceAPIModel.associationModel import InterfaceCaseStepContentAssociation
 from app.model.interfaceAPIModel.contents import (
     InterfaceCaseContents,
-    APIStepContent,
-    ConditionStepContent,
-    LoopStepContent,
     GroupStepContent,
     DBStepContent,
 )

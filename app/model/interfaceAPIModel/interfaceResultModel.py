@@ -6,7 +6,7 @@
 # @Desc: 接口执行结果模型
 
 from datetime import datetime, date
-from typing import Optional, Set
+from typing import Optional, Set, TYPE_CHECKING
 
 from sqlalchemy import Column, INTEGER, String, ForeignKey, Boolean, DATETIME, JSON, TEXT, Float, DATE, Enum
 from sqlalchemy.orm import relationship
@@ -14,6 +14,9 @@ from sqlalchemy.orm import relationship
 from app.model import BaseModel
 from enums.CaseEnum import CaseStepContentType
 from enums.InterfaceEnum import StepStatusEnum
+
+if TYPE_CHECKING:
+    from croe.interface.executor.context import ExecutionContext
 
 
 def step_content_result_id_column():
@@ -80,6 +83,67 @@ class InterfaceResult(BaseModel):
         nullable=True,
         comment="任务执行关联"
     )
+
+    @classmethod
+    def from_execution_context(
+        cls,
+        ctx: "ExecutionContext",
+        starter_id: Optional[int] = None,
+        starter_name: Optional[str] = None,
+    ) -> "InterfaceResult":
+        """
+        从执行上下文构建接口结果实例。
+
+        注意：仅负责字段映射，不写入数据库；调用方需自行 insert。
+        """
+        import json
+        import httpx
+
+        request_info = ctx.request_info or {}
+        result = cls(
+            interface_id=ctx.interface.id,
+            interface_name=ctx.interface.interface_name,
+            interface_uid=ctx.interface.uid,
+            interface_desc=ctx.interface.interface_desc,
+            starter_id=starter_id,
+            starter_name=starter_name,
+            request_url=ctx.resolved_url,
+            request_method=ctx.interface.interface_method,
+            request_params=request_info.get("params"),
+            request_body_type=ctx.interface.interface_body_type,
+            request_json=json.dumps(request_info.get("json")) if request_info.get("json") else None,
+            request_data=json.dumps(request_info.get("data")) if request_info.get("data") else None,
+            request_headers=request_info.get("headers"),
+            extracts=[v for v in (ctx.extracted_vars or []) if v is not None],
+            asserts=[a for a in (ctx.asserts or []) if a is not None],
+        )
+
+        if ctx.env:
+            result.running_env_id = ctx.env.id
+            result.running_env_name = ctx.env.name
+        else:
+            result.running_env_id = ctx.interface.env_id
+
+        if ctx.error:
+            result.response_status = 500
+            result.response_text = ctx.error
+            result.result = False
+            result.use_time = "0"
+        elif isinstance(ctx.response, httpx.Response):
+            result.response_status = ctx.response.status_code
+            result.response_text = ctx.response.text
+            result.response_headers = {k: v for k, v in ctx.response.headers.items()}
+            result.use_time = str(round(ctx.response.elapsed.total_seconds() * 1000, 2))
+            result.result = ctx.response.status_code == 200
+
+        if ctx.asserts:
+            has_failed = any(a.get("result") is False for a in ctx.asserts)
+            if has_failed:
+                result.result = False
+
+        result.start_time = ctx.start_time
+        return result
+
     def __repr__(self):
         return (f"<InterfaceResult(id={self.id}, name={self.interface_name}, result={self.result})"
                 f"content_result_id = {self.content_result_id}"

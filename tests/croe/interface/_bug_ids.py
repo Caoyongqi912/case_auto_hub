@@ -342,6 +342,37 @@ BUG_P1_2 = "P1-2"
 # 4 个入口清理风格统一。
 BUG_P1_4 = "P1-4"
 
+# P1-5 修复: interfaceCaseMapper.update_interface_case /
+# interfaceMapper.update_interface 中先给 kwargs["id"] = case_id 再传
+# **kwargs 到 update_by_id, 隐式依赖、可读性差。修: 显式传 id=case_id /
+# id=interface_id 到 update_by_id。
+BUG_P1_5 = "P1-5"
+
+# P1-6 修复: try_interface / try_group 之前 finally 只 aclose executor,
+# 漏 variable_manager.clear 与 result_writer.clear_cache, 跨调用会污染变量
+# 和结果缓存。修: finally 里追加 vm.clear + rw.clear_cache。
+BUG_P1_6 = "P1-6"
+
+# P1-7 修复: run_interface_case 主 try/except 范围过大, step 级异常被外层
+# 捕获导致整 case 失败。修: 把 step loop 抽到 _execute_steps, 单步异常只
+# 标记该 step 失败并继续。
+BUG_P1_7 = "P1-7"
+
+# P1-8 修复: step_content_api  immediate 写入时 interface_result.content_result_id
+# 仍为 NULL, 查询端关联不上。修: write_step_result 支持 immediate 参数,
+# step_content_api 传 immediate=True 拿到 content_result.id 后回填
+# interface_result.content_result_id。
+BUG_P1_8 = "P1-8"
+
+# P1-9 修复: ResultWriter._flush_cache 降级路径失败后 cache 直接清空, 可能丢数。
+# 修: 失败数据推入 _retry_queue, 下次 flush 优先消费, 超过 MAX_RETRY_COUNT
+# 才丢弃。
+BUG_P1_9 = "P1-9"
+
+# P1-10 修复: SocketSender.over 无显式返回值, task.py 用 `return await over()`
+# 会拿到 None, 调用方解包 TypeError。修: over 返回 data dict 或 None 并加注解。
+BUG_P1_10 = "P1-10"
+
 # ---------------------------------------------------------------------------
 # 非 ASCII header value 透传给 httpx 报 UnicodeEncodeError
 # ---------------------------------------------------------------------------

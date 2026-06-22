@@ -79,6 +79,7 @@ class InterfaceMapper(Mapper[Interface]):
             Interface: 更新后的接口实例
         """
         # 直接传 id 参数，避免修改 kwargs
+        log.info(f"update_interface id: {interface_id}, kwargs: {kwargs}")
         try:
             async with cls.transaction() as session:
                 old_interface = await cls.get_by_id(ident=interface_id, session=session)

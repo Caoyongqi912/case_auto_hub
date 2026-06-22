@@ -12,7 +12,6 @@ from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
-from enums import InterfaceAPIResultEnum
 from enums.CaseEnum import CaseStepContentType
 from utils import log
 
@@ -86,13 +85,6 @@ class APIStepContentStrategy(StepBaseStrategy):
                     f"content_result_id={content_result.id}): {e}"
                 )
 
-        case_result = step_context.execution_context.case_result
-        if success:
-            case_result.success_num += 1
-        else:
-            case_result.fail_num += 1
-            case_result.result = InterfaceAPIResultEnum.ERROR
-
-        await step_context.result_writer.update_case_progress(case_result)
+        await self._record_step_outcome(step_context, success)
 
         return success

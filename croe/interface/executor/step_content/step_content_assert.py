@@ -72,12 +72,7 @@ class APIAssertsContentStrategy(StepBaseStrategy):
                 interface_task_result_id=task_result_id,
             )
 
-            if assert_success:
-                case_result.success_num += 1
-            else:
-                case_result.fail_num += 1
-
-            await step_context.result_writer.update_case_progress(case_result)
+            await self._record_step_outcome(step_context, assert_success)
 
             return True
 

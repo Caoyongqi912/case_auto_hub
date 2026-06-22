@@ -217,7 +217,7 @@ class UpdateInterfaceSchema(InterfaceSchema):
     """
     interface_id: int = Field(
         ...,
-        validation_alias="id",
+        validation_alias="interface_id",
         description="接口ID"
     )
 

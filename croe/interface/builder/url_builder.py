@@ -188,7 +188,7 @@ class UrlBuilder:
         """
         if interface.env_id == UrlBuilder.CUSTOM_ENV_ID:
             log.info(f"使用自定义环境URL: {interface.interface_url}")
-            # _assert_safe_url(interface.interface_url)
+            _assert_safe_url(interface.interface_url)
             return interface.interface_url
 
         if env is None:
@@ -202,5 +202,5 @@ class UrlBuilder:
 
         url = f"{base_url}/{path}"
         log.info(f"构建请求URL: {url}")
-        # _assert_safe_url(url)
+        _assert_safe_url(url)
         return url

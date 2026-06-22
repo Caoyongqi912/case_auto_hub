@@ -84,7 +84,7 @@ class TaskRunner:
         should_update = (
             current_time - self._last_progress_update >=
             self._progress_update_interval or
-            self.progress >= task_result.totalNumber
+            self.progress >= task_result.total_num
         )
 
         if should_update:
@@ -143,6 +143,8 @@ class TaskRunner:
 
         if params.variables:
             await self._init_task_variables(params.variables)
+
+        await self._shared_vm.load_global_vars()
 
         try:
             # 跨 API step 共享

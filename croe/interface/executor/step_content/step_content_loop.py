@@ -17,7 +17,6 @@ from croe.interface.executor.context import CaseStepContext
 from croe.interface.executor.step_content.base import StepBaseStrategy
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums import (
-    InterfaceAPIResultEnum,
     ExtractTargetVariablesEnum,    StepStatusEnum,
 )
 from enums.CaseEnum import LoopTypeEnum, CaseStepContentType
@@ -107,6 +106,7 @@ class APILoopContentStrategy(StepBaseStrategy):
         total_steps: int,
         prefix: str,
         content_result: Any,
+        temp_var: Optional[Dict] = None,
     ) -> Tuple[bool, int, int]:
         """
         执行单个API步骤并记录结果
@@ -135,7 +135,8 @@ class APILoopContentStrategy(StepBaseStrategy):
 
         interface_result = await self.interface_executor.execute(
             interface=interface,
-            env=step_context.execution_context.env
+            env=step_context.execution_context.env,
+            temp_var=temp_var,
         )
         success = interface_result['result']
 
@@ -277,6 +278,7 @@ class APILoopContentStrategy(StepBaseStrategy):
                     total_steps=total_apis,
                     prefix=f"执行数组循环步骤 [{item_key}:{item}]",
                     content_result=content_result,
+                    temp_var=temp_var,
                 )
 
                 loop_count += 1
@@ -357,10 +359,9 @@ class APILoopContentStrategy(StepBaseStrategy):
             try:
                 MyAsserts.option(
                     assertOpt=loop.operate,
-                    expect=key,
-                    actual=value
+                    expect=value,
+                    actual=key
                 )
-                all_success = True
                 break
             except AssertionError:
                 await step_context.starter.send(
@@ -416,10 +417,4 @@ class APILoopContentStrategy(StepBaseStrategy):
             loop_items=loop_items
         )
 
-        if all_success:
-            case_result.success_num += 1
-        else:
-            case_result.fail_num += 1
-            case_result.result = InterfaceAPIResultEnum.ERROR
-
-        await step_context.result_writer.update_case_progress(case_result)
+        await self._record_step_outcome(step_context, all_success)

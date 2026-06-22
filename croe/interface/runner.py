@@ -77,6 +77,7 @@ class InterfaceRunner:
         """
         interface = await InterfaceMapper.get_by_id(ident=interface_id)
         env = await self._get_running_env(env=env_id)
+        await self.variable_manager.load_global_vars()
         await self.init_global_headers()
         try:
             return await self.interface_executor.execute(
@@ -113,6 +114,7 @@ class InterfaceRunner:
             group_id=group_id
         )
 
+        await self.variable_manager.load_global_vars()
         await self.init_global_headers()
         env = await self._get_running_env(env=env_id)
         try:
@@ -187,6 +189,7 @@ class InterfaceRunner:
             await self.starter.over()
             return False, None
 
+        await self.variable_manager.load_global_vars()
         await self.init_interface_case_vars(interface_case_id)
         await self.init_global_headers()
 
@@ -354,6 +357,7 @@ class InterfaceRunner:
         Returns:
             是否执行成功
         """
+        await self.variable_manager.load_global_vars()
         await self.init_global_headers()
 
         # task 结束后释放 httpx 连接 + 清空 variable + 清空 result_writer 缓存 + clear trace_id

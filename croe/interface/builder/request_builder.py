@@ -7,7 +7,6 @@ HTTP 请求构建器
 负责根据 Interface 对象构建完整的 HTTP 请求信息
 支持各种认证方式、请求体类型和参数处理
 """
-import asyncio
 import json
 import os
 from typing import Dict, Any, Tuple, Optional, List
@@ -175,12 +174,19 @@ class RequestBuilder:
 
         # KV 认证：添加到 query 或 header
         if auth_type == InterfaceAuthType.KV_Auth:
+            if not interface.interface_auth:
+                log.warning(
+                    f"KV 认证信息为空，跳过写入 "
+                    f"(case_id={getattr(interface, 'interface_case_id', '?')})"
+                )
+                return
+
             auth_data = interface.interface_auth.copy()
             target = auth_data.pop("target")
 
             if target == "query":
                 # 添加到查询参数
-                request_data[KEY_PARAMS].update(
+                request_data.setdefault(KEY_PARAMS, {}).update(
                     GenerateTools.list2dict(auth_data)
                 )
             elif target == "header":
@@ -190,7 +196,7 @@ class RequestBuilder:
                 )
             else:
                 log.warning(
-                    f"未知的 KV Auth target: {target!r} "
+                    f"[RB1] 未知的 KV Auth target: {target!r} "
                     f"(case_id={getattr(interface, 'interface_case_id', '?')}), "
                     f"允许值: query / header, kv 字段将不写入请求"
                 )
@@ -415,7 +421,7 @@ class RequestBuilder:
 
     async def _transform_request_data(self, request_data: Dict[str, Any]) -> None:
         """
-        并行转换请求数据中的变量
+        转换请求数据中的变量
 
         Args:
             request_data: 请求数据字典（会被修改）
@@ -430,10 +436,9 @@ class RequestBuilder:
         if not items_to_transform:
             return
 
-        # 并行执行变量替换 (asyncio.gather 跨 3.7+ 兼容, 替代 TaskGroup)
+        # VariableTrans.trans 已同步化，直接顺序转换即可
         keys = list(items_to_transform.keys())
-        coros = [self.variables.trans(value) for value in items_to_transform.values()]
-        results = await asyncio.gather(*coros)
+        results = [await self.variables.trans(value) for value in items_to_transform.values()]
 
         # 更新转换后的值
         for key, transformed_value in zip(keys, results):

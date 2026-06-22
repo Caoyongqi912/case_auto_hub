@@ -31,6 +31,8 @@ class PlayRunner:
             play_case = await PlayCaseMapper.get_by_id(ident=case_id)
             log.info(f"查询到业务流用例  {play_case}")
 
+            await self.variable_manager.load_global_vars()
+
             # 查询初始化变量
             await self.init_case_variables(play_case=play_case)
 
