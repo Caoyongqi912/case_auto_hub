@@ -362,9 +362,9 @@ class ExportCaseService:
         for i, v in enumerate(self.platform_labels, start=1):
             ws.cell(row=i, column=_DV_PLATFORM_COL, value=v)
         # 隐藏 Z / AA / AC 列
-        for col_letter, hidden_col in (("Z", _DV_LEVEL_COL), ("AA", _DV_TYPE_COL), ("AC", _DV_PLATFORM_COL)):
-            ws.column_dimensions[col_letter].hidden = True
-            ws.column_dimensions[col_letter].width = 0
+        # for col_letter, hidden_col in (("Z", _DV_LEVEL_COL), ("AA", _DV_TYPE_COL), ("AC", _DV_PLATFORM_COL)):
+        #     ws.column_dimensions[col_letter].hidden = True
+        #     ws.column_dimensions[col_letter].width = 0
 
         # 2) DataValidation 引用 sheet range (WPS 兼容写法)
         # showDropDown=False 才是显示下拉箭头 (openpyxl 字段语义反直觉)

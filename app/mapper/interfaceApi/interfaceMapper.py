@@ -80,6 +80,8 @@ class InterfaceMapper(Mapper[Interface]):
         """
         # 直接传 id 参数，避免修改 kwargs
         log.info(f"update_interface id: {interface_id}, kwargs: {kwargs}")
+        if kwargs.get("id"):
+            kwargs.pop("id")
         try:
             async with cls.transaction() as session:
                 old_interface = await cls.get_by_id(ident=interface_id, session=session)

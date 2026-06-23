@@ -62,8 +62,8 @@ def _parse_steps_from_m2(action: Optional[str], expected_result: Optional[str]) 
         line = _STEP_PREFIX_RE.sub("", line)
         return line.strip()
 
-    act_lines = [_clean_line(l) for l in action.strip().split("\n")] if action else None
-    exp_lines = [_clean_line(l) for l in expected_result.strip().split("\n")] if expected_result else None
+    act_lines = [_clean_line(l) for l in str(action).strip().split("\n")] if action else None
+    exp_lines = [_clean_line(l) for l in str(expected_result).strip().split("\n")] if expected_result else None
     max_steps = max(len(act_lines) if act_lines else 0, len(exp_lines) if exp_lines else 0)
     return [
         {

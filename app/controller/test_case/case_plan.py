@@ -24,7 +24,8 @@ from app.schema.hub.planSchema import (
     RemovePlanCaseSchema, CopyCaseToCasePlan,
     UpdateCaseToCasePlan,UploadCommitSchema,
     M2PlanImportCommitSchema,
-    ReorderPlanCaseSchema,BulkReorderPlanCaseSchema
+    ReorderPlanCaseSchema,BulkReorderPlanCaseSchema,
+    PlanListStatisticsSchema
 )
 from app.schema.hub.testCaseSchema import AddPlanCaseSchema
 from app.mapper.test_case.planMapper import PlanMapper
@@ -106,6 +107,25 @@ async def page_plans(data: PagePlanSchema, _: User = Depends(Authentication())):
     """
     result = await PlanMapper.page_query_with_stats(**data.model_dump(exclude_none=True, exclude_unset=True))
     return Response.success(result)
+
+
+@router.post("/statistics/list", description="测试计划全量统计")
+async def plan_statistics(data: PlanListStatisticsSchema, _: User = Depends(Authentication())):
+    """
+    测试计划全量统计（不走分页）。
+
+    与 /page 的区别：
+    - /page 一次只返回一页数据；前端如果用 page 接口做"全量统计卡片"，
+      实际只能拿到当前页的 items，结果严重失真。
+    - 本接口直接对满足条件的全量计划做聚合（COUNT / GROUP BY / AVG），
+      一次返回 { total, statusCounts, phaseCounts, avgCompletion }。
+
+    :param data: 筛选条件（与 PagePlanSchema 对齐，但无分页 / 排序）
+    :param _: 认证用户
+    :return: 统计结果
+    """
+    result = await PlanMapper.list_statistics(data.project_id)
+    return Response.success(data=result)
 
 
 @router.post("/associateRequirements", description="关联需求到计划")

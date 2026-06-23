@@ -42,7 +42,6 @@ class AddTestCaseSchema(TestCaseField):
     """添加测试用例模型"""
     requirement_id: Optional[int] = Field(None, description="需求ID")
     case_name: str = Field(..., description="用例名称")
-    case_tag: str = Field(..., description="用例标签")
     case_mark: Optional[str] = Field(None, description="用例备注")
     module_id: Optional[int] = Field(None, description="模块ID")
     project_id: int = Field(..., description="项目ID")

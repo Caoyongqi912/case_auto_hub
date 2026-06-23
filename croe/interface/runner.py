@@ -22,14 +22,11 @@ from croe.interface.executor.context import CaseStepContext, ExecutionContext
 from croe.interface.executor.interface_executor import InterfaceExecutor
 from croe.interface.executor.step_content import get_step_strategy
 from croe.a_manager import VariableManager
-from croe.interface.writer import ResultWriter
-from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from croe.interface.starter import APIStarter
 from croe.play.starter import UIStarter
-from croe.interface.observability import (
+from utils._myLoguru import (
     set_trace_id,
     clear_trace_id,
-    get_trace_id,
 )
 from utils import log
 

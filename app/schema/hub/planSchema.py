@@ -78,6 +78,14 @@ class PagePlanSchema(PageSchema):
     plan_end_time: Optional[str] = Field(None, description="计划结束时间（YYYY-MM-DD，范围筛选）")
 
 
+class PlanListStatisticsSchema(BaseModel):
+    """测试计划列表页全量统计查询模型。
+    口径是当前项目下所有 plan 的聚合（不受 status / phase / keyword 等筛选影响），
+    入参只需要 project_id。
+    """
+    project_id: int = Field(..., description="项目ID")
+
+
 class AssociateRequirementSchema(BaseModel):
     """计划关联需求模型"""
     plan_id: int = Field(..., description="计划ID")

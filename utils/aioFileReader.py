@@ -187,8 +187,27 @@ class AsyncFilesReader:
         return hashlib.md5(content).hexdigest()
 
     @staticmethod
-    def _is_empty_row(row_dict: Dict[str, Any]) -> bool:
-        for value in row_dict.values():
+    def _is_empty_row(
+        row_dict: Dict[str, Any],
+        visible_cols: Optional[set] = None,
+    ) -> bool:
+        """
+        判断一行是否"没有可见数据".
+
+        :param row_dict:        dataframe 一行 (key 为列名, value 为单元格值)
+        :param visible_cols:    视为"可见列"的列名集合 (来自 FIELD_MAPPING 映射)
+                                为 None 时退回全列检查 (兼容旧调用方, 行为不变)
+        :returns: True = 空行, 跳过; False = 有数据, 走校验
+
+        为什么加 visible_cols:
+          Excel 模板里 Z/AA/AB/AC 是隐藏列, 给下拉框 (DataValidation) 当数据源.
+          用户在 Excel 里清空 A~J 行的可见数据后, 这 4 个隐藏列的"下拉源"
+          残留值依然存在, 旧实现会把整行当非空, 触发 5 条必填校验, 体验极差.
+          改成只检查可见列后, 这种"用户清空但下拉源残留"的行直接被跳过, 符合直觉.
+        """
+        for col, value in row_dict.items():
+            if visible_cols is not None and col not in visible_cols:
+                continue
             if value is not None and not pd.isna(value) and str(value).strip():
                 return False
         return True
@@ -299,7 +318,10 @@ class AsyncFilesReader:
                     for col, val in row.items()
                 }
 
-                if AsyncFilesReader._is_empty_row(row_dict):
+                # 只看 FIELD_MAPPING 映射的可见列, 忽略隐藏的下拉源列 (Z/AA/AB/AC)
+                # 见 _is_empty_row 注释.
+                visible_cols = {c for c in field_to_actual.values() if c}
+                if AsyncFilesReader._is_empty_row(row_dict, visible_cols):
                     continue
 
                 current_row = base_excel_row + int(df_idx)

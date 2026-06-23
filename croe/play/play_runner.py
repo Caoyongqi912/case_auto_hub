@@ -10,8 +10,10 @@ from croe.play.starter import UIStarter
 from croe.play.writer import ContentResultWriter, PlayCaseResultWriter
 from utils import log
 from croe.play.browser import BrowserManagerFactory, PageManager, BrowserManager
-from croe.interface.observability import set_trace_id, clear_trace_id
-
+from utils._myLoguru import (
+    set_trace_id,
+    clear_trace_id,
+)
 
 class PlayRunner:
 

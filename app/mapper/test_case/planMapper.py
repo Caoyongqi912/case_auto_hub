@@ -440,3 +440,87 @@ class PlanMapper(Mapper[CasePlan]):
                 items.append(plan_dict)
 
             return await cls.map_page_data(items, total, pageSize, current)
+
+    @classmethod
+    async def list_statistics(cls, project_id: int):
+        """
+        测试计划全量统计（不走分页）。
+
+        口径是当前项目下所有 plan 的聚合——不跟 page 接口的
+        status / phase / keyword 等筛选联动，因为 stats 卡片要展示的是
+        "全量"，跟表格筛选无关。
+
+        完成率与 page_query_with_stats 一致：每个 plan 的
+        completion_rate = case_passed * 100.0 / case_total（保留两位小数），
+        再对所有 plan 取平均。
+
+        :return: dict{
+            total, statusCounts: dict, phaseCounts: dict, avgCompletion
+        }
+        """
+        # 与 page_query_with_stats 共用 stats_subq：每个 plan 的用例通过数 / 总数
+        stats_subq = (
+            select(
+                PlanCaseAssociation.plan_id,
+                func.count().label("case_total"),
+                func.sum(
+                    case(
+                        (PlanCaseAssociation.second_status == "pass", 1),
+                        else_=0,
+                    )
+                ).label("case_passed"),
+            )
+            .group_by(PlanCaseAssociation.plan_id)
+            .subquery()
+        )
+
+        async with cls.session_scope() as session:
+            # 1) total
+            total_stmt = (
+                select(func.count())
+                .select_from(CasePlan)
+                .where(CasePlan.project_id == project_id)
+            )
+            total = (await session.execute(total_stmt)).scalar() or 0
+
+            # 2) statusCounts / phaseCounts
+            status_stmt = (
+                select(CasePlan.plan_status, func.count().label("cnt"))
+                .where(CasePlan.project_id == project_id)
+                .group_by(CasePlan.plan_status)
+            )
+            status_rows = (await session.execute(status_stmt)).all()
+            status_counts = {k: int(v) for k, v in status_rows if k is not None}
+
+            phase_stmt = (
+                select(CasePlan.plan_phase, func.count().label("cnt"))
+                .where(CasePlan.project_id == project_id)
+                .group_by(CasePlan.plan_phase)
+            )
+            phase_rows = (await session.execute(phase_stmt)).all()
+            phase_counts = {k: int(v) for k, v in phase_rows if k is not None}
+
+            # 3) avgCompletion：复用 stats_subq，按 plan 算 completion_rate 后取平均
+            avg_stmt = (
+                select(
+                    func.avg(
+                        case(
+                            (stats_subq.c.case_total > 0,
+                             func.round(stats_subq.c.case_passed * 100.0 / stats_subq.c.case_total, 2)),
+                            else_=0,
+                        )
+                    )
+                )
+                .select_from(CasePlan)
+                .outerjoin(stats_subq, stats_subq.c.plan_id == CasePlan.id)
+                .where(CasePlan.project_id == project_id)
+            )
+            avg_value = (await session.execute(avg_stmt)).scalar()
+            avg_completion = float(avg_value) if avg_value is not None else 0.0
+
+            return {
+                "total": int(total),
+                "statusCounts": status_counts,
+                "phaseCounts": phase_counts,
+                "avgCompletion": round(avg_completion, 1),
+            }
