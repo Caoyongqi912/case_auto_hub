@@ -7,7 +7,7 @@
 # @Desc: 测试用例数据访问层
 from typing import List, Dict, Any, Optional,Tuple
 
-from sqlalchemy import select, insert, update, and_, delete, func
+from sqlalchemy import select, insert, update, and_, delete, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mapper import Mapper, set_creator
@@ -1092,30 +1092,34 @@ class TestCaseMapper(Mapper[TestCase]):
         :param case_ids: 被复制的源用例ID列表
         :param user: 操作用户
         :param requirement_id: 目标需求ID（可选）
-        :param session: 异步会话（可选）
+        :param session: 异步会话（可选）。传入时复用外部 session（事务由调用方管理），
+                        未传入时由 transaction() 自动创建新 session 并开启事务
         :return: 复制的用例对象
         """
         try:
-            async with cls.session_scope(session) as session:
-                async with session.begin():
-                    source_cases, source_steps_map = await cls._fetch_source_cases_and_steps(case_ids, session)
+            # 使用 transaction() 统一处理 session 生命周期：
+            # - 未传 session：内部创建新 session + session.begin()，退出时自动 commit/rollback
+            # - 传入 session：直接复用，避免在已有事务的 session 上再次 begin() 触发
+            #   "A transaction is already begun on this Session."
+            async with cls.transaction(session) as session:
+                source_cases, source_steps_map = await cls._fetch_source_cases_and_steps(case_ids, session)
 
-                    new_case_list = cls._build_new_cases(source_cases, source_steps_map, user)
+                new_case_list = cls._build_new_cases(source_cases, source_steps_map, user)
 
-                    session.add_all(new_case_list)
-                    await session.flush()
+                session.add_all(new_case_list)
+                await session.flush()
 
-                    if requirement_id and source_cases:
-                        await cls._create_requirement_associations(new_case_list, requirement_id, session)
+                if requirement_id and source_cases:
+                    await cls._create_requirement_associations(new_case_list, requirement_id, session)
 
-                    for new_case_obj in new_case_list:
-                        await CaseDynamicMapper.new_dynamic(
-                            cr=user,
-                            test_case=new_case_obj,
-                            session=session
-                        )
-                    log.info(f"copy_cases success: case_ids={case_ids}, requirement_id={requirement_id}")
-                    return new_case_list
+                for new_case_obj in new_case_list:
+                    await CaseDynamicMapper.new_dynamic(
+                        cr=user,
+                        test_case=new_case_obj,
+                        session=session
+                    )
+                log.info(f"copy_cases success: case_ids={case_ids}, requirement_id={requirement_id}")
+                return new_case_list
         except Exception as e:
             log.exception(f"copy_cases error: case_ids={case_ids}, requirement_id={requirement_id}, error={e}")
             raise
@@ -1207,4 +1211,313 @@ class TestCaseMapper(Mapper[TestCase]):
         except Exception as e:
             log.exception(f"add_default_case error: requirement_id={requirement_id}, error={e}")
             raise
-        
+
+
+
+# ============================================================
+# 用例 module 维度排序 (DragSortTable 拖拽)
+# 设计思路: 完全参照 planCaseMapper.reorder_plan_case 的实现
+#   - 越权前置: 校验所有 case_id + 锚点都属于 project_id
+#   - 单条 reorder: 读 module 全量 → 按锚点算新下标 → 内存重排 → 单条 UPDATE 回写
+#   - 批量 reorder: 聚合去重后一次越权校验, 同一事务内顺序应用
+# ============================================================
+
+async def reorder_test_case(
+    project_id: int,
+    case_id: int,
+    before_id: Optional[int] = None,
+    after_id: Optional[int] = None,
+    target_module_id: Optional[int] = None,
+) -> int:
+    """单 case 移动 / 跨 module 移动（推荐走 ``reorder_test_cases_bulk``）。
+
+    实现：开 1 个事务 → 越权前置校验 → 调一次
+    ``_apply_single_reorder`` 完成单 case 重排。
+
+    复杂度（单条）
+    --------
+    - 1 次 SELECT (读 module 全量)
+    - 1 次 UPDATE (整组回写 order，可顺带切 module)
+    - 1 次越权校验 SELECT
+    - IO 共 3 次，与目标 module 的 case 数无关
+
+    Args:
+        project_id: 项目ID
+        case_id: 被移动的用例ID
+        before_id: 锚点：被移动 case 放在此 case 之前
+        after_id: 锚点：被移动 case 放在此 case 之后
+        target_module_id: 目标模块；None 表示不切换 module
+
+    Returns:
+        int: 实际更新行数；位置无变化且 module 未切换时返回 0（幂等）
+
+    Raises:
+        CommonError: 越权 / 用例不存在 / 锚点不在目标 module 等业务错误
+    """
+    async with TestCaseMapper.transaction() as session:
+        await _assert_cases_belong_to_project(
+            session=session,
+            project_id=project_id,
+            case_ids=[case_id, before_id, after_id],
+        )
+        return await _apply_single_reorder(
+            session=session,
+            project_id=project_id,
+            case_id=case_id,
+            before_id=before_id,
+            after_id=after_id,
+            target_module_id=target_module_id,
+        )
+
+
+async def reorder_test_cases_bulk(
+    project_id: int,
+    items: List[Dict[str, Any]],
+) -> List[int]:
+    """批量重排序（多选拖拽 / 跨 module 批量调整）。
+
+    行为
+    ----
+    - 所有 items 在 **同一事务** 内顺序应用；任一失败整体回滚
+    - 越权前置：聚合所有 case_id + 锚点去重后一次性校验,
+      避免每条都重复一次 SELECT
+
+    复杂度
+    --------
+    - 1 次越权校验 SELECT（聚合 N 条的所有 case_id + 锚点）
+    - N 次 _apply_single_reorder，每次含 1 次 SELECT + 1 次 UPDATE
+    - 总 IO = 1 + 2N
+
+    Args:
+        project_id: 项目ID
+        items: 重排序条目列表, 每条形如
+            ``{"case_id": int, "before_id"?: int, "after_id"?: int, "target_module_id"?: int}``
+
+    Returns:
+        List[int]: 每条 item 的 affected 行数（与 items 等长）,
+            0 表示该条幂等无变化
+
+    Raises:
+        CommonError: items 为空 / 越权 / 用例不存在 / 锚点非法
+    """
+    from app.exception import CommonError
+
+    if not items:
+        raise CommonError("批量重排序 items 不能为空")
+
+    # 1) 聚合所有需要校验的 case_id（去重 + 过滤 None）
+    all_ids: set = set()
+    for it in items:
+        cid = it.get("case_id")
+        if cid is None:
+            raise CommonError("item.case_id 不能为空")
+        all_ids.add(cid)
+        for anchor_key in ("before_id", "after_id"):
+            v = it.get(anchor_key)
+            if v is not None:
+                all_ids.add(v)
+
+    async with TestCaseMapper.transaction() as session:
+        # 2) 一次越权前置
+        await _assert_cases_belong_to_project(
+            session=session,
+            project_id=project_id,
+            case_ids=list(all_ids),
+        )
+
+        # 3) 顺序应用每条（同一事务内复用 session）
+        results: List[int] = []
+        for it in items:
+            affected = await _apply_single_reorder(
+                session=session,
+                project_id=project_id,
+                case_id=it["case_id"],
+                before_id=it.get("before_id"),
+                after_id=it.get("after_id"),
+                target_module_id=it.get("target_module_id"),
+            )
+            results.append(affected)
+
+        log.info(
+            f"reorder_test_cases_bulk project={project_id} items={len(items)} total_affected={sum(results)}"
+        )
+        return results
+
+
+async def _assert_cases_belong_to_project(
+    session: AsyncSession,
+    project_id: int,
+    case_ids: List[Optional[int]],
+) -> None:
+    """断言所有非 None 的 case_id 都属于 project_id, 否则抛 ``CommonError``。
+    """
+    from app.exception import CommonError
+
+    valid_ids = [cid for cid in case_ids if cid is not None]
+    if not valid_ids:
+        return
+    existing = await _filter_case_ids_belong_to_project(
+        session=session,
+        project_id=project_id,
+        case_id_list=valid_ids,
+    )
+    missing = set(valid_ids) - existing
+    if missing:
+        raise CommonError(
+            f"以下 case 不属于项目 {project_id}, 已拒绝: {sorted(missing)[:5]}"
+        )
+
+
+async def _filter_case_ids_belong_to_project(
+    session: AsyncSession,
+    project_id: int,
+    case_id_list: List[int],
+) -> set:
+    """校验并返回 project 下真实存在的 case_id 集合。
+
+    越权防护: 调用方传 ``(project_id, case_id_list)`` 时, 先用一次 SELECT
+    过滤出真正属于该项目的 case_id, 供调用方与入参做差集。
+    """
+    if not case_id_list:
+        return set()
+    stmt = select(TestCase.id).where(
+        and_(
+            TestCase.project_id == project_id,
+            TestCase.id.in_(case_id_list),
+        )
+    )
+    result = await session.execute(stmt)
+    return {row[0] for row in result.all()}
+
+
+async def _apply_single_reorder(
+    session: AsyncSession,
+    project_id: int,
+    case_id: int,
+    before_id: Optional[int],
+    after_id: Optional[int],
+    target_module_id: Optional[int],
+) -> int:
+    """应用单条重排序（核心执行逻辑）。
+
+    假设：调用方已在事务中持有 ``session``, 且 case_id + 锚点已通过越权校验。
+    内部不做任何额外 session 开关或权限检查。
+
+    步骤
+    ----
+    1. 读 case 当前所在 module
+    2. 读目标 module 全量 case 序列（按 order 升序, 同序用 id 兜底）
+    3. 按锚点计算新下标
+    4. 内存 pop + insert 重排
+    5. 单条 ``UPDATE ... CASE`` 一次回写 order；跨 module 顺带改 module_id
+
+    Returns:
+        int: affected 行数；幂等时返回 0
+    """
+    from app.exception import CommonError
+
+    # 1) 当前 module
+    origin_stmt = select(TestCase.module_id).where(
+        and_(
+            TestCase.project_id == project_id,
+            TestCase.id == case_id,
+        )
+    )
+    origin_module_id = (await session.execute(origin_stmt)).scalar_one_or_none()
+    if origin_module_id is None:
+        raise CommonError(f"用例 {case_id} 不在项目 {project_id} 中")
+
+    target_module_id = (
+        target_module_id if target_module_id is not None else origin_module_id
+    )
+
+    # 2) 目标 module 全量
+    list_stmt = (
+        select(TestCase.id)
+        .where(
+            and_(
+                TestCase.project_id == project_id,
+                TestCase.module_id == target_module_id,
+            )
+        )
+        .order_by(TestCase.order.asc(), TestCase.id.asc())
+    )
+    case_ids_in_module: List[int] = [
+        row[0] for row in (await session.execute(list_stmt)).all()
+    ]
+
+    # 3) 新下标
+    new_index = _resolve_reorder_index(
+        case_ids=case_ids_in_module,
+        moved_id=case_id,
+        before_id=before_id,
+        after_id=after_id,
+    )
+
+    # 4) 内存重排：区分同 module / 跨 module 两种场景
+    is_cross_module = target_module_id != origin_module_id
+    old_index: Optional[int] = None
+    if case_id in case_ids_in_module:
+        old_index = case_ids_in_module.index(case_id)
+        if new_index == old_index and not is_cross_module:
+            return 0  # 幂等（同 module 且位置未变）
+        case_ids_in_module.pop(old_index)
+        insert_index = new_index if new_index <= old_index else new_index - 1
+    else:
+        # 跨 module: 当作新成员, 按 new_index 插入
+        insert_index = min(new_index, len(case_ids_in_module))
+    case_ids_in_module.insert(insert_index, case_id)
+
+    # 5) 单条 UPDATE 回写
+    order_case = case(
+        *[
+            (TestCase.id == cid, idx)
+            for idx, cid in enumerate(case_ids_in_module, start=1)
+        ],
+        else_=TestCase.order,
+    )
+    update_values: Dict[str, Any] = {"order": order_case}
+    if target_module_id != origin_module_id:
+        update_values["module_id"] = target_module_id
+
+    update_stmt = (
+        update(TestCase)
+        .where(
+            and_(
+                TestCase.project_id == project_id,
+                TestCase.id.in_(case_ids_in_module),
+            )
+        )
+        .values(update_values)
+    )
+    result = await session.execute(update_stmt)
+    log.debug(
+        f"_apply_single_reorder project={project_id} case={case_id} "
+        f"old={old_index} new={new_index} "
+        f"module={origin_module_id}→{target_module_id} affected={result.rowcount}"
+    )
+    return result.rowcount
+
+
+def _resolve_reorder_index(
+    case_ids: List[int],
+    moved_id: int,
+    before_id: Optional[int],
+    after_id: Optional[int],
+) -> int:
+    """根据锚点解析被移动 case 的新下标。
+
+    规则
+    ----
+    - ``before_id`` 优先：返回 ``before_id`` 在当前列表中的下标
+    - ``after_id`` 次之：返回 ``after_id`` 在当前列表中下标 + 1
+    - 都为空：返回 ``len(case_ids)``（追加到末尾）
+
+    锚点不在列表时（极端 case：刚被删除/换 module），
+    一律回退到末尾, 避免越界。
+    """
+    if before_id is not None and before_id in case_ids:
+        return case_ids.index(before_id)
+    if after_id is not None and after_id in case_ids:
+        return case_ids.index(after_id) + 1
+    return len(case_ids)

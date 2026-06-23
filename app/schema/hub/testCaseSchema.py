@@ -169,9 +169,90 @@ class CopyCaseStep(BaseModel):
 
 
 class ReorderCase(BaseModel):
-    """重排序用例模型"""
+    """重排序用例模型（需求维度, 旧版, 传全量 case_ids 列表）
+
+    已被下面 module 维度的 ReorderTestCaseSchema 替代, 但 schema 留作兼容
+    """
     requirement_id: int = Field(..., description="需求ID")
     case_ids: List[int] = Field(..., description="用例ID列表")
+
+
+class ReorderTestCaseItem(BaseModel):
+    """单条重排序意图（用于批量接口）
+
+    字段语义同 ``ReorderTestCaseSchema``，但不含 ``project_id`` 和
+    ``source_module_id``（批量接口在父级统一指定）。
+    """
+
+    case_id: int = Field(..., description="被移动的用例ID")
+    target_module_id: Optional[int] = Field(
+        None, description="目标模块ID；None 表示在原 module 内移动"
+    )
+    before_id: Optional[int] = Field(
+        None, description="锚点：被移动 case 放在此 case 之前"
+    )
+    after_id: Optional[int] = Field(
+        None, description="锚点：被移动 case 放在此 case 之后"
+    )
+
+
+class ReorderTestCaseSchema(BaseModel):
+    """重排序用例（module 维度, 单 case 移动语义）
+
+    设计原则
+    --------
+    - 前端只传"被移动 case + 锚点"两个关键 ID，传输量与列表规模无关
+    - 服务端基于锚点重新计算目标 module 的整组顺序，
+      用单条 ``UPDATE ... CASE`` 表达式一次回写, 避免 N 次 roundtrip
+    - 天然支持跨 module 移动（``target_module_id`` 指定新模块即可）
+
+    锚点语义
+    --------
+    - ``before_id`` 优先：被移动 case 放在此 case 之前
+    - ``after_id`` 次之：被移动 case 放在此 case 之后
+    - 都为空：被移动 case 移到目标 module 末尾
+    """
+
+    project_id: int = Field(..., description="所属项目ID")
+    case_id: int = Field(..., description="被移动的用例ID")
+    target_module_id: Optional[int] = Field(
+        None, description="目标模块ID；None 表示在原 module 内移动"
+    )
+    before_id: Optional[int] = Field(
+        None, description="锚点：被移动 case 放在此 case 之前"
+    )
+    after_id: Optional[int] = Field(
+        None, description="锚点：被移动 case 放在此 case 之后"
+    )
+
+
+class BulkReorderTestCaseSchema(BaseModel):
+    """批量重排序用例
+
+    典型场景
+    --------
+    - **多选拖拽**：一次拖动 N 个连续用例到新位置，每条 item 用同一锚点
+    - **跨 module 批量调整**：把若干 case 从 A 模块移到 B 模块指定位置
+    - **混合操作**：items 内允许跨 module，顺序应用
+
+    行为
+    ----
+    - 所有 items 在 **同一事务** 内顺序应用；任一失败整体回滚
+    - 越权前置：聚合所有 case_id + 锚点去重后一次性校验, 省去 N 次 SELECT
+    - 单条应用的执行逻辑与 ``reorder_test_case`` 完全一致
+      （共用 _apply_single_reorder）
+
+    Returns:
+        接口返回每条 item 的 affected 行数列表, 便于前端精确定位失败项
+    """
+
+    project_id: int = Field(..., description="所属项目ID")
+    items: List[ReorderTestCaseItem] = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="批量重排序条目（1~500）；同一事务内顺序应用",
+    )
 
 
 class ReorderCaseStep(BaseModel):

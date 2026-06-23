@@ -26,7 +26,9 @@ class TestCase(BaseModel):
     is_common = Column(Boolean, default=False, index=True, comment="用例库")
     module_id = Column(Integer, ForeignKey('module.id', ondelete='set null'), nullable=True, comment="所属模块")
     project_id = Column(Integer, ForeignKey('project.id'), nullable=False, comment="所属项目")
-    
+    # 用例在所属 module 内的排序序号, 默认 0 让新增用例自然落到末尾
+    order = Column(Integer, default=0, index=True, comment="排序序号")
+
     from app.model.caseHub.test_case_step import TestCaseStep
     case_sub_steps = relationship(TestCaseStep, back_populates="case", lazy="select", order_by=TestCaseStep.order, cascade="all, delete-orphan")
 

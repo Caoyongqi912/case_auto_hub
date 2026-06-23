@@ -22,7 +22,11 @@ from app.schema.hub.testCaseSchema import (
     UpdateTestCaseSchema, QueryTestCaseSchemaByField, RemoveCaseSchema, RemoveCaseStep,
     CopyCase, CopyCaseStep, AddDefaultCaseStep, UpdateTestCaseStep, ReorderCaseStep,
      SetCasesCommonSchema, UploadPreviewResult,
-    UploadCommitSchema, UploadCancelSchema,UpdateTestCasesSchema,DeleteTestCasesSchema, ImportCommitSchema, ImportCancelSchema
+    UploadCommitSchema, UploadCancelSchema,UpdateTestCasesSchema,DeleteTestCasesSchema, ImportCommitSchema, ImportCancelSchema,
+    ReorderTestCaseSchema, BulkReorderTestCaseSchema,
+)
+from app.mapper.test_case.testcaseMapper import (
+    reorder_test_case, reorder_test_cases_bulk,
 )
 from app.service.uploadCacheService import UploadCacheService
 from app.service.exportCaseService import ExportCaseService
@@ -86,12 +90,13 @@ async def page_cases(data: PageTestCaseSchema, _: User = Depends(Authentication(
     if data.module_id is None and data.module_ids is None:
         payload.pop("module_id", None)
         payload["module_id__is_null"] = True
-    # 用例库默认排序: 用例名 A→Z 主排, 创建时间最新→最旧次排.
-    # 传不进去双字段. 后端在无 sort 时塞默认, FE 点列表头仍可临时切单字段排序.
+    # 用例库默认排序: order 升序主排（拖拽后由 /reorder 回写, 列表刷新即可看见新顺序）,
+    # id 升序次排（order 同号时的稳定兜底, 避免同秒新增的两条用例抖动）.
+    # FE 点列表头切单字段排序时, 这里不生效; 切回默认行为就清掉 sort 字段后重新请求.
     if not payload.get("sort"):
         payload["sort"] = {
-            "case_name": "ascend",
-            "create_time": "descend",
+            "order": "ascend",
+            "id": "ascend",
         }
     log.debug(payload)
     result = await TestCaseMapper.page_by_module(**payload)
@@ -240,6 +245,80 @@ async def reorder_case_steps(data: ReorderCaseStep, _: User = Depends(Authentica
     """
     await TestCaseStepMapper.reorder_steps(**data.model_dump())
     return Response.success()
+
+
+@router.post("/reorder", description="重排序用例（module 维度, 单 case 移动）")
+async def reorder_test_case_route(
+    data: ReorderTestCaseSchema,
+    _: User = Depends(Authentication()),
+):
+    """重排序项目下单个用例（支持跨 module）。
+
+    相比历史版本（传全量 ``case_ids`` 列表），本接口只传
+    "被移动 case + 锚点"两个 ID，传输量与列表规模无关。
+
+    典型用法
+    --------
+    - 拖拽 A 到 B 上方: ``{project_id, case_id: A, before_id: B}``
+    - 拖拽 A 到 B 下方: ``{project_id, case_id: A, after_id: B}``
+    - 移到 module 末尾: ``{project_id, case_id: A}``（before/after 都为空）
+    - 跨 module 移动: ``{project_id, case_id: A, target_module_id: M, before_id: X}``
+
+    :param data: 重排序参数
+    :param _: 认证用户
+    :return: 实际更新行数（0 表示幂等无变化）
+    """
+    log.info(
+        "reorder_test_case project=%s case=%s before=%s after=%s module=%s",
+        data.project_id, data.case_id, data.before_id, data.after_id, data.target_module_id,
+    )
+    try:
+        affected = await reorder_test_case(
+            project_id=data.project_id,
+            case_id=data.case_id,
+            before_id=data.before_id,
+            after_id=data.after_id,
+            target_module_id=data.target_module_id,
+        )
+    except CommonError as err:
+        log.warning(f"reorder_test_case rejected: {err}")
+        return Response.error(msg=str(err))
+    except Exception as err:
+        log.exception(f"reorder_test_case 异常: {err}")
+        return Response.error(msg=f"重排序失败: {err}")
+    return Response.success(affected)
+
+
+@router.post("/reorder/bulk", description="批量重排序用例")
+async def reorder_test_case_bulk_route(
+    data: BulkReorderTestCaseSchema,
+    _: User = Depends(Authentication()),
+):
+    """批量重排序用例（多选拖拽 / 跨 module 批量调整）。
+
+    所有 items 在同一事务内顺序应用，任一失败整体回滚。
+    返回值为每条 item 的 affected 行数列表。
+
+    :param data: 批量重排序参数（含 project_id 与 items）
+    :param _: 认证用户
+    :return: 各 item 的 affected 行数列表
+    """
+    log.info(
+        f"reorder_test_case_bulk project={data.project_id} item_count={len(data.items)}",
+    )
+    try:
+        # Pydantic model 转 dict 列表, 传给 mapper
+        results = await reorder_test_cases_bulk(
+            project_id=data.project_id,
+            items=[it.model_dump() for it in data.items],
+        )
+    except CommonError as err:
+        log.warning(f"reorder_test_case_bulk rejected: {err}")
+        return Response.error(msg=str(err))
+    except Exception as err:
+        log.exception(f"reorder_test_case_bulk 异常: %s", err)
+        return Response.error(msg=f"批量重排序失败: {err}")
+    return Response.success(results)
 
 
 @router.get("/querySubSteps/{caseId}", description="查询用例的所有步骤")
