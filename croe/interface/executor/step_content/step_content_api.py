@@ -46,7 +46,6 @@ class APIStepContentStrategy(StepBaseStrategy):
         )
         success = interface_result.result
 
-        log.info(f"api step interface_result {interface_result}")
         interface_result = await step_context.result_writer.write_interface_result(
             interface_result=interface_result,
             immediate=True
