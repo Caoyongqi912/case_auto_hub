@@ -40,32 +40,12 @@ def _build_ctx(target_id=10, content_id=20, task_result=None):
 
 
 def _build_step_result_dict(success=True, status=200, error=None):
-    """对齐 interface_executor._build_result 的真实字段名。"""
-    return {
-        "interface_id": 10,
-        "interface_name": "test",
-        "interface_uid": "u1",
-        "interface_desc": "desc",
-        "starter_id": 1,
-        "starter_name": "admin",
-        "request_url": "http://x",
-        "request_method": "GET",
-        "request_params": None,
-        "request_body_type": None,
-        "request_json": None,
-        "request_data": None,
-        "request_headers": None,
-        "extracts": [],
-        "asserts": [],
-        "running_env_id": 1,
-        "running_env_name": "test",
-        "response_status": status,
-        "response_text": "{}",
-        "response_headers": {},
-        "use_time": "50.0",
-        "result": success,
-        "start_time": MagicMock(),
-    }
+    """对齐 interface_executor.execute 返回的 InterfaceResult 字段。"""
+    ir = MagicMock()
+    ir.result = success
+    ir.response_status = status
+    ir.error = error
+    return ir
 
 
 def _build_interface_result(ir_id=999, success=True, use_time="50.0"):

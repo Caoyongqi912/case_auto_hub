@@ -15,6 +15,7 @@ from croe.a_manager import ConditionManager
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums import StepStatusEnum
 from enums.CaseEnum import CaseStepContentType
+from utils import log
 
 
 
@@ -37,6 +38,9 @@ class APIConditionContentStrategy(StepBaseStrategy):
         )
 
         if not condition:
+            log.warning(
+                f"未找到条件配置: id={step_context.content.target_id}"
+            )
             await step_context.starter.send(
                 f"未找到条件配置: id={step_context.content.target_id}"
             )
@@ -103,10 +107,10 @@ class APIConditionContentStrategy(StepBaseStrategy):
                     interface=interface,
                     env=step_context.execution_context.env,
                 )
-                success = interface_result['result']
+                success = interface_result.result
 
                 await step_context.result_writer.write_interface_result(
-                    interface_result=InterfaceResult(**interface_result),
+                    interface_result=interface_result,
                     content_result_id=condition_content_result.id
                 )
 

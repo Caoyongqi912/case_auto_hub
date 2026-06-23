@@ -40,15 +40,15 @@ class APIStepContentStrategy(StepBaseStrategy):
             )
             return False
 
-        step_result = await self.interface_executor.execute(
+        interface_result = await self.interface_executor.execute(
             interface=interface,
             env=step_context.execution_context.env
         )
-        success = step_result['result']
+        success = interface_result.result
 
-        log.info(f"api step step_result {step_result}")
+        log.info(f"api step interface_result {interface_result}")
         interface_result = await step_context.result_writer.write_interface_result(
-            interface_result=InterfaceResult(**step_result),
+            interface_result=interface_result,
             immediate=True
         )
         log.info(f"api step interface_result {interface_result}")

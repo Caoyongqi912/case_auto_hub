@@ -27,9 +27,10 @@ class PlayInterfaceContentStrategy(StepBaseStrategy):
                 interface = await InterfaceMapper.get_by_id(
                     ident=step_context.play_step_content.target_id
                 )
-                result, success = await interface_executor.execute(interface=interface)
+                interface_result = await interface_executor.execute(interface=interface)
+                success = interface_result.result
                 interface_result = await rw.write_interface_result(
-                    interface_result=InterfaceResult(**result),
+                    interface_result=interface_result,
                     immediate=True,
                 )
 

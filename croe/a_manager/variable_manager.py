@@ -22,27 +22,27 @@ class VariableManager:
         """获取所有变量"""
         return self.vars()
 
-    async def clear(self):
+    def clear(self):
         """清空变量"""
         self.vars.clear()
 
-    async def get_vars(self) -> Dict[str, Any]:
+    def get_vars(self) -> Dict[str, Any]:
         """获取所有变量"""
         return self.vars()
 
-    async def add_vars(self, data: List[Dict[str, Any]] | Dict[str, Any]):
+    def add_vars(self, data: List[Dict[str, Any]] | Dict[str, Any]):
         """添加变量"""
         self.vars.add_vars(data)
 
-    async def add_var(self, key: str, value: Any):
+    def add_var(self, key: str, value: Any):
         """添加单个变量"""
         self.vars.add_var(key, value)
 
-    async def trans(self, target: Any) -> Any:
-        """变量转换（保持 async 兼容旧调用方）"""
+    def trans(self, target: Any) -> Any:
+        """变量转换（已同步化）"""
         return self.vars.trans(target)
 
-    async def get_var(self, key: str):
+    def get_var(self, key: str):
         """获取变量值"""
         return self.vars.get_var(key)
 

@@ -39,15 +39,15 @@ def test_bug_f8b_finalize_invokes_backfill(bug_f8b_marker):
     assert "backfill_content_result_id_fk" in src, (
         f"[{BUG_F8B}] result_writer.py 没调 backfill, finalize 后反向 FK 永远 NULL"
     )
-    # 必须在 finalize_case_result 函数体里 (粗略: 在 _flush_cache 之后)
+    # 必须在 finalize_case_result 函数体里 (粗略: 在 flush 之后)
     finalize_idx = src.find("async def finalize_case_result")
     backfill_idx = src.find("backfill_content_result_id_fk")
-    flush_idx = src.find("await self._flush_cache()", finalize_idx)
+    flush_idx = src.find("await self.flush()", finalize_idx)
     assert 0 <= finalize_idx < backfill_idx, (
         f"[{BUG_F8B}] backfill 调用不在 finalize_case_result 之后"
     )
     assert finalize_idx < flush_idx < backfill_idx, (
-        f"[{BUG_F8B}] backfill 调用顺序错: 必须在 _flush_cache() 之后"
+        f"[{BUG_F8B}] backfill 调用顺序错: 必须在 flush() 之后"
     )
 
 # ---------- 3. UPDATE SQL 走正向关系 (子表 api) ----------

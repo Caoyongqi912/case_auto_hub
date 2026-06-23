@@ -35,7 +35,7 @@ def _build_ctx(script_text="", task_result=None):
     ctx.starter = MagicMock()
     ctx.starter.send = AsyncMock()
     ctx.variable_manager = MagicMock()
-    ctx.variable_manager.add_vars = AsyncMock()
+    ctx.variable_manager.add_vars = MagicMock()
     ctx.result_writer = MagicMock()
     ctx.result_writer.update_case_progress = AsyncMock()
     return ctx
@@ -97,7 +97,7 @@ async def test_script_step_success_adds_vars(strategy):
     assert ret is True
     assert ctx.execution_context.case_result.success_num == 1
     assert ctx.execution_context.case_result.fail_num == 0
-    ctx.variable_manager.add_vars.assert_awaited_once_with({"k1": "v1", "k2": "v2"})
+    ctx.variable_manager.add_vars.assert_called_once_with({"k1": "v1", "k2": "v2"})
     call_kwargs = mock_insert.call_args.kwargs
     assert call_kwargs["result"] is True
     assert call_kwargs["status"] == StepStatusEnum.SUCCESS

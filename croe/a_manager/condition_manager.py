@@ -40,8 +40,8 @@ class ConditionManager:
         :return: (是否通过, 判断数据)
         """
         self.condition = condition
-        self.key = await self.variable.trans(condition.condition_key)
-        self.value = await self.variable.trans(condition.condition_value)
+        self.key = self.variable.trans(condition.condition_key)
+        self.value = self.variable.trans(condition.condition_value)
         self.operator = condition.condition_operator
 
         await io.send(

@@ -9,8 +9,7 @@ import datetime
 
 from app.mapper.play import PlayStepV2Mapper
 from app.mapper.play.playConditionMapper import PlayConditionMapper
-from app.model.playUI.playStepContent import PlayStepContent
-from croe.play.context import StepContentContext, StepContext
+from croe.play.context import StepContentContext
 from croe.play.executor.step_content_strategy._base import StepBaseStrategy
 from croe.a_manager import ConditionManager
 from croe.play.executor.play_method.result_types import StepExecutionResult
@@ -76,32 +75,12 @@ class PlayConditionContentStrategy(StepBaseStrategy):
             for i, child_step_content in enumerate(child_step_contents, start=1):
 
                 await step_context.starter.send(f"✍️ 执行条件子步骤 {i}: {child_step_content}")
-                condition_step_context = StepContentContext(
-                    index=i,
-                    play_step_content=child_step_content,
-                    page_manager=step_context.page_manager,
-                    starter=step_context.starter,
-                    variable_manager=step_context.variable_manager,
-                    play_step_result_writer=step_context.play_step_result_writer,
-                    play_case_result_writer=step_context.play_case_result_writer,
-                )
                 step = await PlayStepV2Mapper.get_by_id(ident=child_step_content.target_id)
-
-                # 创建子步骤上下文
-                condition_child_step_context = StepContext(
-                    step=step,
-                    page_manager=step_context.page_manager,
-                    starter=step_context.starter,
-                    variable_manager=step_context.variable_manager
-                )
-
-                step_start_time = datetime.datetime.now()
-                result = await self.play_executor.execute(condition_child_step_context)
-                await self.write_child_result(
-                    parent_index=step_context.index,
-                    result=result,
-                    start_time=step_start_time,
-                    step_context=condition_step_context
+                result = await self._execute_child_step(
+                    step_context=step_context,
+                    child_step=step,
+                    child_step_content=child_step_content,
+                    index=i,
                 )
 
                 if not result or not result.success:

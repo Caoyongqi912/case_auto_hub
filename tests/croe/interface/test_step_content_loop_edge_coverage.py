@@ -35,7 +35,7 @@ def _build_ctx(target_id=10, content_id=20):
     ctx.starter = MagicMock()
     ctx.starter.send = AsyncMock()
     ctx.variable_manager = MagicMock()
-    ctx.variable_manager.trans = AsyncMock(side_effect=lambda x: x)
+    ctx.variable_manager.trans = MagicMock(side_effect=lambda x: x)
     ctx.result_writer = MagicMock()
     ctx.result_writer.write_step_result = AsyncMock()
     ctx.result_writer.write_interface_result = AsyncMock()
@@ -51,19 +51,10 @@ def _build_fake_content_result(cr_id=999):
 
 
 def _build_step_result(success=True, status=200):
-    return {
-        "result": success,
-        "interface_id": 1, "interface_uid": "u", "interface_name": "n",
-        "interface_desc": "d", "starter_id": 1, "starter_name": "u",
-        "request_url": "http://x", "request_method": "GET",
-        "request_params": None, "request_body_type": None,
-        "request_json": None, "request_data": None, "request_headers": None,
-        "extracts": [], "asserts": [],
-        "running_env_id": 1, "running_env_name": "test",
-        "response_status": status, "response_text": "{}",
-        "response_headers": {}, "use_time": "1.0",
-        "start_time": MagicMock(),
-    }
+    ir = MagicMock()
+    ir.result = success
+    ir.response_status = status
+    return ir
 
 
 def _build_fake_loop(loop_type=LoopTypeEnum.LoopTimes, loop_times=2, loop_items=None, max_loop=10, interval=0, key="x", value="1", operate=0):

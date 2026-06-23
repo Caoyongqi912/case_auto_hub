@@ -16,7 +16,7 @@ from croe.interface.executor.step_content.base import StepBaseStrategy
 # (原模块级单例写入的 cache 永远不会被 flush, 案例拿不到数据)
 from enums import StepStatusEnum
 from enums.CaseEnum import CaseStepContentType
-from utils import GenerateTools
+from utils import GenerateTools, log
 
 if TYPE_CHECKING:
     from croe.interface.executor.interface_executor import InterfaceExecutor
@@ -40,6 +40,9 @@ class APIGroupContentStrategy(StepBaseStrategy):
         )
 
         if not interface_list:
+            log.warning(
+                f"接口组内无接口: group_id={step_context.content.target_id}"
+            )
             return True
 
         start_time = datetime.now()
@@ -79,10 +82,10 @@ class APIGroupContentStrategy(StepBaseStrategy):
                 interface=interface,
                 env=step_context.execution_context.env,
             )
-            success = interface_result['result']
+            success = interface_result.result
 
             await step_context.result_writer.write_interface_result(
-                interface_result=InterfaceResult(**interface_result),
+                interface_result=interface_result,
                 content_result_id=content_result.id,
             )
 

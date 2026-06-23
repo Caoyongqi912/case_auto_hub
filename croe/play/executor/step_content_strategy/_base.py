@@ -8,10 +8,12 @@
 import datetime
 import os
 from abc import ABC, abstractmethod
+from typing import Any
 
 from app.model.playUI.PlayResult import PlayStepContentResult
+from app.model.playUI.playStepContent import PlayStepContent
 from config import Config
-from croe.play.context import StepContentContext
+from croe.play.context import StepContentContext, StepContext
 from croe.play.executor import PlayExecutor
 from croe.play.executor.play_method.result_types import StepExecutionResult
 from enums.CaseEnum import PlayStepContentType
@@ -81,6 +83,51 @@ class StepBaseStrategy(ABC):
             parent_index=parent_index,
             content_result=content_result
         )
+
+    async def _execute_child_step(
+            self,
+            step_context: StepContentContext,
+            child_step: Any,
+            child_step_content: PlayStepContent,
+            index: int,
+    ) -> StepExecutionResult:
+        """
+        统一执行单个子步骤并写入子结果。
+
+        Args:
+            step_context: 父步骤上下文
+            child_step: 子步骤模型（PlayStepModel）
+            child_step_content: 子步骤内容包装（PlayStepContent）
+            index: 子步骤在父容器中的序号
+
+        Returns:
+            子步骤执行结果 StepExecutionResult
+        """
+        child_content_ctx = StepContentContext(
+            index=index,
+            play_step_content=child_step_content,
+            page_manager=step_context.page_manager,
+            starter=step_context.starter,
+            variable_manager=step_context.variable_manager,
+            play_step_result_writer=step_context.play_step_result_writer,
+            play_case_result_writer=step_context.play_case_result_writer,
+        )
+        child_step_ctx = StepContext(
+            step=child_step,
+            page_manager=step_context.page_manager,
+            starter=step_context.starter,
+            variable_manager=step_context.variable_manager,
+        )
+
+        step_start_time = datetime.datetime.now()
+        result = await self.play_executor.execute(child_step_ctx)
+        await self.write_child_result(
+            parent_index=step_context.index,
+            result=result,
+            start_time=step_start_time,
+            step_context=child_content_ctx,
+        )
+        return result
 
     async def _build_content_result(
             self,

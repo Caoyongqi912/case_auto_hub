@@ -59,11 +59,31 @@ def _build_ctx(content_id=1, db_id=1, sql_text="SELECT 1", sql_extracts=None):
     ctx.starter = MagicMock()
     ctx.starter.send = AsyncMock()
     ctx.variable_manager = MagicMock()
-    ctx.variable_manager.trans = AsyncMock(return_value=sql_text)
-    ctx.variable_manager.add_vars = AsyncMock()
+    ctx.variable_manager.trans = MagicMock(return_value=sql_text)
+    ctx.variable_manager.add_vars = MagicMock()
     ctx.result_writer = MagicMock()
     ctx.result_writer.update_case_progress = AsyncMock()
     return ctx
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_bug_e10_db_sql_config_not_found_returns_false_and_logs_warning(bug_e10_marker):
+    """DBExecute 配置不存在: 返回 False, 并输出 warning 日志。"""
+    ctx = _build_ctx()
+
+    with patch("croe.interface.executor.step_content.step_content_db.DBExecuteMapper.get_by_id",
+               AsyncMock(return_value=None)), \
+         patch("croe.interface.executor.step_content.step_content_db.log") as mock_log:
+        strategy = APIDBContentStrategy(MagicMock())
+        ret = await strategy.execute(ctx)
+
+    assert ret is False, (
+        f"SQL 配置不存在时 step 应返回 False, 实际 {ret}"
+    )
+    mock_log.warning.assert_called_once()
+    warn_msg = mock_log.warning.call_args.args[0]
+    assert "未找到 SQL 配置" in warn_msg
+
 
 @pytest.mark.asyncio
 @pytest.mark.unit

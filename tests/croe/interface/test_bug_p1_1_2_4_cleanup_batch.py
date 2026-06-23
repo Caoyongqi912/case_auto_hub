@@ -14,11 +14,11 @@ from tests.croe.interface._bug_ids import BUG_P1_1, BUG_P1_2, BUG_P1_4
 def test_bug_p1_1_no_magic_200_in_build_result():
     """[
     修前: `is_success = ctx.response.status_code == 200`
-    修后: `is_success = ctx.response.status_code == InterfaceResponseStatusCodeEnum.SUCCESS`
+    修后: `result.result = ctx.response.status_code == InterfaceResponseStatusCodeEnum.SUCCESS`
     """
-    from croe.interface.executor.interface_executor import InterfaceExecutor
+    from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 
-    src = inspect.getsource(InterfaceExecutor._build_result)
+    src = inspect.getsource(InterfaceResult.from_execution_context)
 
     # 1. 不应有 == 200 硬编码
     # 找 code_lines (剥注释), 避免误命中注释
@@ -28,12 +28,12 @@ def test_bug_p1_1_no_magic_200_in_build_result():
     ]
     code_only = "\n".join(code_lines)
     assert " == 200" not in code_only, (
-        f"[{BUG_P1_1}] _build_result 不应硬编码 ' == 200', "
+        f"[{BUG_P1_1}] from_execution_context 不应硬编码 ' == 200', "
         f"改用 InterfaceResponseStatusCodeEnum.SUCCESS"
     )
     # 2. 应该有 enum
     assert "InterfaceResponseStatusCodeEnum.SUCCESS" in code_only, (
-        f"[{BUG_P1_1}] _build_result 应使用 "
+        f"[{BUG_P1_1}] from_execution_context 应使用 "
         f"InterfaceResponseStatusCodeEnum.SUCCESS"
     )
 

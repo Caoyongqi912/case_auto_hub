@@ -67,7 +67,7 @@ class TestClean:
         starter.clear_logs = AsyncMock()
         r = PlayRunner(starter=starter)
         r.variable_manager = MagicMock()
-        r.variable_manager.clear = AsyncMock()
+        r.variable_manager.clear = MagicMock()
         r.browser = None
         pm = MagicMock()
         pm.close = AsyncMock()
@@ -83,7 +83,7 @@ class TestClean:
         starter.clear_logs = AsyncMock()
         r = PlayRunner(starter=starter)
         r.variable_manager = MagicMock()
-        r.variable_manager.clear = AsyncMock()
+        r.variable_manager.clear = MagicMock()
         mock_browser = MagicMock()
         mock_browser.close_all = AsyncMock()
         r.browser = mock_browser
@@ -121,8 +121,8 @@ class TestInitCaseVariables:
         r = PlayRunner(starter=starter)
         r.variable_manager = MagicMock()
         r.variable_manager.variables = {}
-        r.variable_manager.trans = AsyncMock(side_effect=lambda x: f"trans({x})")
-        r.variable_manager.add_vars = AsyncMock()
+        r.variable_manager.trans = MagicMock(side_effect=lambda x: f"trans({x})")
+        r.variable_manager.add_vars = MagicMock()
         # mock 2 个 case var
         v1 = MagicMock(key="token", value="abc123")
         v2 = MagicMock(key="host", value="http://api.example.com")

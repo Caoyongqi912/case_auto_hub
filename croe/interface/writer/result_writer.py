@@ -202,7 +202,7 @@ class ResultWriter:
         else:
             self.api_result_cache.append(interface_result)
             if len(self.api_result_cache) >= self.MAX_CACHE_SIZE:
-                await self._flush_cache()
+                await self.flush()
             return interface_result
 
     async def write_step_result(
@@ -278,7 +278,7 @@ class ResultWriter:
         else:
             self.content_result_cache.append(result_data)
             if len(self.content_result_cache) >= self.MAX_CACHE_SIZE:
-                await self._flush_cache()
+                await self.flush()
             return None
 
     async def update_step_result(
@@ -338,7 +338,7 @@ class ResultWriter:
             case_result: 用例结果对象
             logs: 执行日志
         """
-        await self._flush_cache()
+        await self.flush()
 
         # 回填反向 FK: immediate 写入时 content_result_id 还是 NULL
         backfilled = await InterfaceResultMapper.backfill_content_result_id_fk(
@@ -418,12 +418,14 @@ class ResultWriter:
                 f"{len(self._retry_queue)} 条"
             )
             # 移到 current cache 头部 (优先重试)
-            retry_items = self._retry_queue
-            self._retry_queue = []
-            self.api_result_cache = retry_items["api"] + self.api_result_cache
-            self.content_result_cache = (
-                retry_items["content"] + self.content_result_cache
-            )
+            for retry_batch in self._retry_queue:
+                self.api_result_cache = (
+                    retry_batch.get("api", []) + self.api_result_cache
+                )
+                self.content_result_cache = (
+                    retry_batch.get("content", []) + self.content_result_cache
+                )
+            self._retry_queue.clear()
 
         if self.api_result_cache or self.content_result_cache:
             log.info(
@@ -595,7 +597,7 @@ class ResultWriter:
         Args:
             task_result: 任务结果对象
         """
-        await self._flush_cache()
+        await self.flush()
 
         if task_result.fail_num == 0:
             task_result.result = InterfaceAPIResultEnum.SUCCESS

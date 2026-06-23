@@ -94,7 +94,7 @@ class RequestBuilder:
         await self._prepare_auth(request_data, interface)
 
         # 变量替换
-        await self._transform_request_data(request_data)
+        self._transform_request_data(request_data)
 
         return request_data
 
@@ -419,18 +419,30 @@ class RequestBuilder:
 
     # ==================== 私有方法 - 变量转换 ====================
 
-    async def _transform_request_data(self, request_data: Dict[str, Any]) -> None:
+    def _transform_request_data(self, request_data: Dict[str, Any]) -> None:
         """
         转换请求数据中的变量
+
+        只替换真正的数据字段（headers/params/body/content/url），
+        不替换 timeout、follow_redirects 等 httpx 配置字段。
 
         Args:
             request_data: 请求数据字典（会被修改）
         """
-        # 过滤出需要转换的字段
+        # 只允许替换真正的数据字段
+        allowed_keys = {
+            KEY_HEADERS,
+            KEY_PARAMS,
+            KEY_JSON,
+            KEY_FORM_DATA,
+            KEY_FORM_FILES,
+            KEY_CONTENT,
+            "url",
+        }
         items_to_transform = {
             key: value
             for key, value in request_data.items()
-            if value is not None
+            if key in allowed_keys and value is not None
         }
 
         if not items_to_transform:
@@ -438,7 +450,7 @@ class RequestBuilder:
 
         # VariableTrans.trans 已同步化，直接顺序转换即可
         keys = list(items_to_transform.keys())
-        results = [await self.variables.trans(value) for value in items_to_transform.values()]
+        results = [self.variables.trans(value) for value in items_to_transform.values()]
 
         # 更新转换后的值
         for key, transformed_value in zip(keys, results):

@@ -142,7 +142,7 @@ class PlayRunner:
         if page_manager:
             await page_manager.close()
 
-        await self.variable_manager.clear()
+        self.variable_manager.clear()
         await self.starter.clear_logs()
 
     async def _init_page(self) -> PageManager:
@@ -171,8 +171,8 @@ class PlayRunner:
         try:
             if variables := await PlayCaseVariablesMapper.query_by(play_case_id=play_case.id):
                 for case_var in variables:
-                    _v = await self.variable_manager.trans(case_var.value)
-                    await self.variable_manager.add_vars({case_var.key: _v})
+                    _v = self.variable_manager.trans(case_var.value)
+                    self.variable_manager.add_vars({case_var.key: _v})
                 await self.starter.send(
                     f"🫳🫳 初始化用例变量 = {json.dumps(self.variable_manager.variables, ensure_ascii=False)}")
         except Exception as e:

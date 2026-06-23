@@ -15,6 +15,7 @@ import httpx
 
 from app.mapper.project.dbConfigMapper import DbConfigMapper
 from app.model.base import EnvModel
+from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from app.model.interfaceAPIModel.interfaceGlobalModel import InterfaceGlobalHeader
 from app.model.interfaceAPIModel.interfaceModel import Interface
 from common.httpxClient import HttpxClient
@@ -82,7 +83,7 @@ class InterfaceExecutor:
         interface: Interface,
         env: Optional[EnvModel] = None,
         temp_var: Optional[Dict] = None
-    ) -> Dict[str, Any]:
+    ) -> InterfaceResult:
         """
         执行接口请求（主入口）
 
@@ -90,7 +91,7 @@ class InterfaceExecutor:
         1. 初始化执行上下文
         2. 构建并发送 HTTP 请求
         3. 执行后置处理（变量提取 + 断言）
-        4. 构建并返回结果
+        4. 构建并返回 InterfaceResult 模型实例
 
         Args:
             interface: 接口对象
@@ -98,9 +99,8 @@ class InterfaceExecutor:
             temp_var: 临时变量（单个 dict 或 list）
 
         Returns:
-            Dict[str, Any]: 结果字典, 字段与 InterfaceResult 模型对齐,
-            其中 'result' 字段 (bool) 表示执行是否成功。
-            调用方请用 result['result'] 代替旧的 success 返回值 。
+            InterfaceResult: 接口执行结果模型实例,
+            其中 result 属性 (bool) 表示执行是否成功。
         """
         # 创建执行上下文
         ctx: ExecutionContext = ExecutionContext(
@@ -126,7 +126,11 @@ class InterfaceExecutor:
             await self.starter.send(f"Error occurred: \"{str(e)}\"")
 
         # 构建并返回结果
-        return self._build_result(ctx)
+        return InterfaceResult.from_execution_context(
+            ctx,
+            starter_id=self.starter.userId,
+            starter_name=self.starter.username,
+        )
 
     async def _build_and_send_request(self, ctx: ExecutionContext) -> None:
         """
@@ -146,7 +150,7 @@ class InterfaceExecutor:
         ctx.request_info = await builder.set_req_info(ctx.interface)
 
         # 变量替换
-        ctx.resolved_url = await self.variable_manager.trans(origin_url)
+        ctx.resolved_url = self.variable_manager.trans(origin_url)
         log.info(f"resolved_url = {ctx.resolved_url}")
         ctx.request_info['url'] = ctx.resolved_url
 
@@ -198,14 +202,14 @@ class InterfaceExecutor:
             return []
 
         # 变量替换
-        values = await self.variable_manager.trans(before_params)
+        values = self.variable_manager.trans(before_params)
         log.info(f"执行前参数处理: {values}")
 
         if not values:
             return []
 
         # 添加到变量管理器
-        await self.variable_manager.add_vars(values)
+        self.variable_manager.add_vars(values)
 
         # 标记变量来源
         return [
@@ -233,7 +237,7 @@ class InterfaceExecutor:
         extracted_vars = script_manager.execute(script)
 
         # 添加到变量管理器
-        await self.variable_manager.add_vars(extracted_vars)
+        self.variable_manager.add_vars(extracted_vars)
         await self.starter.send(f"🫳🫳  脚本 = {json.dumps(extracted_vars, ensure_ascii=False)}")
 
         # 标记变量来源
@@ -270,7 +274,7 @@ class InterfaceExecutor:
 
         # 变量替换 SQL 语句
         sql_text = interface.interface_before_sql or ""
-        db_script = await self.variable_manager.trans(sql_text.strip())
+        db_script = self.variable_manager.trans(sql_text.strip())
         log.info(f"执行前sql处理: {db_script}")
 
         # 执行 SQL
@@ -282,7 +286,7 @@ class InterfaceExecutor:
         result = await db_executor.invoke(db_config.db_type, **db_config.config)
 
         # 添加到变量管理器
-        await self.variable_manager.add_vars(result)
+        self.variable_manager.add_vars(result)
         await self.starter.send(f"🫳🫳    数据库读取 = {result}")
 
         if not result:
@@ -379,80 +383,9 @@ class InterfaceExecutor:
         )
 
         # 添加到变量管理器
-        await self.variable_manager.add_vars(vars_list)
+        self.variable_manager.add_vars(vars_list)
 
         return vars_list
-
-    def _build_result(self, ctx: ExecutionContext) -> Dict[str, Any]:
-        """
-        构建接口执行结果
-        调用方用 result['result'] 拿成功标志, 避免 dict 和 bool 两路来源歧义)。
-
-        构建结果与 InterfaceResult 模型字段对齐
-
-        Args:
-            ctx: 执行上下文
-
-        Returns:
-            Dict[str, Any]: 结果字典, 'result' 字段 (bool) 表示执行是否成功
-        """
-        # 基础信息
-        result: Dict[str, Any] = {
-            'interface_id': ctx.interface.id,
-            'interface_name': ctx.interface.interface_name,
-            'interface_uid': ctx.interface.uid,
-            'interface_desc': ctx.interface.interface_desc,
-            'starter_id': self.starter.userId,
-            'starter_name': self.starter.username,
-            'request_url': ctx.resolved_url,
-            'request_method': ctx.interface.interface_method,
-            'request_params': ctx.request_info.get('params') or None,
-            "request_body_type": ctx.interface.interface_body_type,
-            'request_json': json.dumps(ctx.request_info.get('json')) if ctx.request_info.get('json') else None,
-            'request_data': json.dumps(ctx.request_info.get('data')) if ctx.request_info.get('data') else None,
-            'request_headers': ctx.request_info.get('headers') or None,
-            'extracts': [v for v in (ctx.extracted_vars or []) if v is not None],
-            'asserts': [a for a in (ctx.asserts or []) if a is not None],
-        }
-
-        # 环境信息
-        if ctx.env:
-            result['running_env_id'] = ctx.env.id
-            result['running_env_name'] = ctx.env.name
-        else:
-            result['running_env_id'] = ctx.interface.env_id
-
-        # 错误处理
-        if ctx.error:
-            result.update({
-                'response_status': 500,
-                'response_text': ctx.error,
-                'result': False,
-                'use_time': '0'
-            })
-            ctx.success = False
-        # 正常响应处理
-        elif isinstance(ctx.response, httpx.Response):
-            is_success = ctx.response.status_code == InterfaceResponseStatusCodeEnum.SUCCESS
-            result.update({
-                'response_status': ctx.response.status_code,
-                'response_text': ctx.response.text,
-                'response_headers': {k: v for k, v in ctx.response.headers.items()},
-                'use_time': str(round(ctx.response.elapsed.total_seconds() * 1000, 2))
-            })
-            if not is_success:
-                ctx.success = False
-
-        # 检查断言结果
-        if ctx.asserts:
-            has_failed = any(a.get('result') is False for a in ctx.asserts)
-            if has_failed:
-                ctx.success = False
-
-        result['result'] = ctx.success
-        result['start_time'] = ctx.start_time
-
-        return result
 
     @staticmethod
     def _normalize_temp_variables(temp_var: Optional[Union[Dict, List]]) -> List:

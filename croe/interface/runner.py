@@ -91,7 +91,7 @@ class InterfaceRunner:
                 pass
             self.result_writer.clear_cache()
             try:
-                await self.variable_manager.clear()
+                self.variable_manager.clear()
             except Exception:
                 pass
 
@@ -134,7 +134,7 @@ class InterfaceRunner:
                 pass
             self.result_writer.clear_cache()
             try:
-                await self.variable_manager.clear()
+                self.variable_manager.clear()
             except Exception:
                 pass
 
@@ -249,7 +249,7 @@ class InterfaceRunner:
         finally:
             # [OBS-2] 清掉 trace_id, 下次 case 重新设
             clear_trace_id()
-            await self.variable_manager.clear()
+            self.variable_manager.clear()
             self.result_writer.clear_cache()
             try:
                 await self.interface_executor.aclose()
@@ -363,23 +363,23 @@ class InterfaceRunner:
         # task 结束后释放 httpx 连接 + 清空 variable + 清空 result_writer 缓存 + clear trace_id
         try:
             for attempt in range(retry + 1):
-                result = await self.interface_executor.execute(
+                interface_result = await self.interface_executor.execute(
                     interface=interface,
                     env=env
                 )
-                success = result['result']
+                success = interface_result.result
 
                 if success:
+                    interface_result.task_result_id = task_result_id
                     await self.result_writer.write_interface_result(
-                        interface_result=InterfaceResult(**result,
-                                                         task_result_id=task_result_id)
+                        interface_result=interface_result
                     )
                     return True
 
                 if attempt == retry:
+                    interface_result.task_result_id = task_result_id
                     await self.result_writer.write_interface_result(
-                        interface_result=InterfaceResult(**result,
-                                                         task_result_id=task_result_id)
+                        interface_result=interface_result
                     )
                     await self.starter.send(
                         f"接口 {interface} 执行结果 FALSE"
@@ -400,7 +400,7 @@ class InterfaceRunner:
             except Exception:
                 pass
             self.result_writer.clear_cache()
-            await self.variable_manager.clear()
+            self.variable_manager.clear()
 
     async def init_interface_case_vars(self, interface_case_id: int) -> None:
         """
@@ -416,10 +416,10 @@ class InterfaceRunner:
             if interface_case_vars:
                 var_dict = {}
                 for var in interface_case_vars:
-                    var_dict[var.key] = await self.variable_manager.trans(
+                    var_dict[var.key] = self.variable_manager.trans(
                         var.value
                     )
-                await self.variable_manager.add_vars(var_dict)
+                self.variable_manager.add_vars(var_dict)
                 await self.starter.send(
                     f"🫳🫳 初始化业务用例变量 = "
                     f"{self.variable_manager.variables}"

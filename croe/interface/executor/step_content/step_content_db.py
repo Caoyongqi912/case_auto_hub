@@ -47,7 +47,10 @@ class APIDBContentStrategy(StepBaseStrategy):
             ident=step_context.content.target_id
         )
         if not content_sql:
-            return True
+            log.warning(
+                f"未找到 SQL 配置: id={step_context.content.target_id}"
+            )
+            return False
 
         db_config = await DbConfigMapper.get_by_id(ident=content_sql.db_id)
         if not db_config:
@@ -56,7 +59,7 @@ class APIDBContentStrategy(StepBaseStrategy):
             )
             return False
 
-        db_script_text = await step_context.variable_manager.trans(
+        db_script_text = step_context.variable_manager.trans(
             content_sql.sql_text.strip()
         )
         log.info(f"执行前sql处理: {db_script_text}")
@@ -87,7 +90,7 @@ class APIDBContentStrategy(StepBaseStrategy):
             )
 
         if result and success:
-            await step_context.variable_manager.add_vars(result)
+            step_context.variable_manager.add_vars(result)
             db_query_result = [
                 {
                     ExtractTargetVariablesEnum.KEY:k,

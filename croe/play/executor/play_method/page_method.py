@@ -19,7 +19,7 @@ class GotoMethod(BaseMethods):
         url = ""
         try:
             page = context.page
-            url = await context.variable_manager.trans(context.step.value)
+            url = context.variable_manager.trans(context.step.value)
             await page.goto(url=url, wait_until="domcontentloaded",timeout=60000)
             message = f"跳转页面 ✅ : {url}"
             await context.log(message)

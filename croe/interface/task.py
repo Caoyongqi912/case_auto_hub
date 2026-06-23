@@ -187,8 +187,8 @@ class TaskRunner:
             return
         try:
             # 走 trans 做变量替换 (variables 自身可能含 ${xxx} 引用)
-            transed = await self._shared_vm.trans(variables)
-            await self._shared_vm.add_vars(transed)
+            transed = self._shared_vm.trans(variables)
+            self._shared_vm.add_vars(transed)
             await self.starter.send(
                 f"🫳🫳 初始化任务变量 = {self._shared_vm.variables}"
             )

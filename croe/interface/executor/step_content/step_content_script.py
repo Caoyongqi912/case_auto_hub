@@ -56,7 +56,7 @@ class APIScriptContentStrategy(StepBaseStrategy):
 
 
 
-                await step_context.variable_manager.add_vars(extracted_vars)
+                step_context.variable_manager.add_vars(extracted_vars)
                 await step_context.starter.send(
                     f"🫳🫳  脚本变量 = "
                     f"{json.dumps(extracted_vars, ensure_ascii=False)}"

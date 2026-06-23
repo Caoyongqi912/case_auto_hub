@@ -214,7 +214,7 @@ async def test_bug_t2_finally_runs_even_on_exception():
 
     # mock clear_cache / clear
     runner.result_writer.clear_cache = MagicMock()
-    runner.variable_manager.clear = AsyncMock()
+    runner.variable_manager.clear = MagicMock()
 
     # mock InterfaceGlobalHeaderMapper 避免真查 DB
     with patch(
@@ -232,4 +232,4 @@ async def test_bug_t2_finally_runs_even_on_exception():
     # finally 三个清理都跑了
     runner.interface_executor.aclose.assert_awaited()
     runner.result_writer.clear_cache.assert_called_once()
-    runner.variable_manager.clear.assert_awaited_once()
+    runner.variable_manager.clear.assert_called_once()

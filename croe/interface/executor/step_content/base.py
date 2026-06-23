@@ -7,7 +7,7 @@
 # @Desc: 步骤执行策略基类
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from enums import InterfaceAPIResultEnum
 
@@ -44,7 +44,8 @@ class StepBaseStrategy(ABC):
     async def _record_step_outcome(
         self,
         step_context: "CaseStepContext",
-        success: bool
+        success: bool,
+        case_result: Any = None,
     ) -> None:
         """
         记录步骤执行结果并更新用例统计与进度。
@@ -52,8 +53,11 @@ class StepBaseStrategy(ABC):
         Args:
             step_context: 步骤执行上下文
             success: 步骤是否成功
+            case_result: 可选, 指定要更新的用例结果对象。
+                        未提供时从 step_context.execution_context.case_result 获取。
         """
-        case_result = step_context.execution_context.case_result
+        if case_result is None:
+            case_result = step_context.execution_context.case_result
         if success:
             case_result.success_num += 1
         else:

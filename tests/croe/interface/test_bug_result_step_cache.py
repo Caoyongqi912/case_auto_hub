@@ -175,25 +175,39 @@ class TestBugResultStepCacheIndex:
  """
 
     @pytest.mark.integration
-    @pytest.mark.asyncio
-    async def test_db_has_composite_index(self):
-        """interface_case_content_result 必须有 (case_result_id, content_step) 联合索引"""
+    def test_db_has_composite_index(self):
+        """[BUG-RESULT-STEP-CACHE] interface_case_content_result 必须有 (case_result_id, content_step) 联合索引
+
+        改用 sync pymysql, 避开 pytest-asyncio 多 loop 切换时
+        async_session scoped session 拿旧 loop 连接的 RuntimeError.
+        """
         if not _mysql_reachable():
             pytest.skip("本地 MySQL 不可达, 跳过集成测试")
-        from sqlalchemy import text
-        from app.model import async_session
-        async with async_session() as s:
-            result = await s.execute(text("""
-                SHOW INDEX FROM interface_case_content_result
-                WHERE Column_name = 'content_step'
-            """))
-            rows = result.fetchall()
-            found = False
-            for r in rows:
-                key_name = (r[2] or "").lower()
-                if "case_result" in key_name and "content_step" in key_name:
-                    found = True
-                    break
+        import pymysql
+        from config import LocalConfig
+        conn = pymysql.connect(
+            host=LocalConfig.MYSQL_SERVER,
+            port=LocalConfig.MYSQL_PORT,
+            user="root",
+            password=LocalConfig.MYSQL_PASSWORD,
+            database=LocalConfig.MYSQL_DATABASE,
+            connect_timeout=2,
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SHOW INDEX FROM interface_case_content_result
+                    WHERE Column_name = 'content_step'
+                """)
+                rows = cur.fetchall()
+                found = False
+                for r in rows:
+                    key_name = (r[2] or "").lower()
+                    if "case_result" in key_name and "content_step" in key_name:
+                        found = True
+                        break
+        finally:
+            conn.close()
         assert found, (
             f"[{BUG_RESULT_STEP_CACHE}] 缺 (case_result_id, content_step) 联合索引"
         )

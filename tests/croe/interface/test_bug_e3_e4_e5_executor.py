@@ -50,13 +50,20 @@ def test_bug_e3_request_builder_no_task_group(bug_e3_marker):
                         f"(行 {node.lineno}), Python 3.10 上会 AttributeError"
                     )
 
-def test_bug_e3_request_builder_uses_gather(bug_e3_marker):
-    """request_builder.py 必须用 asyncio.gather 替代"""
+def test_bug_e3_request_builder_no_gather_or_task_group(bug_e3_marker):
+    """request_builder.py 已同步化, 不再用 asyncio.gather / TaskGroup。"""
     src = (REPO / "croe" / "interface" / "builder" / "request_builder.py").read_text(
         encoding="utf-8"
     )
-    assert "asyncio.gather" in src, (
-        f"[{BUG_E3}] 没用 asyncio.gather 替代 TaskGroup, 3.10 兼容没做"
+    assert "asyncio.gather" not in src, (
+        f"[{BUG_E3}] _transform_request_data 已同步化, 不应再用 asyncio.gather"
+    )
+    assert "asyncio.TaskGroup" not in src, (
+        f"[{BUG_E3}] 不应使用 asyncio.TaskGroup (Python 3.10 不兼容)"
+    )
+    # 同步化后应直接调用 self.variables.trans
+    assert "self.variables.trans(value)" in src, (
+        f"[{BUG_E3}] 应直接同步调用 self.variables.trans(value)"
     )
 
 def test_bug_e3_transform_request_data_signature_unchanged(bug_e3_marker):
@@ -109,25 +116,38 @@ def test_bug_e5_before_sql_uses_explicit_none_guard(bug_e5_marker):
 @pytest.mark.asyncio
 async def test_bug_e3_transform_data_e2e(bug_e3_marker):
     """_transform_request_data 在真 asyncio loop 下能跑通 (3.10 兼容路径)"""
-    from unittest.mock import MagicMock, AsyncMock
-    from croe.interface.builder.request_builder import RequestBuilder
+    from unittest.mock import MagicMock
+    from croe.interface.builder.request_builder import RequestBuilder, KEY_HEADERS, KEY_PARAMS
 
-    # mock 一个 variable_manager, trans 返回值加上 'X' 后缀
+    # mock 一个 variable_manager, trans 递归返回值加上 'X' 后缀
     var_mgr = MagicMock()
-    async def fake_trans(value):
+    def fake_trans(value):
         if value is None:
             return None
+        if isinstance(value, dict):
+            return {k: fake_trans(v) for k, v in value.items()}
         return f"{value}-X"
     var_mgr.trans = fake_trans
 
     rb = RequestBuilder(variables=var_mgr, global_headers=[])
 
-    data = {"a": "1", "b": "2", "c": None}
-    await rb._transform_request_data(data)
+    data = {
+        KEY_HEADERS: {"X-Api": "v1"},
+        KEY_PARAMS: {"q": "hello"},
+        "read": 15,
+        "connect": 5,
+        "follow_redirects": True,
+    }
+    rb._transform_request_data(data)
 
-    assert data == {"a": "1-X", "b": "2-X", "c": None}, (
-        f"[{BUG_E3}] _transform_request_data 跑完结果不对: {data}"
-    )
+    # 数据字段被替换
+    assert data[KEY_HEADERS] == {"X-Api": "v1-X"}
+    assert data[KEY_PARAMS] == {"q": "hello-X"}
+    # httpx 配置字段不被替换，保持原值
+    assert data["read"] == 15
+    assert data["connect"] == 5
+    assert data["follow_redirects"] is True
+
 
 @pytest.mark.asyncio
 async def test_bug_e3_transform_data_empty(bug_e3_marker):
@@ -136,7 +156,7 @@ async def test_bug_e3_transform_data_empty(bug_e3_marker):
     from croe.interface.builder.request_builder import RequestBuilder
 
     var_mgr = MagicMock()
-    async def fake_trans(value):
+    def fake_trans(value):
         return value
     var_mgr.trans = fake_trans
 
@@ -144,10 +164,10 @@ async def test_bug_e3_transform_data_empty(bug_e3_marker):
 
     # 空
     data = {}
-    await rb._transform_request_data(data)
+    rb._transform_request_data(data)
     assert data == {}
 
-    # 全 None
-    data = {"a": None, "b": None}
-    await rb._transform_request_data(data)
-    assert data == {"a": None, "b": None}
+    # 非数据字段为 None
+    data = {"read": None, "connect": None}
+    rb._transform_request_data(data)
+    assert data == {"read": None, "connect": None}

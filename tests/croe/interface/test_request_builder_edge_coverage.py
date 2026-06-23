@@ -56,7 +56,7 @@ def _build_interface(
 
 def _builder():
     var_mgr = MagicMock()
-    var_mgr.trans = AsyncMock(side_effect=lambda x: x)
+    var_mgr.trans = MagicMock(side_effect=lambda x: x)
     return RequestBuilder(variables=var_mgr, global_headers=[])
 
 
@@ -93,6 +93,38 @@ async def test_set_req_info_get_end_to_end_main_flow():
     assert request_data[KEY_PARAMS] == {"q": "hello"}
     # 4) No_Auth: 不应加 Authorization
     assert "Authorization" not in request_data[KEY_HEADERS]
+
+
+# --------------------------------------------------------------------------- #
+# 1.5) _transform_request_data 不替换 httpx 配置字段
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_transform_request_data_skips_non_data_fields():
+    """_transform_request_data 不应替换 timeout / connect / follow_redirects 等配置字段。"""
+    builder = _builder()
+
+    request_data = {
+        KEY_HEADERS: {"X-Api": "{{api_version}}"},
+        "url": "http://example.com/{{path}}",
+        "read": 30,
+        "connect": 10,
+        "follow_redirects": True,
+    }
+
+    # 让 trans 把任何字符串都替换成 "REPLACED"
+    builder.variables.trans = MagicMock(return_value="REPLACED")
+
+    builder._transform_request_data(request_data)
+
+    # 数据字段被替换
+    assert request_data[KEY_HEADERS] == "REPLACED"
+    assert request_data["url"] == "REPLACED"
+    # 配置字段保持原值
+    assert request_data["read"] == 30
+    assert request_data["connect"] == 10
+    assert request_data["follow_redirects"] is True
 
 
 # --------------------------------------------------------------------------- #

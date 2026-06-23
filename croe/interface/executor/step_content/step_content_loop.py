@@ -42,13 +42,16 @@ class APILoopContentStrategy(StepBaseStrategy):
         loop = await InterfaceLoopMapper.get_by_id(
             ident=step_context.content.target_id
         )
-        log.info(f'loop info {loop}')
         if not loop:
+            log.warning(
+                f"未找到循环配置: id={step_context.content.target_id}"
+            )
             await step_context.starter.send(
                 f"未找到循环配置: id={step_context.content.target_id}"
             )
             return False
 
+        log.info(f'loop info {loop}')
         start_time = datetime.now()
         loop_content_result = await step_context.result_writer.write_step_result(
             content_type=CaseStepContentType.STEP_LOOP,
@@ -138,11 +141,11 @@ class APILoopContentStrategy(StepBaseStrategy):
             env=step_context.execution_context.env,
             temp_var=temp_var,
         )
-        success = interface_result['result']
+        success = interface_result.result
 
         try:
             await step_context.result_writer.write_interface_result(
-                interface_result=InterfaceResult(**interface_result),
+                interface_result=interface_result,
                 content_result_id=content_result.id
             )
         except Exception as e:
@@ -350,8 +353,8 @@ class APILoopContentStrategy(StepBaseStrategy):
                 if loop.loop_interval > 0:
                     await asyncio.sleep(loop.loop_interval)
 
-            key = await step_context.variable_manager.trans(loop.key)
-            value = await step_context.variable_manager.trans(loop.value)
+            key = step_context.variable_manager.trans(loop.key)
+            value = step_context.variable_manager.trans(loop.value)
             log.info(f"__loop_condition  key = {key}")
             log.info(f"__loop_condition  value = {value}")
             log.info(f"__loop_condition  operate = {loop.operate}")
@@ -417,4 +420,4 @@ class APILoopContentStrategy(StepBaseStrategy):
             loop_items=loop_items
         )
 
-        await self._record_step_outcome(step_context, all_success)
+        await self._record_step_outcome(step_context, all_success, case_result=case_result)

@@ -150,7 +150,7 @@ class FillMethod(BaseMethods):
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
         try:
-            value = await context.variable_manager.trans(context.value.strip())
+            value = context.variable_manager.trans(context.value.strip())
             await locator.fill(value=value)
             await context.log(f"填充输入 ✅ : {context.selector} = {value}")
             return create_success_result(message=f"填充输入成功: {context.selector} = {value}")
@@ -176,7 +176,7 @@ class TypeMethod(BaseMethods):
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
         try:
-            value = await context.variable_manager.trans(context.value.strip())
+            value = context.variable_manager.trans(context.value.strip())
             await locator.type(value)
             await context.log(f"输入文本 ✅ : {context.selector} = {value}")
             return create_success_result(message=f"输入文本成功: {context.selector} = {value}")
@@ -277,7 +277,7 @@ class PressMethod(BaseMethods):
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
         try:
-            key = await context.variable_manager.trans(context.value.strip())
+            key = context.variable_manager.trans(context.value.strip())
             await locator.press(key)
             await context.log(f"按键 ✅ : {key}")
             return create_success_result(message=f"按键操作成功: {key}")
@@ -303,7 +303,7 @@ class SelectOptionLabelMethod(BaseMethods):
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
         try:
-            value = await context.variable_manager.trans(context.value.strip())
+            value = context.variable_manager.trans(context.value.strip())
             await locator.select_option(label=value)
             await context.log(f"选择选项(标签) ✅ : {context.selector} = {value}")
             return create_success_result(message=f"选择选项(标签)成功: {context.selector} = {value}")
@@ -329,7 +329,7 @@ class SelectOptionValueMethod(BaseMethods):
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
         try:
-            value = await context.variable_manager.trans(context.value.strip())
+            value = context.variable_manager.trans(context.value.strip())
             await locator.select_option(value=value)
             await context.log(f"选择选项(值) ✅ : {context.selector} = {value}")
             return create_success_result(message=f"选择选项(值)成功: {context.selector} = {value}")
@@ -355,7 +355,7 @@ class SelectOptionValuesMethod(BaseMethods):
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
         try:
-            value = await context.variable_manager.trans(context.value)
+            value = context.variable_manager.trans(context.value)
             values = [v.strip() for v in value.split(",")]
             await locator.select_option(value=values)
             await context.log(f"选择多个选项 ✅ : {context.selector} = {values}")
@@ -463,7 +463,7 @@ class CountMethod(BaseMethods):
         try:
             key = context.key
             count = await locator.count()
-            await context.variable_manager.add_var(key, str(count))
+            context.variable_manager.add_var(key, str(count))
             await context.log(f"提取数量 ✅ : {key} = {count}")
             return create_success_result(
                 message=f"提取数量成功: {key} = {count}",
@@ -505,7 +505,7 @@ class GetAttributeMethod(BaseMethods):
                 log.warning(f"[GetAttributeMethod] attribute '{attr_name}' not found")
                 value = ""
 
-            await context.variable_manager.add_var(key, value)
+            context.variable_manager.add_var(key, value)
             await context.log(f"提取属性 ✅ : {key} = {value}")
             return create_success_result(
                 message=f"提取属性成功: {key} = {value}",
@@ -541,7 +541,7 @@ class GetInnerTextMethod(BaseMethods):
         try:
             key = context.key
             value = await locator.inner_text()
-            await context.variable_manager.add_var(key, value)
+            context.variable_manager.add_var(key, value)
             await context.log(f"提取文本 ✅ : {key} = {value}")
             return create_success_result(
                 message=f"提取文本成功: {key} = {value}",
@@ -577,7 +577,7 @@ class GetInputValueMethod(BaseMethods):
         try:
             key = context.key
             value = await locator.input_value()
-            await context.variable_manager.add_var(key, value.strip())
+            context.variable_manager.add_var(key, value.strip())
             await context.log(f"提取值 ✅ : {key} = {value}")
             return create_success_result(
                 message=f"提取值成功: {key} = {value}",
@@ -617,7 +617,7 @@ class GetTextContentMethod(BaseMethods):
                 value = value
             else:
                 value = ""
-            await context.variable_manager.add_var(key, value)
+            context.variable_manager.add_var(key, value)
             await context.log(f"提取文本内容 ✅ : {key} = {value}")
             return create_success_result(
                 message=f"提取文本内容成功: {key} = {value}",
@@ -649,7 +649,7 @@ class EvaluateMethod(BaseMethods):
 
     async def execute(self, context: StepContext, locator: Optional[Locator] = None) -> StepExecutionResult:
         try:
-            script = await context.variable_manager.trans(context.value.strip())
+            script = context.variable_manager.trans(context.value.strip())
             result = await locator.evaluate(script)
             await context.log(f"执行脚本 ✅ : {script}")
 

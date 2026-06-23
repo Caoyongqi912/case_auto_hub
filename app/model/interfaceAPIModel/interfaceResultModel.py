@@ -13,7 +13,7 @@ from sqlalchemy.orm import relationship
 
 from app.model import BaseModel
 from enums.CaseEnum import CaseStepContentType
-from enums.InterfaceEnum import StepStatusEnum
+from enums.InterfaceEnum import StepStatusEnum, InterfaceResponseStatusCodeEnum
 
 if TYPE_CHECKING:
     from croe.interface.executor.context import ExecutionContext
@@ -134,7 +134,9 @@ class InterfaceResult(BaseModel):
             result.response_text = ctx.response.text
             result.response_headers = {k: v for k, v in ctx.response.headers.items()}
             result.use_time = str(round(ctx.response.elapsed.total_seconds() * 1000, 2))
-            result.result = ctx.response.status_code == 200
+            result.result = ctx.response.status_code == InterfaceResponseStatusCodeEnum.SUCCESS
+        else:
+            result.result = ctx.success
 
         if ctx.asserts:
             has_failed = any(a.get("result") is False for a in ctx.asserts)

@@ -10,6 +10,7 @@ from croe.interface.executor.interface_executor import (
     InterfaceExecutor,
     ExecutionContext,
 )
+from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
 from enums import (
     InterfaceResponseStatusCodeEnum,
     InterfaceRequestMethodEnum,
@@ -81,8 +82,8 @@ def _build_starter(user_id=10, username="alice"):
 
 def _build_variable_manager():
     mgr = MagicMock()
-    mgr.trans = AsyncMock(side_effect=lambda x: x)
-    mgr.add_vars = AsyncMock()
+    mgr.trans = MagicMock(side_effect=lambda x: x)
+    mgr.add_vars = MagicMock()
     mgr.variables = []
     return mgr
 
@@ -172,18 +173,18 @@ async def test_execute_success_path_returns_result_dict_with_result_true():
         result = await executor.execute(interface=iface, env=env)
 
     # 正常路径 -> result=True, response_status=200
-    assert result["result"] is True
-    assert result["response_status"] == 200
-    assert result["response_text"] == '{"hello":"world"}'
-    assert result["interface_id"] == 1
-    assert result["starter_id"] == 10
-    assert result["starter_name"] == "alice"
-    assert result["running_env_id"] == env.id
-    assert result["running_env_name"] == env.name
-    assert result["request_url"] == "http://example.com/api/v1/x"
+    assert result.result is True
+    assert result.response_status == 200
+    assert result.response_text == '{"hello":"world"}'
+    assert result.interface_id == 1
+    assert result.starter_id == 10
+    assert result.starter_name == "alice"
+    assert result.running_env_id == env.id
+    assert result.running_env_name == env.name
+    assert result.request_url == "http://example.com/api/v1/x"
     # asserts / extracts 过滤 None 后应为空 list
-    assert result["asserts"] == []
-    assert result["extracts"] == []
+    assert result.asserts == []
+    assert result.extracts == []
     # starter.send 至少被调一次 (EXECUTE API 起始日志)
     assert executor.starter.send.await_count >= 1
 
@@ -194,7 +195,7 @@ async def test_execute_success_path_returns_result_dict_with_result_true():
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_execute_error_path_records_ctx_error_and_returns_failure():
-    """execute 异常路径: build raise -> ctx.error 填上, _build_result 走 error 分支。
+    """execute 异常路径: build raise -> ctx.error 填上, from_execution_context 走 error 分支。
     锁定     """
     executor = _build_executor()
     iface = _build_interface(extracts=None, asserts=None)
@@ -207,10 +208,10 @@ async def test_execute_error_path_records_ctx_error_and_returns_failure():
         result = await executor.execute(interface=iface, env=env)
 
     # error 分支: result=False, response_status=500, response_text=错误信息
-    assert result["result"] is False
-    assert result["response_status"] == 500
-    assert "未提供环境配置" in result["response_text"]
-    assert result["use_time"] == "0"
+    assert result.result is False
+    assert result.response_status == 500
+    assert "未提供环境配置" in result.response_text
+    assert result.use_time == "0"
     # starter.send 至少 2 次: EXECUTE API + Error occurred
     send_msgs = [c.args[0] for c in executor.starter.send.call_args_list]
     assert any("EXECUTE API" in m for m in send_msgs)
@@ -250,11 +251,11 @@ async def test_execute_500_status_marks_result_false():
         result = await executor.execute(interface=iface, env=env)
 
     # 500 -> result=False
-    assert result["result"] is False
-    assert result["response_status"] == 500
-    assert result["response_text"] == "Internal Server Error"
+    assert result.result is False
+    assert result.response_status == 500
+    assert result.response_text == "Internal Server Error"
     # error 字段没填, 不应被填充
-    assert result["use_time"] != "0"
+    assert result.use_time != "0"
 
 # --------------------------------------------------------------------------- #
 # 5) execute 断言失败: asserts 包含 result=False -> success=False
@@ -292,9 +293,9 @@ async def test_execute_assertion_failure_marks_result_false():
         result = await executor.execute(interface=iface, env=env)
 
     # 断言失败 -> result=False
-    assert result["result"] is False
-    assert result["response_status"] == 200
-    assert result["asserts"] == failed_asserts
+    assert result.result is False
+    assert result.response_status == 200
+    assert result.asserts == failed_asserts
 
 # --------------------------------------------------------------------------- #
 # 6) _execute_before_params 3 分支
@@ -322,7 +323,7 @@ async def test_execute_before_params_empty_list_returns_empty_list():
 async def test_execute_before_params_values_adds_and_tags():
     """_execute_before_params: 有值时 trans + add_vars + 标记 source=BeforeParams。"""
     executor = _build_executor()
-    executor.variable_manager.trans = AsyncMock(return_value=[{"key": "u", "value": "alice"}])
+    executor.variable_manager.trans = MagicMock(return_value=[{"key": "u", "value": "alice"}])
 
     result = await executor._execute_before_params([{"key": "u", "value": "alice"}])
 
@@ -332,7 +333,7 @@ async def test_execute_before_params_values_adds_and_tags():
     assert result[0]["value"] == "alice"
     from enums import ExtractTargetVariablesEnum
     assert result[0][ExtractTargetVariablesEnum.Target] == ExtractTargetVariablesEnum.BeforeParams
-    executor.variable_manager.add_vars.assert_awaited_once()
+    executor.variable_manager.add_vars.assert_called_once()
 
 # --------------------------------------------------------------------------- #
 # 7) _execute_before_script 2 分支
@@ -363,7 +364,7 @@ async def test_execute_before_script_with_value_marks_before_script_source():
     assert result[0][ExtractTargetVariablesEnum.KEY] == "token"
     assert result[0][ExtractTargetVariablesEnum.VALUE] == "abc123"
     assert result[0][ExtractTargetVariablesEnum.Target] == ExtractTargetVariablesEnum.BeforeScript
-    executor.variable_manager.add_vars.assert_awaited_once()
+    executor.variable_manager.add_vars.assert_called_once()
 
 # --------------------------------------------------------------------------- #
 # 8) _execute_before_sql 2 分支
@@ -427,12 +428,12 @@ async def test_execute_extract_no_extracts_returns_empty():
     assert result == []
 
 # --------------------------------------------------------------------------- #
-# 10) _build_result: env=None 时 env_id 兜底
+# 10) from_execution_context: env=None 时 env_id 兜底
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.unit
-def test_build_result_env_none_falls_back_to_interface_env_id():
-    """_build_result: ctx.env=None -> running_env_id 走 interface.env_id 兜底 (line 425-429)。"""
+def test_from_execution_context_env_none_falls_back_to_interface_env_id():
+    """from_execution_context: ctx.env=None -> running_env_id 走 interface.env_id 兜底。"""
     executor = _build_executor()
     iface = _build_interface(env_id=42)
     response = _build_response(status=200)
@@ -447,17 +448,21 @@ def test_build_result_env_none_falls_back_to_interface_env_id():
     ctx.asserts = []
     ctx.extracted_vars = []
 
-    result = executor._build_result(ctx)
+    result = InterfaceResult.from_execution_context(
+        ctx,
+        starter_id=executor.starter.userId,
+        starter_name=executor.starter.username,
+    )
 
     # env=None -> running_env_id 应兜底成 interface.env_id (42)
-    assert result["running_env_id"] == 42
+    assert result.running_env_id == 42
     # 'name' 不应设
-    assert "running_env_name" not in result
-    assert result["result"] is True
+    assert result.running_env_name is None
+    assert result.result is True
 
 @pytest.mark.unit
-def test_build_result_env_set_uses_env_id_and_name():
-    """_build_result: ctx.env 有值 -> running_env_id 走 env.id, name 走 env.name。"""
+def test_from_execution_context_env_set_uses_env_id_and_name():
+    """from_execution_context: ctx.env 有值 -> running_env_id 走 env.id, name 走 env.name。"""
     executor = _build_executor()
     iface = _build_interface(env_id=42)
     env = _build_env(env_id=99, name="dev")
@@ -467,10 +472,14 @@ def test_build_result_env_set_uses_env_id_and_name():
         interface=iface, env=env, start_time="t", resolved_url="u", response=response,
     )
 
-    result = executor._build_result(ctx)
+    result = InterfaceResult.from_execution_context(
+        ctx,
+        starter_id=executor.starter.userId,
+        starter_name=executor.starter.username,
+    )
 
-    assert result["running_env_id"] == 99  # env.id 覆盖 interface.env_id
-    assert result["running_env_name"] == "dev"
+    assert result.running_env_id == 99  # env.id 覆盖 interface.env_id
+    assert result.running_env_name == "dev"
 
 # --------------------------------------------------------------------------- #
 # 11) _normalize_temp_variables 3 分支 + aclose

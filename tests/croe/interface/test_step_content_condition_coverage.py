@@ -47,19 +47,10 @@ def _build_fake_content_result(cr_id=999):
 
 
 def _build_step_result(success=True, status=200):
-    return {
-        "result": success,
-        "interface_id": 1, "interface_uid": "u", "interface_name": "n",
-        "interface_desc": "d", "starter_id": 1, "starter_name": "u",
-        "request_url": "http://x", "request_method": "GET",
-        "request_params": None, "request_body_type": None,
-        "request_json": None, "request_data": None, "request_headers": None,
-        "extracts": [], "asserts": [],
-        "running_env_id": 1, "running_env_name": "test",
-        "response_status": status, "response_text": "{}",
-        "response_headers": {}, "use_time": "1.0",
-        "start_time": MagicMock(),
-    }
+    ir = MagicMock()
+    ir.result = success
+    ir.response_status = status
+    return ir
 
 
 @pytest.fixture
@@ -74,18 +65,23 @@ def strategy():
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_condition_step_condition_not_found_returns_false(strategy):
-    """condition 不存在: starter.send 警告, return False。"""
+    """condition 不存在: starter.send 警告, log.warning, return False。"""
     ctx = _build_ctx()
 
     with patch(
         "croe.interface.executor.step_content.step_content_condition.InterfaceConditionMapper.get_by_id",
         new=AsyncMock(return_value=None),
-    ):
+    ), patch(
+        "croe.interface.executor.step_content.step_content_condition.log"
+    ) as mock_log:
         ret = await strategy.execute(ctx)
 
     assert ret is False
     msg = ctx.starter.send.call_args.args[0]
     assert "未找到条件配置" in msg
+    mock_log.warning.assert_called_once()
+    warn_msg = mock_log.warning.call_args.args[0]
+    assert "未找到条件配置" in warn_msg
     ctx.result_writer.write_step_result.assert_not_called()
 
 

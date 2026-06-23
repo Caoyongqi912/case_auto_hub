@@ -1,10 +1,12 @@
 import datetime
 
 from app.mapper.play.playStepGroupMapper import PlayStepGroupMapper
+from app.model.playUI.playStepContent import PlayStepContent
+from enums.CaseEnum import PlayStepContentType
 from utils import GenerateTools
 from ._base import StepBaseStrategy
 from ..play_method.result_types import StepExecutionResult
-from ...context import StepContentContext, StepContext
+from ...context import StepContentContext
 
 
 class PlayGroupContentStrategy(StepBaseStrategy):
@@ -45,45 +47,19 @@ class PlayGroupContentStrategy(StepBaseStrategy):
         # 执行步骤组内的子步骤
         for i, group_step in enumerate(groups, start=1):
             await step_context.starter.send(f"✍️✍️  EXECUTE GROUP STEP {i} : {group_step.name}")
-            # 创建临时的 PlayStepContent 用于子步骤
-            from app.model.playUI.playStepContent import PlayStepContent
-            from enums.CaseEnum import PlayStepContentType
-            
             temp_step_content = PlayStepContent(
                 content_name=group_step.name,
                 content_desc=group_step.description,
                 content_type=PlayStepContentType.STEP_PLAY,
                 target_id=group_step.id
             )
-            group_step_context = StepContentContext(
+            result = await self._execute_child_step(
+                step_context=step_context,
+                child_step=group_step,
+                child_step_content=temp_step_content,
                 index=i,
-                play_step_content=temp_step_content,
-                page_manager=step_context.page_manager,
-                starter=step_context.starter,
-                variable_manager=step_context.variable_manager,
-                play_step_result_writer=step_context.play_step_result_writer,
-                play_case_result_writer=step_context.play_case_result_writer,
             )
-            
-            # 创建子步骤上下文
-            group_child_step_context = StepContext(
-                step=group_step,
-                page_manager=step_context.page_manager,
-                starter=step_context.starter,
-                variable_manager=step_context.variable_manager
-            )
-            
-            step_start_time = datetime.datetime.now()
-            result = await self.play_executor.execute(group_child_step_context)
             GROUP_SUCCESS &= result.success
-
-            # 暂存子步骤结果
-            await self.write_child_result(
-                parent_index=step_context.index,
-                start_time = step_start_time,
-                result =result,
-                step_context=group_step_context,
-            )
             if not GROUP_SUCCESS:
                 break
             

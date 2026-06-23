@@ -11,12 +11,12 @@ import pytest
 
 @pytest.mark.unit
 def test_bug_e7_filter_none_in_asserts_and_extracts():
-    """_build_result 必须过滤 None 项, 不留 [None] 给后续 JSON 序列化。"""
-    from croe.interface.executor.interface_executor import InterfaceExecutor
-    src = inspect.getsource(InterfaceExecutor._build_result)
+    """InterfaceResult.from_execution_context 必须过滤 None 项, 不留 [None] 给后续 JSON 序列化。"""
+    from app.model.interfaceAPIModel.interfaceResultModel import InterfaceResult
+    src = inspect.getsource(InterfaceResult.from_execution_context)
     # 必须有 None 过滤
     assert "if v is not None" in src or "if a is not None" in src, (
-        f"_build_result 必须过滤 None, 当前源码:\n{src[:500]}"
+        f"from_execution_context 必须过滤 None, 当前源码:\n{src[:500]}"
     )
     # 不应只有 `or []` (那个挡不住 [None]) 直接赋值给 result dict
     # 新的代码是 `[v for v in (ctx.extracted_vars or []) if v is not None]`

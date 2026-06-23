@@ -22,7 +22,7 @@ class PlayScriptContentStrategy(StepBaseStrategy):
                 try:
                     script_manager = ScriptManager()
                     _extracted_vars = script_manager.execute(script_text)
-                    await step_context.variable_manager.add_vars(_extracted_vars)
+                    step_context.variable_manager.add_vars(_extracted_vars)
                     await step_context.starter.send(f"🫳🫳  脚本变量 = {json.dumps(_extracted_vars, ensure_ascii=False)}")
                     script_vars = [{
                         ExtractTargetVariablesEnum.KEY: k,

@@ -126,10 +126,10 @@ def test_bug_e8_e9_finalize_invokes_recompute():
     assert "recompute_case_result_nums" in src, (
         "finalize_case_result 必须调 recompute_case_result_nums"
     )
-    # 必须在 _flush_cache 之后 (要等 interface_result 真落盘)
-    flush_pos = src.find("_flush_cache")
+    # 必须在 flush 之后 (要等 interface_result 真落盘)
+    flush_pos = src.find("flush()")
     recompute_pos = src.find("recompute_case_result_nums")
     assert flush_pos < recompute_pos, (
-        f"recompute 必须在 _flush_cache 之后"
+        f"recompute 必须在 flush 之后"
         f" (flush_pos={flush_pos}, recompute_pos={recompute_pos})"
     )

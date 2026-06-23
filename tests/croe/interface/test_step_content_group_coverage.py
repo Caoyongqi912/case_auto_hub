@@ -41,19 +41,10 @@ def _build_ctx(target_id=10, content_id=20, task_result=None):
 
 
 def _build_step_result(success=True, status=200):
-    return {
-        "result": success,
-        "interface_id": 1, "interface_uid": "u", "interface_name": "n",
-        "interface_desc": "d", "starter_id": 1, "starter_name": "u",
-        "request_url": "http://x", "request_method": "GET",
-        "request_params": None, "request_body_type": None,
-        "request_json": None, "request_data": None, "request_headers": None,
-        "extracts": [], "asserts": [],
-        "running_env_id": 1, "running_env_name": "test",
-        "response_status": status, "response_text": "{}",
-        "response_headers": {}, "use_time": "1.0",
-        "start_time": MagicMock(),
-    }
+    ir = MagicMock()
+    ir.result = success
+    ir.response_status = status
+    return ir
 
 
 def _build_fake_content_result(cr_id=999):
@@ -74,16 +65,21 @@ def strategy():
 @pytest.mark.asyncio
 @pytest.mark.unit
 async def test_group_step_empty_interface_list_returns_true(strategy):
-    """interface_list 为空: return True, 不调任何 write。"""
+    """interface_list 为空: return True, 输出 warning 日志, 不调任何 write。"""
     ctx = _build_ctx()
 
     with patch(
         "croe.interface.executor.step_content.step_content_group.InterfaceGroupMapper.query_association_interfaces",
         new=AsyncMock(return_value=[]),
-    ):
+    ), patch(
+        "croe.interface.executor.step_content.step_content_group.log"
+    ) as mock_log:
         ret = await strategy.execute(ctx)
 
     assert ret is True
+    mock_log.warning.assert_called_once()
+    warn_msg = mock_log.warning.call_args.args[0]
+    assert "接口组内无接口" in warn_msg
     ctx.result_writer.write_step_result.assert_not_called()
     ctx.result_writer.write_interface_result.assert_not_called()
     ctx.result_writer.update_step_result.assert_not_called()

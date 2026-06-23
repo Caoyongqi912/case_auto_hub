@@ -188,6 +188,57 @@ class TestBuildContentResult:
         assert cr.content_target_result_id == 99
 
 # --------------------------------------------------------------------------- #
+# StepBaseStrategy._execute_child_step
+# --------------------------------------------------------------------------- #
+
+class TestExecuteChildStep:
+    """_execute_child_step 统一子步骤执行测试。"""
+
+    @pytest.mark.asyncio
+    async def test_execute_child_step_runs_and_writes_child_result(self):
+        """应创建子上下文、执行子步骤、写入子结果并返回 result。"""
+        strategy = _TestStrategy()
+
+        parent_ctx = MagicMock(spec=StepContentContext)
+        parent_ctx.index = 1
+        parent_ctx.page_manager = MagicMock()
+        parent_ctx.starter = MagicMock(userId=1, username="admin")
+        parent_ctx.variable_manager = MagicMock()
+        parent_ctx.play_step_result_writer = MagicMock()
+        parent_ctx.play_step_result_writer.add_child_content_result = AsyncMock()
+        parent_ctx.play_case_result_writer = MagicMock()
+        parent_ctx.play_case_result_writer.set_error_step_info = AsyncMock()
+
+        child_step = MagicMock()
+        child_step_content = MagicMock(
+            id=10,
+            content_name="child",
+            content_desc="desc",
+            content_type=1,
+        )
+
+        strategy.play_executor = MagicMock()
+        strategy.play_executor.execute = AsyncMock(
+            return_value=StepExecutionResult(success=True)
+        )
+        strategy.write_child_result = AsyncMock()
+
+        result = await strategy._execute_child_step(
+            step_context=parent_ctx,
+            child_step=child_step,
+            child_step_content=child_step_content,
+            index=2,
+        )
+
+        assert result.success is True
+        strategy.play_executor.execute.assert_called_once()
+        strategy.write_child_result.assert_called_once()
+        kwargs = strategy.write_child_result.call_args.kwargs
+        assert kwargs["parent_index"] == 1
+        assert kwargs["step_context"].index == 2
+
+
+# --------------------------------------------------------------------------- #
 # StepBaseStrategy.write_result
 # --------------------------------------------------------------------------- #
 

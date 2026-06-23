@@ -91,7 +91,7 @@ class PlayTaskRunner:
             play_runner = PlayRunner(starter=self.starter)
             if params.variables:
                 await self.starter.send(f"添加变量 {params.variables}")
-                await play_runner.variable_manager.add_vars(params.variables)
+                play_runner.variable_manager.add_vars(params.variables)
             await play_runner.init_case_variables(play_case=play_case)
             case_result_writer = PlayCaseResultWriter(starter=self.starter)
             await case_result_writer.init_result(
