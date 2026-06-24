@@ -44,6 +44,16 @@ META_VERSION = 2
 # 导出 Sheet 名. 模板里原叫 "template", 导出改名让用户更直观.
 SHEET_DATA = "用例数据"
 SHEET_META = "_meta"
+# 下拉源 Sheet. 所有 DataValidation 引用都走这里, 主表不再写 Z/AA/AB/AC 隐藏列.
+# 跨 sheet 引用是 OOXML 标准, WPS / Excel / LibreOffice 全兼容.
+# 写在这里的好处: 主表彻底干净, 不会因为用户手填/复制把隐藏列污染,
+# 也不会让 _is_empty_row 误判空行.
+SHEET_DV = "_dv"
+# _dv Sheet 内列布局: A=用例等级, B=用例类型, C=适用端, D=所属分组
+_DV_LEVEL_COL = 1     # A
+_DV_TYPE_COL = 2      # B
+_DV_PLATFORM_COL = 3  # C
+_DV_GROUP_COL = 4     # D
 
 # 编辑引导. 行 1 的 A1 cell 全文, 包含标题 + 5 条规则. 规则从用户立场写, 不说后端实现.
 _EXPORT_GUIDE = """\
@@ -59,13 +69,55 @@ CASE  HUB 用例导出
 6. 不要删除 / 重排 Sheet, 不要改 _meta (隐藏)"""
 
 
-# 隐藏列: 存放 DataValidation 的 list 源. 用 Z/AA/AB/AC 避开 9/10 个数据列, 不污染用户视图.
-# 模块级常量: 既被本类 _add_*_dropdowns 方法用, 也被模块级 add_dropdowns_to_workbook 用
-# (后者被 downloadCaseDemo 控制器直接调用).
-_DV_LEVEL_COL = 26    # Z   - 用例等级
-_DV_TYPE_COL = 27     # AA  - 用例类型
-_DV_GROUP_COL = 28    # AB  - 所属分组
-_DV_PLATFORM_COL = 29  # AC  - 适用端 (取代已弃用的 case_tag, 与 PLATFORM 枚举对齐)
+def _ensure_dv_sheet(
+    wb: openpyxl.Workbook,
+    level_labels: Optional[List[str]] = None,
+    type_labels: Optional[List[str]] = None,
+    platform_labels: Optional[List[str]] = None,
+    all_group_paths: Optional[List[str]] = None,
+) -> Dict[str, int]:
+    """
+    在 wb 里创建/重写隐藏的 _dv Sheet, 写入所有 DataValidation 下拉源数据.
+
+    :returns: 各列行数 dict {"level": N, "type": N, "platform": N, "group": N}.
+              0 表示该列没数据, 调用方据此决定是否挂对应 dv (0 就不挂).
+
+    为啥要这个 sheet:
+      老实现把下拉源写在主表的 Z/AA/AB/AC 隐藏列. 问题是用户在 Excel 里手填
+      或从 B 列复制时, 容易把这些隐藏列也带上值, 解析端的 _is_empty_row
+      会被"隐藏列残留值"干扰, 触发空行误判为非空.
+
+      把下拉源集中到独立的隐藏 Sheet (_dv), 主表彻底干净 (最多 10 列业务列),
+      不存在"用户能编辑的隐藏列", 根因消除. 跨 sheet 引用是 OOXML 标准,
+      WPS / Excel / LibreOffice 都能解析.
+    """
+    if SHEET_DV in wb.sheetnames:
+        dv_ws = wb[SHEET_DV]
+        # 清空旧内容 (只清值, 不动列宽 / sheet_state)
+        for row in dv_ws.iter_rows():
+            for cell in row:
+                cell.value = None
+    else:
+        dv_ws = wb.create_sheet(SHEET_DV)
+    dv_ws.sheet_state = "hidden"
+
+    # 写枚举值, 各列从 row 1 开始连续写, 跟 formula1 引用范围一致
+    for col, labels in (
+        (_DV_LEVEL_COL, level_labels or []),
+        (_DV_TYPE_COL, type_labels or []),
+        (_DV_PLATFORM_COL, platform_labels or []),
+        (_DV_GROUP_COL, sorted(set(all_group_paths or []))),
+    ):
+        for i, v in enumerate(labels, start=1):
+            dv_ws.cell(row=i, column=col, value=v)
+
+    return {
+        "level": len(level_labels or []),
+        "type": len(type_labels or []),
+        "platform": len(platform_labels or []),
+        "group": len(set(all_group_paths or [])),
+    }
+
 
 def add_dropdowns_to_workbook(
     wb: openpyxl.Workbook,
@@ -78,7 +130,7 @@ def add_dropdowns_to_workbook(
 ) -> None:
     """
     给已存在的 workbook / sheet 加 B/G/H/F 列下拉框 (DataValidation).
-    复用逻辑: 导出 (build_workbook) 和 下载模板 (download_case_template) 都调这个.
+    复用逻辑: 导出 (build_workbook) 和下载模板 (download_case_template) 都调这个.
 
     参数:
       wb              openpyxl Workbook (已加载, 即将被 .save() / 序列化)
@@ -90,25 +142,34 @@ def add_dropdowns_to_workbook(
       platform_labels F 列下拉源 (适用端 label, 来自 case_enum_config PLATFORM)
                       任一为 None / 空 时, 对应列不挂 dv (等同老 hardcode 缺失行为)
       max_row         dv 作用的最大行 (预留大值让用户继续追加新行也能用下拉)
+
+    实现:
+      1) 调用 _ensure_dv_sheet 在 _dv 隐藏 sheet 写所有下拉源 (主表 0 隐藏列)
+      2) DataValidation formula1 走跨 sheet 引用: =_dv!$A$1:$A$N
+      3) WPS / Excel / LibreOffice 都支持跨 sheet 引用的 list 类型 dv
     """
     if sheet_name not in wb.sheetnames:
         # 兜底: 用第一个 sheet
         sheet_name = wb.sheetnames[0]
     ws = wb[sheet_name]
 
-    level_end = len(level_labels or [])
-    type_end = len(type_labels or [])
-    platform_end = len(platform_labels or [])
+    ends = _ensure_dv_sheet(
+        wb,
+        level_labels=level_labels,
+        type_labels=type_labels,
+        platform_labels=platform_labels,
+        all_group_paths=all_group_paths,
+    )
+    level_end = ends["level"]
+    type_end = ends["type"]
+    platform_end = ends["platform"]
+    group_end = ends["group"]
 
-    # 1) G 列: 用例等级
-    for i, v in enumerate(level_labels or [], start=1):
-        ws.cell(row=i, column=_DV_LEVEL_COL, value=v)
-    ws.column_dimensions["Z"].hidden = True
-    ws.column_dimensions["Z"].width = 0
+    # 1) G 列: 用例等级 -> _dv!A
     if level_end:
         dv_level = DataValidation(
             type="list",
-            formula1=f"=Z$1:Z${level_end}",
+            formula1=f"=_dv!$A$1:$A${level_end}",
             allow_blank=True,
             showDropDown=False,
             showErrorMessage=True,
@@ -120,15 +181,11 @@ def add_dropdowns_to_workbook(
         ws.add_data_validation(dv_level)
         dv_level.add("G3:G{max_row}".format(max_row=max_row))
 
-    # 2) H 列: 用例类型
-    for i, v in enumerate(type_labels or [], start=1):
-        ws.cell(row=i, column=_DV_TYPE_COL, value=v)
-    ws.column_dimensions["AA"].hidden = True
-    ws.column_dimensions["AA"].width = 0
+    # 2) H 列: 用例类型 -> _dv!B
     if type_end:
         dv_type = DataValidation(
             type="list",
-            formula1=f"=AA$1:AA${type_end}",
+            formula1=f"=_dv!$B$1:$B${type_end}",
             allow_blank=True,
             showDropDown=False,
             showErrorMessage=True,
@@ -140,15 +197,11 @@ def add_dropdowns_to_workbook(
         ws.add_data_validation(dv_type)
         dv_type.add("H3:H{max_row}".format(max_row=max_row))
 
-    # 3) F 列: 适用端 (适用端在 DATA_COLUMNS 是 index 5, Excel 列号 6 = F)
-    for i, v in enumerate(platform_labels or [], start=1):
-        ws.cell(row=i, column=_DV_PLATFORM_COL, value=v)
-    ws.column_dimensions["AC"].hidden = True
-    ws.column_dimensions["AC"].width = 0
+    # 3) F 列: 适用端 -> _dv!C
     if platform_end:
         dv_platform = DataValidation(
             type="list",
-            formula1=f"=AC$1:AC${platform_end}",
+            formula1=f"=_dv!$C$1:$C${platform_end}",
             allow_blank=True,
             showDropDown=False,
             showErrorMessage=True,
@@ -160,16 +213,11 @@ def add_dropdowns_to_workbook(
         ws.add_data_validation(dv_platform)
         dv_platform.add("F3:F{max_row}".format(max_row=max_row))
 
-    # 3) B 列: 所属分组 (可选, 依赖调用方传 all_group_paths)
-    if all_group_paths:
-        all_group_paths = sorted(set(all_group_paths))
-        for i, p in enumerate(all_group_paths, start=1):
-            ws.cell(row=i, column=_DV_GROUP_COL, value=p)
-        ws.column_dimensions["AB"].hidden = True
-        ws.column_dimensions["AB"].width = 0
+    # 4) B 列: 所属分组 (可选, 依赖调用方传 all_group_paths) -> _dv!D
+    if group_end:
         dv_group = DataValidation(
             type="list",
-            formula1=f"=AB$1:AB${len(all_group_paths)}",
+            formula1=f"=_dv!$D$1:$D${group_end}",
             allow_blank=True,
             showDropDown=False,
             showErrorMessage=False,
@@ -178,6 +226,8 @@ def add_dropdowns_to_workbook(
         )
         ws.add_data_validation(dv_group)
         dv_group.add(f"B3:B{max_row}")
+
+
 
 
 class ExportCaseService:
@@ -260,11 +310,19 @@ class ExportCaseService:
         for row_idx, case in enumerate(self.case_dicts, start=3):
             self._write_data_row(ws, row_idx, case)
 
-        # 给 "所属分组" (B 列, 2) 加目录路径下拉 (全量平铺)
-        # 给 "适用端" (F 列, 6) / "用例等级" (G 列, 7) / "用例类型" (H 列, 8) 加下拉框.
-        # 范围预留到 row 10000, 让用户在导出文件里继续追加新用例时也能用下拉选枚举.
-        self._add_group_dropdowns(ws, max_row=10000)
-        self._add_enum_dropdowns(ws, max_row=10000)
+        # 给 "所属分组" (B 列) / "适用端" (F 列) / "用例等级" (G 列) / "用例类型" (H 列)
+        # 加下拉框. 走统一的模块级 add_dropdowns_to_workbook: 它在 _dv 隐藏 Sheet
+        # 写入下拉源, DataValidation 走跨 sheet 引用 (=_dv!$A$1:$A$N).
+        # 主表彻底干净 (最多 10 列), 不再有 Z/AA/AB/AC 隐藏列.
+        add_dropdowns_to_workbook(
+            wb,
+            sheet_name=SHEET_DATA,
+            all_group_paths=self.all_group_paths,
+            level_labels=self.level_labels,
+            type_labels=self.type_labels,
+            platform_labels=self.platform_labels,
+            max_row=10000,
+        )
 
         # 隐藏的 _meta Sheet: 跨 scope 防御 / 变更检测 / 版本号
         self._write_meta_sheet(wb)
@@ -305,115 +363,6 @@ class ExportCaseService:
         ]
         for col_idx, v in enumerate(values, start=1):
             ws.cell(row=row_idx, column=col_idx, value=v)
-
-    def _add_group_dropdowns(self, ws, max_row: int = 10000) -> None:
-        """
-        给 B 列 (所属分组) 加目录路径下拉框.
-        数据源: self.all_group_paths (平铺的全量目录路径, 形如 "根|登录|账号|邮箱登录").
-        Excel/WPS 不支持真正的多级树形下拉, 改用平铺完整路径方案: 用户从下拉里选
-        完整路径, 不需要手敲 | 分隔符.
-        """
-        if not self.all_group_paths:
-            return
-        for i, p in enumerate(self.all_group_paths, start=1):
-            ws.cell(row=i, column=_DV_GROUP_COL, value=p)
-        # 隐藏 AB 列
-        ws.column_dimensions["AB"].hidden = True
-        ws.column_dimensions["AB"].width = 0
-        end = len(self.all_group_paths)
-        dv = DataValidation(
-            type="list",
-            formula1=f"=AB$1:AB${end}",
-            allow_blank=True,
-            showDropDown=False,
-            showErrorMessage=False,
-            promptTitle="所属分组",
-            prompt="从下拉选择目录路径 (多级用 | 分隔)",
-        )
-        ws.add_data_validation(dv)
-        dv.add(f"B3:B{max_row}")
-
-    def _add_enum_dropdowns(self, ws, max_row: int = 10000) -> None:
-        """
-        给 G 列 (用例等级) / H 列 (用例类型) / 适用端所在列 (按 DATA_COLUMNS 顺序动态)
-        加 Excel 下拉框 DataValidation.
-        范围从 row 3 (数据起点) 到 max_row, 既覆盖已写入数据, 也允许用户在导出文件里
-        继续追加新用例时直接用下拉选枚举, 不需要复制粘贴.
-
-        实现细节: WPS / Kingsoft 对 inline list 公式 (formula1='"a,b,c"') 兼容性差,
-        实际打开不显示下拉. 改用 "list 引用 sheet range" 模式:
-          1. 在 Z/AA/AC 列 (隐藏) 写枚举值
-          2. dv.formula1 指向 Z$1:Z$N / AA$1:AA$N / AC$1:AC$N
-          3. 列宽设为 0 隐藏
-        这样 WPS / Excel / LibreOffice 都能正常显示下拉箭头.
-
-        下拉项数据源: 实例字段 self.level_labels / self.type_labels / self.platform_labels,
-        由 controller 从 case_enum_config 加载后传入; 业务枚举不在 service 里写死.
-        """
-        level_end = len(self.level_labels)
-        type_end = len(self.type_labels)
-        platform_end = len(self.platform_labels)
-
-        # 1) 写枚举值到隐藏列 (空列表也写, 留 dv.formula1 引用, 让 WPS 兼容)
-        for i, v in enumerate(self.level_labels, start=1):
-            ws.cell(row=i, column=_DV_LEVEL_COL, value=v)
-        for i, v in enumerate(self.type_labels, start=1):
-            ws.cell(row=i, column=_DV_TYPE_COL, value=v)
-        for i, v in enumerate(self.platform_labels, start=1):
-            ws.cell(row=i, column=_DV_PLATFORM_COL, value=v)
-        # 隐藏 Z / AA / AC 列
-        # for col_letter, hidden_col in (("Z", _DV_LEVEL_COL), ("AA", _DV_TYPE_COL), ("AC", _DV_PLATFORM_COL)):
-        #     ws.column_dimensions[col_letter].hidden = True
-        #     ws.column_dimensions[col_letter].width = 0
-
-        # 2) DataValidation 引用 sheet range (WPS 兼容写法)
-        # showDropDown=False 才是显示下拉箭头 (openpyxl 字段语义反直觉)
-        #
-        # level_end=0 / type_end=0 / platform_end=0 时, 仍创建 dv 但 formula1 指向 0 行,
-        # WPS / Excel 此时直接视为 "无限制", 不会挂. 等价于 "该列不挂下拉" 的旧行为.
-        if level_end:
-            dv_level = DataValidation(
-                type="list",
-                formula1=f"=Z$1:Z${level_end}",
-                allow_blank=True,
-                showDropDown=False,
-                showErrorMessage=True,
-                errorTitle="非法值",
-                error="请从下拉框中选择用例等级",
-                promptTitle="用例等级",
-                prompt=" / ".join(self.level_labels) or "请在配置中心维护用例等级",
-            )
-            ws.add_data_validation(dv_level)
-            dv_level.add("G3:G{max_row}".format(max_row=max_row))
-        if type_end:
-            dv_type = DataValidation(
-                type="list",
-                formula1=f"=AA$1:AA${type_end}",
-                allow_blank=True,
-                showDropDown=False,
-                showErrorMessage=True,
-                errorTitle="非法值",
-                error="请从下拉框中选择用例类型",
-                promptTitle="用例类型",
-                prompt=" / ".join(self.type_labels) or "请在配置中心维护用例类型",
-            )
-            ws.add_data_validation(dv_type)
-            dv_type.add("H3:H{max_row}".format(max_row=max_row))
-        if platform_end:
-            # 适用端列: 在 DATA_COLUMNS 里是 index 5, Excel 列号 6 = F 列
-            dv_platform = DataValidation(
-                type="list",
-                formula1=f"=AC$1:AC${platform_end}",
-                allow_blank=True,
-                showDropDown=False,
-                showErrorMessage=True,
-                errorTitle="非法值",
-                error="请从下拉框中选择适用端",
-                promptTitle="适用端",
-                prompt=" / ".join(self.platform_labels) or "请在配置中心维护适用端",
-            )
-            ws.add_data_validation(dv_platform)
-            dv_platform.add("F3:F{max_row}".format(max_row=max_row))
 
     def _write_meta_sheet(self, wb) -> None:
         """
