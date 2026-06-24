@@ -30,6 +30,14 @@ class TestCase(BaseModel):
     order = Column(Integer, default=0, index=True, comment="排序序号")
 
     from app.model.caseHub.test_case_step import TestCaseStep
+    # ⚠ 两套级联机制并存, 改 TestCase 务必同步:
+    # 1) ORM 级 (cascade="all, delete-orphan"): 仅对 session.delete(case_obj) 路径生效
+    # 2) DDL 级 (ON DELETE CASCADE): 子表 FK 声明里, 走 bulk delete 路径
+    #    (delete_batch_cases) 必需依赖它. 声明位置:
+    #    - TestCaseStep.test_case_id  ondelete="cascade"    test_case_step.py:16
+    #    - CaseStepDynamic.test_case_id  ondelete="cascade"  case_step_dynamic.py:15
+    #    - RequirementCaseAssociation.case_id  ondelete="CASCADE"  association.py:17
+    #    - PlanCaseAssociation.case_id  ondelete="CASCADE"  association.py:50
     case_sub_steps = relationship(TestCaseStep, back_populates="case", lazy="select", order_by=TestCaseStep.order, cascade="all, delete-orphan")
 
     @classmethod

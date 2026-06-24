@@ -37,6 +37,7 @@ from app.service.m2PlanImportService import M2PlanImportService
 from common import rc
 
 router = APIRouter(prefix="/hub/plan", tags=['测试计划'])
+_cache_service = UploadCacheService(rc)
 
 
 @router.post("/insert", description="添加测试计划")
@@ -370,9 +371,9 @@ async def move_plan_cases(data: MoveCaseToCasePlan, _: User = Depends(Authentica
 async def copy_plan_case(data: CopyOneCaseToCasePlan, user: User = Depends(Authentication())):
     """
     复制单个计划用例到新的分组下
-    :param data: 种制参数
+    :param data: 复制参数
     :param user: 认证用户
-    :return: 种制数量
+    :return: 复制数量
     """
     log.info(data)
     values =  await PlanCaseMapper.copy_plan_case(
@@ -385,9 +386,9 @@ async def copy_plan_case(data: CopyOneCaseToCasePlan, user: User = Depends(Authe
 async def copy_plan_cases(data: CopyCaseToCasePlan, user: User = Depends(Authentication())):
     """
     将计划关联的用例复制到新的分组下
-    :param data: 种制参数
+    :param data: 复制参数
     :param user: 认证用户
-    :return: 种制数量
+    :return: 复制数量
     """
     log.info(data)
     values =  await PlanCaseMapper.copy_cases(
@@ -545,7 +546,6 @@ async def upload_commit(
         data: UploadCommitSchema,
         user: User = Depends(Authentication())
 ):
-    _cache_service = UploadCacheService(rc)
     if await _cache_service.is_committed(data.file_md5, user.id):
         return Response.error(msg="该文件已提交过，不能重复提交")
 

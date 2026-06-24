@@ -114,7 +114,8 @@ class M2ImportService:
         valid_cases = self._validate_m2_template(
             preview, endpoint_label="",
         )
-        
+        # 适用端必填 + 枚举校验 (M2 parse 阶段 enum_config=空, 把校验推到 commit 入口)
+        await self._validate_field_constraints(valid_cases)
 
         # 2) 拆 known / new
         known_cases, new_cases = self._split_known_new(valid_cases)
@@ -304,6 +305,74 @@ class M2ImportService:
                 data={"file_md5": preview.get("file_md5")},
             )
         return valid_cases
+
+    @staticmethod
+    async def _validate_field_constraints(
+        valid_cases: List[Dict[str, Any]],
+    ) -> None:
+        """
+        M2 commit 阶段校验: 适用端 (case_platform) 必填且必须在 case_config.PLATFORM 枚举内.
+
+        解析阶段 (RoundtripReader._read) 故意传 enum_config=空 CaseEnumConfig(), 跳过
+        label->value 转换 / 跳过必填校验, 走"preview 不阻断, commit 阻断"的设计.
+        校验推到 commit 入口, 跟 M1 aioFileReader._read 在 parse 阶段就卡 enum 是不同
+        的策略 (M1 路径在 controller 层也跑同样的 enum_config 一次, 解析/落库共用).
+
+        通过校验的 case 会在原地把 case_platform 由 label 替换为 value, 跟 M1
+        _resolve_enum 行为对齐, 后续 _apply_known_case / _build_new_test_case 直接
+        拿 value 写库, 不会出现 "M1 入库是 PC, M2 入库是 PC端" 的 value 漂移.
+
+        已知同模式未覆盖字段 (后续可补, 见下条 TODO):
+        - case_level: 必填, 解析阶段也跳过校验, M2 commit 同样没卡. 业务上 case_level
+          漏填会让 case 失去优先级语义, 建议在 PR-4 一并处理.
+        - case_type: 可选, 解析阶段跳过 label->value 转换, M2 commit 拿到的也是 label.
+          跟 case_platform 同问题, 只是非必填, 影响小一些.
+        """
+        from utils.caseEnumResolver import (
+            load_case_enum_config,
+            parse_platform_cell_to_value,
+        )
+
+        if not valid_cases:
+            return
+        enum_config = await load_case_enum_config()
+        platform_map = enum_config.platform_map
+
+        errors: List[Dict[str, Any]] = []
+        for c in valid_cases:
+            row = c.get("_row")
+            # 适用端支持单选 / 多选 (cell 用半角逗号分隔), 跟 M1 解析走同一
+            # 个 helper, 行为完全对齐: 空 -> 报"不能为空"; 任意 label 非法
+            # -> 列全部非法 labels, 不做 partial save; 通过 -> label 替换
+            # 为 value 后写回 dict, 让后续 _apply_known_case / _build_new_test_case
+            # 拿 "PC,WJAPP" 这样的 value 串直接写库.
+            new_value, platform_err = parse_platform_cell_to_value(
+                raw=c.get("case_platform"),
+                platform_map=platform_map,
+                display_name="适用端",
+            )
+            if platform_err:
+                # 加 row 上下文, 跟 controller 层行号错误格式对齐, 便于前端
+                # 在错误列表里展示"第 N 行 + 适用端 X 不在可选范围内"
+                platform_err = {**platform_err, "row": row}
+                errors.append(platform_err)
+                continue
+            if not new_value:
+                errors.append({
+                    "row": row,
+                    "field": "适用端",
+                    "message": "适用端不能为空, 请从配置中选择",
+                })
+                continue
+            c["case_platform"] = new_value
+
+        if errors:
+            preview = errors[:10]
+            more = "" if len(errors) <= 10 else f" (还有 {len(errors) - 10} 条...)"
+            raise CommonError(
+                message=f"适用端校验失败 {len(errors)} 条:{preview[0]['message']}{more}",
+                data={"field": "适用端", "errors": errors, "total": len(errors)},
+            )
 
     @staticmethod
     def _split_known_new(

@@ -7,7 +7,7 @@
 # @Desc: 用例枚举配置 (case_config) → 解析器注入数据 的轻量加载器
 
 import asyncio
-from typing import Dict, Optional, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.mapper.test_case.caseConfigMapper import CaseConfigMapper
 from utils.aioFileReader import CaseEnumConfig
@@ -89,12 +89,16 @@ async def load_case_enum_label_lists() -> Dict[str, List[str]]:
     而 label_map 是 value->label 的反向映射 (写回 Excel 时把 DB 存的 value 翻成 label),
     两者用途不一样, 分两个函数让调用方按需取, 不强制每次都拉全量.
 
-    返回结构示例:
+    返回结构示例 (PLATFORM 走 combo 展开, n=3 时):
         {
             "CASE_LEVEL": ["P0-最高", "P1-高", "P2-中", "P3-低"],
             "CASE_TYPE":  ["功能测试", "冒烟", "回归", "其他"],
-            "PLATFORM":   ["PC", "H5", "Android", "iOS"],
+            "PLATFORM":   ["AA", "BB", "CC", "AA,BB", "AA,CC", "BB,CC", "AA,BB,CC"],
         }
+
+    PLATFORM 特殊: 走 generate_platform_combo_labels 把单值 label 集合展开成
+    所有 2^n - 1 个非空子集 (含单值与多值组合), 让用户**从下拉直接选**而不用手输.
+    其他 key (LEVEL / TYPE) 业务上都是单值, 保持原样.
 
     失败/无数据时返回空 dict, 调用方按 config_key 取, 缺 key 时用空列表 (DataValidation
     拿空列表就直接跳过该列下拉, 不报错).
@@ -115,12 +119,168 @@ async def load_case_enum_label_lists() -> Dict[str, List[str]]:
         # 过滤 enabled=0 (停用) 与空 label.
         return [c.label for c in configs if c.label and getattr(c, 'enabled', 1) != 0]
 
+    # PLATFORM 走 combo 展开: build label->value 给 generator 用.
+    platform_map = {
+        c.label: c.value
+        for c in platform_configs
+        if c.label and getattr(c, 'enabled', 1) != 0
+    }
+
     return {
         LEVEL_CONFIG_KEY: _labels(level_configs),
         TYPE_CONFIG_KEY: _labels(type_configs),
-        PLATFORM_CONFIG_KEY: _labels(platform_configs),
+        PLATFORM_CONFIG_KEY: generate_platform_combo_labels(platform_map),
     }
-    return result
+
+
+# ----------------------------------------------------------------------------
+# Platform 多值: 适用端 (case_platform) 支持逗号分隔多选
+# ----------------------------------------------------------------------------
+# 适用端存储/导出格式: 用半角逗号拼接, 顺序按用户输入/输出顺序保留, 自动去重.
+# 例: "PC,WJAPP" / "PC" 都合法, "PC, PC" / ",PC," / "PC,,WJAPP" 都规整为 "PC,WJAPP".
+# Combo 容量上限. 超过这个数 (2^N - 1) 时不再生成多值组合, 退化为单值下拉
+# + 提示用户手输逗号分隔. 原因: 2^10 = 1024, 2^15 = 32768, DataValidation
+# list 实际打开/滚动体验会急剧恶化, 用户也基本选不过来.
+PLATFORM_COMBO_MAX_LABELS = 8
+
+
+def generate_platform_combo_labels(platform_map: Dict[str, str]) -> List[str]:
+    """
+    把 platform 的 label 集合展开成 2^N - 1 个非空子集 label 串, 给 DataValidation
+    当下拉源. 让用户**从下拉里直接选**单值/多值, 不需要手输逗号.
+
+    :param platform_map: label -> value 映射 (通常来自 case_config PLATFORM)
+    :return: 长度升序的 combo label 串列表.
+        n=1: ["AA"]
+        n=3: ["AA", "BB", "CC", "AA,BB", "AA,CC", "BB,CC", "AA,BB,CC"]
+        n>8: 退化为 ["AA", "BB", ...] (只返单值, 让用户手输多值用逗号)
+              实际不会发生, 业务上 PLATFORM 一般 <= 7 个, 2^7=128 还 OK.
+
+    顺序约定:
+        - 长度升序 (单值在前, 多值在后, 跟"先选基础再选组合"的认知一致)
+        - 同长度内字典序 (跟 sorted 行为一致, dropdown 显示稳定)
+        - 用半角逗号拼接, 跟 PLATFORM_VALUE_SEPARATOR 对齐
+    """
+    from itertools import combinations
+
+    labels = sorted(platform_map.keys())
+    n = len(labels)
+    if n == 0:
+        return []
+    if n > PLATFORM_COMBO_MAX_LABELS:
+        # 选项数 2^N - 1 > 255, 退化为单值下拉, 提示用户手输多值
+        return labels
+    out: List[str] = []
+    for k in range(1, n + 1):
+        for subset in combinations(labels, k):
+            out.append(PLATFORM_VALUE_SEPARATOR.join(subset))
+    return out
+
+
+PLATFORM_VALUE_SEPARATOR = ","
+
+
+def split_platform_value(stored: Optional[str]) -> List[str]:
+    """
+    把 DB 存的 value 串 ("PC,WJAPP") 拆成有序 list, 去空白 + 去空 + 保序去重.
+    空 / None 返回 [].
+    """
+    if not stored:
+        return []
+    seen: set = set()
+    out: List[str] = []
+    for raw in str(stored).split(PLATFORM_VALUE_SEPARATOR):
+        s = raw.strip()
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+
+def join_platform_value(values: List[str]) -> str:
+    """
+    反向: list -> "PC,WJAPP". 跳过空 / 全空白元素, 跟 split 对称.
+    全空返回 "".
+    """
+    parts = [v.strip() for v in values if v and str(v).strip()]
+    return PLATFORM_VALUE_SEPARATOR.join(parts)
+
+
+def format_platform_value_for_export(
+    stored: Optional[str],
+    label_map: Dict[str, str],
+) -> Optional[str]:
+    """
+    导出: 把 DB 存的 value 串 ("PC,WJAPP") 翻成给用户看的 label 串 ("PC端,WJAPP端").
+
+    - 单值 / 多值同款, 都走 split_platform_value
+    - 缺失 label 时回退原 value (跟单值时 label_map.get(v, v) 语义一致, 避免运营
+      新加枚举还没补 label_map 时把 cell 写空)
+    - 空值返回 None (上游不写 cell)
+    """
+    values = split_platform_value(stored)
+    if not values:
+        return stored if stored else None
+    labels = [label_map.get(v, v) for v in values]
+    return join_platform_value(labels)
+
+
+def parse_platform_cell_to_value(
+    raw: Any,
+    platform_map: Dict[str, str],
+    display_name: str = "适用端",
+) -> "tuple[Optional[str], Optional[Dict[str, str]]]":
+    """
+    导入: 把 Excel cell 文本 (label, 可逗号多选) 解析成 DB 存的 value 串.
+
+    :param raw: cell 原始值 (str / None / float-NaN / 其它可 str() 化的类型)
+    :param platform_map: case_config PLATFORM 的 label -> value 映射
+    :param display_name: 报错时显示的中文列名
+    :return: (joined_value, error_dict_or_None)
+        - joined_value: 校验通过后的 value 串, 多选用逗号拼接 ("PC,WJAPP");
+          空值返回 None (留给上游必填检查)
+        - error_dict: 校验失败时返回 {"field": ..., "message": ...},
+          列出所有非法 label (便于前端一次性高亮)
+
+    行为约定:
+        - 空 / 全空白 / ",,," -> (None, None) -> 上游报 "不能为空"
+        - 单选 / 多选都支持, 多选按 cell 出现顺序, 重复 label 去重 ("PC端,PC端" -> "PC")
+        - 任意 label 不在 platform_map -> 整条 raise, 不做 partial save
+        - platform_map 为空 (preview-only / 配置未加载) -> 不查 enum, 仅 trim + join,
+          跟 M1 用例等级 else 分支语义对齐
+    """
+    if raw is None:
+        return None, None
+    # pandas NaN 兼容: float('nan') 转 str 是 "nan", 直接判掉
+    s = str(raw).strip()
+    if not s or s.lower() == "nan":
+        return None, None
+
+    parts = [p.strip() for p in s.split(PLATFORM_VALUE_SEPARATOR)]
+    parts = [p for p in parts if p]
+    if not parts:
+        return None, None
+
+    if not platform_map:
+        return join_platform_value(parts), None
+
+    bad = [p for p in parts if p not in platform_map]
+    if bad:
+        valid = ", ".join(sorted(platform_map.keys()))
+        bad_str = ", ".join(f"'{b}'" for b in bad)
+        return None, {
+            "field": display_name,
+            "message": f"{display_name} {bad_str} 不在可选范围内: {valid}",
+        }
+
+    # 校验通过: label -> value, 保输入顺序 + 去重
+    seen: set = set()
+    out: List[str] = []
+    for p in parts:
+        if p not in seen:
+            seen.add(p)
+            out.append(platform_map[p])
+    return join_platform_value(out), None
 
 
 # ----------------------------------------------------------------------------

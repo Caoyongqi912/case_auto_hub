@@ -5,7 +5,7 @@
 # @File : planMapper
 # @Software: PyCharm
 # @Desc: 测试计划数据访问层
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from app.model.base.user import User
 from sqlalchemy import insert, delete, select, and_, func, case
@@ -41,26 +41,64 @@ class PlanMapper(Mapper[CasePlan]):
             raise
     
     @classmethod
+    async def _get_default_config_values(
+        cls, session, config_keys: List[str]
+    ) -> Dict[str, str]:
+        """
+        一次性查多个 config_key 的 sort=0 默认值, 1 RTT 替代 N 次串行查.
+
+        修复 R8: add_plan 原本要 2 次串行 SELECT (PLAN_STATUS + PLAN_PHASE),
+        改用本方法单次 SELECT + Python 端分组, 减少 1 RTT.
+
+        排序: config_key ASC, sort ASC, id ASC. 同一 key 多行时取 sort 最小,
+        仍并列则取 id 最小 (稳定兜底, 老数据 sort=NULL 也按 id 决胜).
+
+        Args:
+            session: 数据库会话
+            config_keys: 配置键列表, e.g. ["PLAN_STATUS", "PLAN_PHASE"]
+        Returns:
+            dict: {config_key: value}. 未配置的 key 不出现, 调用方用
+                  ``defaults.get("PLAN_STATUS")`` 拿 None 即可.
+        """
+        if not config_keys:
+            return {}
+        stmt = (
+            select(
+                CaseConfig.config_key,
+                CaseConfig.value,
+                CaseConfig.sort,
+                CaseConfig.id,
+            )
+            .where(
+                CaseConfig.config_key.in_(config_keys),
+                CaseConfig.enabled.is_(True),
+            )
+            .order_by(
+                CaseConfig.config_key.asc(),
+                CaseConfig.sort.asc(),
+                CaseConfig.id.asc(),
+            )
+        )
+        result = await session.execute(stmt)
+        out: Dict[str, str] = {}
+        for config_key, value, _sort, _id in result.all():
+            # 每组只取首行 (已按 sort+id 排好, 第一个就是默认值)
+            out.setdefault(config_key, value)
+        return out
+
+    @classmethod
     async def _get_default_config_value(
         cls, session, config_key: str
     ) -> Optional[str]:
         """
-        查询配置中心指定分组的 sort=0 默认值
+        查询配置中心指定分组的 sort=0 默认值. 单 key 的便捷包装, 内部走批量查询,
+        避免 N 次串行 SELECT.
+
         :param session: 数据库会话
         :param config_key: 配置键（如 PLAN_STATUS / PLAN_PHASE）
         :return: 默认 value，未配置则返回 None
         """
-        stmt = (
-            select(CaseConfig.value)
-            .where(
-                CaseConfig.config_key == config_key,
-                CaseConfig.enabled.is_(True),
-            )
-            .order_by(CaseConfig.sort.asc())
-            .limit(1)
-        )
-        result = await session.execute(stmt)
-        return result.scalar()
+        return (await cls._get_default_config_values(session, [config_key])).get(config_key)
 
     @classmethod
     async def add_plan(cls, user: User, **kwargs) -> CasePlan:
@@ -73,20 +111,25 @@ class PlanMapper(Mapper[CasePlan]):
         """
         try:
             async with cls.transaction() as session:
-                # 未传 plan_status / plan_phase 时，查询 CaseConfig 补默认值
+                # 修复 R8: 一次性查所有需要补默认值的 config_key, 1 RTT 替代 2 次串行查.
+                # 业务上 plan_status / plan_phase 都是配置中心 enum, 缺省走 sort=0.
+                default_keys: List[str] = []
                 if not kwargs.get("plan_status"):
-                    default_status = await cls._get_default_config_value(
-                        session, "PLAN_STATUS"
-                    )
-                    if default_status:
-                        kwargs["plan_status"] = default_status
-
+                    default_keys.append("PLAN_STATUS")
                 if not kwargs.get("plan_phase"):
-                    default_phase = await cls._get_default_config_value(
-                        session, "PLAN_PHASE"
+                    default_keys.append("PLAN_PHASE")
+                if default_keys:
+                    defaults = await cls._get_default_config_values(
+                        session, default_keys
                     )
-                    if default_phase:
-                        kwargs["plan_phase"] = default_phase
+                    if not kwargs.get("plan_status"):
+                        default_status = defaults.get("PLAN_STATUS")
+                        if default_status:
+                            kwargs["plan_status"] = default_status
+                    if not kwargs.get("plan_phase"):
+                        default_phase = defaults.get("PLAN_PHASE")
+                        if default_phase:
+                            kwargs["plan_phase"] = default_phase
 
                 plan = CasePlan(**kwargs)
                 plan.creator = user.id

@@ -113,6 +113,8 @@ class M2PlanImportService:
         valid_cases = M2ImportService._validate_m2_template(
             preview, endpoint_label=", 请走 /hub/plan/upload/commit",
         )
+        # 适用端必填 + 枚举校验 (M2 parse 阶段 enum_config=空, 跟 library 同款推到 commit 入口)
+        await M2ImportService._validate_field_constraints(valid_cases)
 
         # 1) 拆 known / new (复用 helper)
         known_cases, new_cases = M2ImportService._split_known_new(valid_cases)

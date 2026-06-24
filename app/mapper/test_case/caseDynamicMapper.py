@@ -58,6 +58,7 @@ class CaseDynamicRenderer:
         "case_status": "用例状态",
         "case_mark": "用例描述",
         "is_review": "是否审核",
+        "case_platform": "适用端",
     }
 
     # 字段名 → 中文显示名（计划关联字段）
@@ -77,6 +78,7 @@ class CaseDynamicRenderer:
         "case_type": "CASE_TYPE",
         "case_level": "CASE_LEVEL",
         "case_status": "CASE_STATUS",
+        "case_platform": "PLATFORM",
         "is_review": "IS_REVIEW",
         "first_status": "CASE_STATUS",
         "second_status": "CASE_STATUS",
@@ -124,6 +126,7 @@ class CaseDynamicRenderer:
                         rows.extend(await CaseConfigMapper.query_by_key(key, session=session))
                     except Exception as err:
                         log.warning("CaseDynamicRenderer 加载 config_key=%s 失败: %s", key, err)
+                log.debug(f"CaseDynamicRenderer 加载 {len(rows)} 条 CaseConfig 记录 {rows}")
                 for row in rows:
                     config_key = row.config_key
                     mappings.setdefault(config_key, {})[row.value] = row.label
@@ -222,11 +225,13 @@ class CaseDynamicRenderer:
         for key in changed_keys:
             old_value = old_data.get(key)
             new_value = new_data.get(key)
-
+            log.debug(f"diff_plan_case_dict key={key}, old_value={old_value}, new_value={new_value}")
+            
             if old_value is None and new_value is None:
                 continue
 
             field_name = self.PLAN_ASSOCIATION_KEY_MAP.get(key, key)
+            
             old_display = self.transform_value(key, old_value)
             new_display = self.transform_value(key, new_value)
 

@@ -794,7 +794,7 @@ class Mapper(Generic[M]):
                 return await _execute_query(sess)
         except Exception as e:
             log.exception(f"page_by_module error: module_id={module_id}, module_ids={module_ids}, error={e}")
-            return {"items": [], "pageInfo": {"total": 0, "pages": 0, "page": 0, "limit": page_size}}
+            return {"items": [], "pageInfo": {"total": 0, "pages": 0, "page": 0, "limit": pageSize}}
 
     @classmethod
     async def _manage_session(cls, session: Optional[AsyncSession], model: M) -> M:

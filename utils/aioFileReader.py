@@ -73,7 +73,7 @@ class CaseEnumConfig:
     :param platform_map: 适用端 label -> value, 例如 {"PC":"PC", "H5":"H5", ...}
     :param default_level:    保留位, 新规要求等级必填, 解析层不再走 default 兜底. 始终为 None.
     :param default_type:     用例类型空值时的兜底 (None=不填, 留空入库). 新规不再用"第一个配置"自动填, 由调用方按需注入.
-    :param default_platform: 适用端空值时的兜底 (None=不填, 留空入库). 同上.
+    :param default_platform: 适用端必填校验
     """
     level_map: Dict[str, str] = field(default_factory=dict)
     type_map: Dict[str, str] = field(default_factory=dict)
@@ -404,25 +404,34 @@ class AsyncFilesReader:
                     v = mapped_case.get("case_type")
                     mapped_case["case_type"] = (str(v).strip() if v is not None and not pd.isna(v) else None) or enum_config.default_type
 
-                # 适用端 (PLATFORM 枚举): 旧模板无此列, mapped_case["case_platform"] 默认 None,
-                # 走不到 _resolve_enum, 留空入库 (DB case_platform 允许 NULL).
+                # 适用端 (PLATFORM 枚举): 必填, 必须在 case_config.PLATFORM 枚举内,
+                # 支持单选 / 多选 (cell 用半角逗号分隔, 例 "PC端, WJAPP端" ->
+                # DB 存 "PC,WJAPP"). 校验+转换都走 parse_platform_cell_to_value:
+                #   - 空 / 全空白 / ",,," -> (None, None), 下面必填检查兜底
+                #   - 任意 label 不在 platform_map -> 报 "X 不在可选范围内", 列全
+                #     部非法 labels; 不做 partial save
+                #   - platform_map 为空 (预览模式 / 配置未加载) -> 仅 trim+join,
+                #     不查 enum, 跟用例等级 else 分支语义对齐
+                # 跟用例等级的对齐: enum-first 拿错误, 再 required 兜底, 已有
+                # enum 错误 (非法 label) 时不再重复报"为空".
+                from utils.caseEnumResolver import parse_platform_cell_to_value
                 platform_map = enum_config.platform_map
-                if platform_map and mapped_case.get("case_platform") is not None:
-                    mapped_case["case_platform"], platform_err = _resolve_enum(
-                        raw=mapped_case.get("case_platform"),
-                        enum_map=platform_map,
-                        default=enum_config.default_platform,
-                        display_name=_display_field_name("适用端"),
-                    )
-                    if platform_err:
-                        is_valid = False
-                        errors.append(platform_err)
-                else:
-                    v = mapped_case.get("case_platform")
-                    if v is not None and not pd.isna(v):
-                        mapped_case["case_platform"] = str(v).strip() or None
-                    else:
-                        mapped_case["case_platform"] = None
+                mapped_case["case_platform"], platform_err = parse_platform_cell_to_value(
+                    raw=mapped_case.get("case_platform"),
+                    platform_map=platform_map,
+                    display_name=_display_field_name("适用端"),
+                )
+                if platform_err:
+                    is_valid = False
+                    errors.append(platform_err)
+
+                # 适用端必填. 已经被 enum 报错 (非法 label) 的行不再重复报"为空".
+                if not platform_err and not mapped_case.get("case_platform"):
+                    is_valid = False
+                    errors.append({
+                        "field": _display_field_name("适用端"),
+                        "message": "适用端不能为空, 请从配置中选择",
+                    })
 
                 if is_valid:
                     # _row: 仅做预览阶段"行号级"错误提示用, 提交入库前由 controller 剥掉,

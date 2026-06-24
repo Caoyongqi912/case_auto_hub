@@ -6,11 +6,10 @@
 # @Software: PyCharm
 # @Desc: 计划用例关联数据访问层
 from collections import defaultdict
-from tkinter import N
 from typing import List,Tuple, Optional, Dict, Any
 from datetime import datetime
 
-from sqlalchemy import insert, update, delete, select, and_, or_, func, case
+from sqlalchemy import insert, update, delete, select, and_, func, case
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +31,6 @@ from app.mapper.test_case.testcaseMapper import _parse_steps
 from app.constant.caseStatus import (
     BUILTIN_CASE_STATUS,
     BUILTIN_CASE_STATUS_LABEL_MAP,
-    CASE_STATUS_KEY,
 )
 # get_overview 用的 pass/fail 状态值. 派生自 BUILTIN_CASE_STATUS, 保证
 # 枚举被调整时本文件不会静默漂移; 若枚举删了 pass/fail, 启动时

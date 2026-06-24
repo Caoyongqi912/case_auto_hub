@@ -198,7 +198,16 @@ def add_dropdowns_to_workbook(
         dv_type.add("H3:H{max_row}".format(max_row=max_row))
 
     # 3) F 列: 适用端 -> _dv!C
+    # 多选提示: prompt 在 hover 时显示, 提醒用户"多选用逗号分隔".
+    # Excel DataValidation 原生不支持 list 类型的多选, 仍以下拉做单选兜底,
+    # 多选需要用户直接键入 (例: PC端, WJAPP端). 解析端 parse_platform_cell_to_value
+    # 已经处理 trim + 去重 + 非法 label 报错.
     if platform_end:
+        base_prompt = " / ".join(platform_labels or []) or "请在配置中心维护适用端"
+        # 适用端支持多选: 下拉里**已经预生成**所有 2^n - 1 单/多值组合
+        # (例: AA / BB / CC / AA,BB / AA,CC / BB,CC / AA,BB,CC), 用户
+        # 直接选, 不需要手输逗号. 实现见 utils.caseEnumResolver.generate_platform_combo_labels,
+        # 在 load_case_enum_label_lists 的 PLATFORM key 注入.
         dv_platform = DataValidation(
             type="list",
             formula1=f"=_dv!$C$1:$C${platform_end}",
@@ -206,9 +215,9 @@ def add_dropdowns_to_workbook(
             showDropDown=False,
             showErrorMessage=True,
             errorTitle="非法值",
-            error="请从下拉框中选择适用端",
+            error="请从下拉框中选择适用端 (含单值与多值组合)",
             promptTitle="适用端",
-            prompt=" / ".join(platform_labels or []) or "请在配置中心维护适用端",
+            prompt=f"下拉里直接选 (单值与多值组合已预生成) | {base_prompt}",
         )
         ws.add_data_validation(dv_platform)
         dv_platform.add("F3:F{max_row}".format(max_row=max_row))
@@ -349,13 +358,17 @@ class ExportCaseService:
         case_type = case.get("case_type")
         case_platform = case.get("case_platform")
 
+        from utils.caseEnumResolver import format_platform_value_for_export
+
         values = [
             case.get("case_name"),
             group_path,
             case.get("case_setup"),
             action_cell,
             expected_result_cell,
-            self.label_map.get(case_platform, case_platform),
+            # 适用端支持多值 ("PC,WJAPP" -> "PC端,WJAPP端"), 走专用 helper;
+            # 单值同款. 缺 label 时回退原 value, 跟老的 label_map.get(v, v) 语义一致.
+            format_platform_value_for_export(case_platform, self.label_map),
             self.label_map.get(case_level, case_level),
             self.label_map.get(case_type, case_type),
             case.get("case_mark"),

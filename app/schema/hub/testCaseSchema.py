@@ -51,7 +51,6 @@ class AddPlanCaseSchema(TestCaseField):
     plan_id: int = Field(..., description="计划ID")
     plan_module_id: Optional[int] = Field(None, description="计划分组ID，NULL表示未分组")
     case_name: str = Field(..., description="用例名称")
-    case_tag: str = Field(..., description="用例标签")
     case_mark: Optional[str] = Field(None, description="用例备注")
     module_id: Optional[int] = Field(None, description="模块ID")
 

@@ -37,8 +37,8 @@ class AddPlanSchema(BaseModel):
     plan_status: Optional[str] = Field("active", description="计划状态（配置中心 PLAN_STATUS 枚举 value，默认 active）")
     plan_phase: Optional[str] = Field(None, description="执行阶段（配置中心 PLAN_PHASE 枚举 value）")
     plan_mark: Optional[str] = Field(None, description="备注")
-    charge_id: Optional[int] = Field(None, description="负责人ID")
-    charge_name: Optional[str] = Field(None, description="负责人姓名")
+    charge_id: int = Field(..., description="负责人ID")
+    charge_name: str = Field(..., description="负责人姓名")
     plan_start_time: Optional[date] = Field(None, description="开始时间")
     plan_end_time: Optional[date] = Field(None, description="结束时间")
 

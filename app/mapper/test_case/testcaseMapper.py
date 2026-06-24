@@ -5,7 +5,9 @@
 # @File : testcaseMapper
 # @Software: PyCharm
 # @Desc: 测试用例数据访问层
+from logging import warning
 from typing import List, Dict, Any, Optional,Tuple
+import warnings
 
 from sqlalchemy import select, insert, update, and_, delete, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -98,15 +100,30 @@ def _parse_steps(action: Optional[str], expected_result: Optional[str]) -> List[
     :param expected_result: 预期结果文本（按换行分割）
     :return: 步骤字典列表
     """
-    if action is None and expected_result is None:
-        return [{"action": None, "expected_result": None}]
-
     def _clean_line(line: str) -> str:
         """移除行中的【xx】序号标记"""
         return _STEP_NUMBER_RE.sub("", line).strip()
 
-    act_lines = [_clean_line(l) for l in action.strip().split("\n")] if action else None
-    exp_lines = [_clean_line(l) for l in expected_result.strip().split("\n")] if expected_result else None
+    def _normalize(value: Optional[str]) -> Optional[str]:
+        """None / 空字符串 / 全空白 统一规整为 None, 其余去掉首尾空白.
+
+        修复 R6: action="  " / "\n" 这类"伪空"输入不再被拆出 1 条空 step.
+        调用方 (insert_upload_case / _prepare_plan_steps) 按行生成 TestCaseStep,
+        一旦多出 1 条 {action=None, expected_result=None} 的 row, 库里会留
+        "幽灵空步骤" 且 step_order 占用 0 号位, 影响后续插入逻辑.
+        """
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    # 两侧都为空 -> 无步骤. 修复 R5 遗留的 [{None, None}] ghost step.
+    act, exp = _normalize(action), _normalize(expected_result)
+    if act is None and exp is None:
+        return []
+
+    act_lines = [_clean_line(l) for l in act.split("\n")] if act is not None else None
+    exp_lines = [_clean_line(l) for l in exp.split("\n")] if exp is not None else None
     max_steps = max(len(act_lines) if act_lines else 0, len(exp_lines) if exp_lines else 0)
 
     return [
@@ -867,21 +884,53 @@ class TestCaseMapper(Mapper[TestCase]):
         """
         批量删除测试用例
 
-        数据库已配置 ON DELETE CASCADE，删用例主表会自动清理：
-        - case_sub_step / case_step_dynamic / requirement_case_association / plan_case_association
+        本方法走 bulk delete (``session.execute(delete(TestCase).where(...))``),
+        **不会**触发 ORM 级 relationship cascade (cascade="all, delete-orphan" 只对
+        ``session.delete(obj)`` 生效). 走 bulk delete 时, 子表清理完全依赖 DDL 级
+        ``ON DELETE CASCADE`` 声明, 散落在以下子表 Model 里 (改 TestCase 同步检查):
+
+        - ``TestCaseStep.test_case_id``           → ondelete="cascade"
+              app/model/caseHub/test_case_step.py:16
+        - ``CaseStepDynamic.test_case_id``        → ondelete="cascade"
+              app/model/caseHub/case_step_dynamic.py:15
+        - ``RequirementCaseAssociation.case_id``  → ondelete="CASCADE"
+              app/model/caseHub/association.py:17
+        - ``PlanCaseAssociation.case_id``         → ondelete="CASCADE"
+              app/model/caseHub/association.py:50
+        - ``TestCaseStepResult`` 链式级联: 上面 ``TestCaseStep`` 被 DB 删掉之后,
+              ``TestCaseStepResult.step_id`` 的 ondelete="cascade" 顺势清理
+              (test_case_step.py:40)
+
+        ⚠ 注意:
+        - 老库 / 手工 DDL 迁移可能漏加 ON DELETE CASCADE, 此时 bulk delete 会被
+          MySQL 拒绝并抛 IntegrityError. 下面 except IntegrityError 显式识别这种
+          场景, 给 DBA / 维护者一个明确信号.
+        - 若想对单条用例做删除并走 ORM 级 cascade, 请用 ``remove_case`` (它内部
+          调 ``session.delete(case_obj)``).
 
         :param delete_case_list: 用例ID列表
-        :return: 删除的用例数量
+        :return: 删除的用例数量 (仅 test_case 主表行数, 不含级联子表)
+        :raises IntegrityError: DDL 级 CASCADE 缺失或被其他约束阻止
         """
         if not delete_case_list:
             return 0
+        from sqlalchemy.exc import IntegrityError
         try:
             async with cls.transaction() as session:
                 case_stmt = delete(TestCase).where(TestCase.id.in_(delete_case_list))
                 result = await session.execute(case_stmt)
                 delete_count = result.rowcount
-                log.info(f"批量删除成功: 删除{delete_count}条用例")
+                log.info(f"批量删除成功: 删除{delete_count}条用例, ids={delete_case_list}")
                 return delete_count
+        except IntegrityError as e:
+            # 兜底: DDL 级 ON DELETE CASCADE 未生效 (老库/手工 DDL), MySQL 拒删
+            # 并抛 IntegrityError. 区别于普通异常, 给维护者一个明确信号: 不是
+            # mapper 逻辑出错, 是数据库约束不一致, 需补 DDL 或手工清理子表.
+            log.exception(
+                f"delete_batch_cases: DDL 级 ON DELETE CASCADE 缺失或约束违反, "
+                f"ids={delete_case_list}, error={e}"
+            )
+            raise
         except Exception as e:
             log.exception(f"delete_batch_cases error: ids={delete_case_list}, error={e}")
             raise
@@ -1176,6 +1225,7 @@ class TestCaseMapper(Mapper[TestCase]):
     @classmethod
     async def add_default_case(cls, requirement_id: int, user: User):
         """
+        # 需求默认用例添加 暂不使用
         在需求下添加一条默认模板用例
 
         流程:
@@ -1188,6 +1238,7 @@ class TestCaseMapper(Mapper[TestCase]):
         :param requirement_id: 需求ID
         :param user: 操作用户
         """
+        warnings.warn("需求默认用例添加 暂不使用")
         try:
             async with cls.transaction() as session:
                 req = await RequirementMapper.get_by_id(ident=requirement_id, session=session)
